@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -10,6 +11,15 @@ namespace QuickReply.Desktop.Services;
 internal static class ScreenOcrReader
 {
     private static readonly TimeSpan OcrTimeout = TimeSpan.FromSeconds(8);
+    private static readonly string[] PowerShellHostCandidates = ["powershell.exe", "pwsh.exe"];
+    private static readonly string[] PreferredFallbackOcrLanguageTags =
+    [
+        "zh-Hans-CN",
+        "zh-CN",
+        "zh-Hans",
+        "zh-Hant",
+        "en-US"
+    ];
     private static readonly Lazy<string> ScriptPath = new(EnsureScriptPath, LazyThreadSafetyMode.ExecutionAndPublication);
 
     public static async Task<string> TryReadTextAsync(string screenshotPath, string platformHint = "")
@@ -66,7 +76,7 @@ internal static class ScreenOcrReader
         Directory.CreateDirectory(scriptDirectory);
 
         var scriptPath = Path.Combine(scriptDirectory, "screen-ocr-reader.ps1");
-        File.WriteAllText(scriptPath, PowerShellScript, new UTF8Encoding(false));
+        File.WriteAllText(scriptPath, BuildPowerShellScript(), new UTF8Encoding(false));
         return scriptPath;
     }
 
@@ -173,6 +183,16 @@ internal static class ScreenOcrReader
             .ToArray();
     }
 
+    internal static IReadOnlyList<string> GetPowerShellHostCandidatesForTesting()
+    {
+        return PowerShellHostCandidates;
+    }
+
+    internal static IReadOnlyList<string> GetPreferredFallbackOcrLanguageTagsForTesting()
+    {
+        return PreferredFallbackOcrLanguageTags;
+    }
+
     private static Rectangle ToAbsoluteRectangle(int width, int height, NormalizedCrop crop)
     {
         var x = Math.Max(0, (int)Math.Round(width * crop.X));
@@ -198,9 +218,23 @@ internal static class ScreenOcrReader
 
     private static async Task<string> TryReadSingleImageAsync(string screenshotPath)
     {
+        foreach (var hostFileName in PowerShellHostCandidates)
+        {
+            var result = await TryReadSingleImageWithHostAsync(screenshotPath, hostFileName).ConfigureAwait(false);
+            if (result is not null)
+            {
+                return result;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static async Task<string?> TryReadSingleImageWithHostAsync(string screenshotPath, string hostFileName)
+    {
         var processStartInfo = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = hostFileName,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -221,9 +255,16 @@ internal static class ScreenOcrReader
             StartInfo = processStartInfo
         };
 
-        if (!process.Start())
+        try
         {
-            return string.Empty;
+            if (!process.Start())
+            {
+                return string.Empty;
+            }
+        }
+        catch (Win32Exception)
+        {
+            return null;
         }
 
         var outputTask = process.StandardOutput.ReadToEndAsync();
@@ -264,7 +305,10 @@ internal static class ScreenOcrReader
         }
     }
 
-    private const string PowerShellScript = """
+    private static string BuildPowerShellScript()
+    {
+        var fallbackLanguageList = string.Join(", ", PreferredFallbackOcrLanguageTags.Select(tag => $"'{tag}'"));
+        return $$"""
 param([string]$ImagePath)
 
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -277,6 +321,7 @@ $BitmapDecoder = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, Cont
 $BitmapPixelFormat = [Windows.Graphics.Imaging.BitmapPixelFormat, Windows.Graphics, ContentType = WindowsRuntime]
 $BitmapAlphaMode = [Windows.Graphics.Imaging.BitmapAlphaMode, Windows.Graphics, ContentType = WindowsRuntime]
 $SoftwareBitmap = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics, ContentType = WindowsRuntime]
+$Language = [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime]
 $OcrEngine = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
 $OcrResult = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType = WindowsRuntime]
 
@@ -298,6 +343,39 @@ function AwaitGeneric([Type]$ResultType, [object]$AsyncOperation) {
     return $task.GetAwaiter().GetResult()
 }
 
+function TryCreateLanguageEngine([string]$LanguageTag) {
+    if ([string]::IsNullOrWhiteSpace($LanguageTag)) {
+        return $null
+    }
+
+    try {
+        return $OcrEngine::TryCreateFromLanguage(($Language::new($LanguageTag)))
+    }
+    catch {
+        return $null
+    }
+}
+
+function GetOcrEngine() {
+    try {
+        $engine = $OcrEngine::TryCreateFromUserProfileLanguages()
+        if ($null -ne $engine) {
+            return $engine
+        }
+    }
+    catch {
+    }
+
+    foreach ($languageTag in @({{fallbackLanguageList}})) {
+        $engine = TryCreateLanguageEngine $languageTag
+        if ($null -ne $engine) {
+            return $engine
+        }
+    }
+
+    return $null
+}
+
 try {
     if ([string]::IsNullOrWhiteSpace($ImagePath) -or -not (Test-Path -LiteralPath $ImagePath)) {
         exit 0
@@ -307,7 +385,7 @@ try {
     $stream = AwaitGeneric $RandomAccessStream ($file.OpenAsync($FileAccessMode::Read))
     $decoder = AwaitGeneric $BitmapDecoder ($BitmapDecoder::CreateAsync($stream))
     $bitmap = AwaitGeneric $SoftwareBitmap ($decoder.GetSoftwareBitmapAsync($BitmapPixelFormat::Bgra8, $BitmapAlphaMode::Premultiplied))
-    $engine = $OcrEngine::TryCreateFromUserProfileLanguages()
+    $engine = GetOcrEngine
 
     if ($null -eq $engine) {
         exit 0
@@ -323,6 +401,7 @@ catch {
     exit 1
 }
 """;
+    }
 
     private sealed record NormalizedCrop(double X, double Y, double Width, double Height);
 
