@@ -1,0 +1,1717 @@
+﻿using System.Diagnostics;
+using System.IO;
+using QuickReply.Desktop.Models;
+
+namespace QuickReply.Desktop.Services;
+
+public sealed class MessageComposeService : IMessageComposeService
+{
+    private const int TargetActivationAttemptCount = 4;
+    private const int MaximumComposeAttempts = 2;
+
+    private readonly IExternalWorkbenchService _externalWorkbenchService;
+    private readonly IClipboardService _clipboardService;
+    private readonly IKeyboardInputSimulator _keyboardInputSimulator;
+    private readonly IWindowFocusService _windowFocusService;
+
+    public MessageComposeService(
+        IExternalWorkbenchService externalWorkbenchService,
+        ClipboardService clipboardService,
+        KeyboardInputSimulator keyboardInputSimulator)
+        : this(
+            externalWorkbenchService,
+            (IClipboardService)clipboardService,
+            (IKeyboardInputSimulator)keyboardInputSimulator,
+            new WindowFocusService())
+    {
+    }
+
+    internal MessageComposeService(
+        IExternalWorkbenchService externalWorkbenchService,
+        IClipboardService clipboardService,
+        IKeyboardInputSimulator keyboardInputSimulator)
+        : this(
+            externalWorkbenchService,
+            clipboardService,
+            keyboardInputSimulator,
+            new WindowFocusService())
+    {
+    }
+
+    internal MessageComposeService(
+        IExternalWorkbenchService externalWorkbenchService,
+        IClipboardService clipboardService,
+        IKeyboardInputSimulator keyboardInputSimulator,
+        IWindowFocusService windowFocusService)
+    {
+        _externalWorkbenchService = externalWorkbenchService;
+        _clipboardService = clipboardService;
+        _keyboardInputSimulator = keyboardInputSimulator;
+        _windowFocusService = windowFocusService;
+    }
+
+    public async Task<ReplyActionResult> CopyToClipboardAsync(string text, IReadOnlyCollection<string>? imagePaths = null)
+    {
+        var normalizedImagePaths = NormalizePaths(imagePaths ?? []);
+        var hasText = !string.IsNullOrWhiteSpace(text);
+        var hasImages = normalizedImagePaths.Length > 0;
+
+        if (!hasText && !hasImages)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.EmptyContent,
+                "当前图文内容为空，未写入剪贴板。",
+                "请先输入文本内容或选择图片后再复制。");
+        }
+
+        var missingImagePath = normalizedImagePaths.FirstOrDefault(path => !File.Exists(path));
+        if (missingImagePath is not null)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.MissingInput,
+                $"未找到图片文件：{missingImagePath}",
+                "请确认图片文件仍存在，或重新选择图片后再试。");
+        }
+
+        if (normalizedImagePaths.Length <= 1)
+        {
+            if (hasText && hasImages)
+            {
+                return await AnnotateClipboardResultAsync(
+                    _clipboardService.SetTextAndFilesAsync(text, normalizedImagePaths),
+                    "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+            }
+
+            if (hasImages)
+            {
+                return await AnnotateClipboardResultAsync(
+                    _clipboardService.SetFileDropListAsync(normalizedImagePaths),
+                    "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+            }
+
+            return await AnnotateClipboardResultAsync(
+                _clipboardService.SetTextAsync(text),
+                "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+        }
+
+        if (!hasText)
+        {
+            return await AnnotateClipboardResultAsync(
+                _clipboardService.SetFileDropListAsync(normalizedImagePaths),
+                "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+        }
+
+        return await AnnotateClipboardResultAsync(
+            _clipboardService.SetTextAndFilesAsync(text, normalizedImagePaths),
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+    }
+
+    public async Task<ReplyActionResult> CopyFilesToClipboardAsync(IReadOnlyCollection<string> filePaths)
+    {
+        var normalizedPaths = NormalizePaths(filePaths);
+        if (normalizedPaths.Length == 0)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.EmptyContent,
+                "未选择要发送的文件。",
+                "请先选择至少一个文件后再发送。");
+        }
+
+        return await AnnotateClipboardResultAsync(
+            _clipboardService.SetFileDropListAsync(normalizedPaths),
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+    }
+
+    public async Task<ReplyActionResult> ExecuteAsync(
+        string text,
+        AppSettings settings,
+        ComposeActionMode mode,
+        IReadOnlyCollection<string>? imagePaths = null)
+    {
+        var normalizedImagePaths = NormalizePaths(imagePaths ?? []);
+        var hasText = !string.IsNullOrWhiteSpace(text);
+        var hasImages = normalizedImagePaths.Length > 0;
+
+        if (!hasText && !hasImages)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.EmptyContent,
+                mode == ComposeActionMode.Send
+                    ? "当前图文内容为空，无法发送。"
+                    : "当前图文内容为空，无法输入。",
+                hasImages
+                    ? "请确认图片仍存在后再试。"
+                    : "请先输入文本或选择图片后再试。");
+        }
+
+        var missingImagePath = normalizedImagePaths.FirstOrDefault(path => !File.Exists(path));
+        if (missingImagePath is not null)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.MissingInput,
+                $"未找到图片文件：{missingImagePath}",
+                "请确认图片文件仍存在，或重新选择图片后再试。");
+        }
+
+        if (!hasImages)
+        {
+            return await ExecuteWithAdaptiveRetryAsync(
+                "text_only",
+                mode,
+                settings,
+                attemptContext => ExecuteTextOnlyAsync(text, settings, mode, attemptContext));
+        }
+
+        if (!hasText)
+        {
+            return await ExecuteWithAdaptiveRetryAsync(
+                "files",
+                mode,
+                settings,
+                attemptContext => ExecuteFilesCoreAsync(normalizedImagePaths, settings, mode, attemptContext));
+        }
+
+        return await ExecuteWithAdaptiveRetryAsync(
+            "text_with_file_images",
+            mode,
+            settings,
+            attemptContext => ExecuteTextWithFileBackedImagesAsync(text, normalizedImagePaths, settings, mode, attemptContext));
+    }
+
+    private async Task<ReplyActionResult> ExecuteWithAdaptiveRetryAsync(
+        string composeKind,
+        ComposeActionMode mode,
+        AppSettings settings,
+        Func<ComposeAttemptContext, Task<ReplyActionResult>> executeAttemptAsync)
+    {
+        var firstAttemptContext = CreateAttemptContext(composeKind, settings, attemptIndex: 1, attemptReason: "initial");
+        var firstResult = await executeAttemptAsync(firstAttemptContext).ConfigureAwait(false);
+        if (firstResult.Success)
+        {
+            return CompleteComposeOperation(
+                firstAttemptContext,
+                mode,
+                firstResult,
+                ComposeOperationTelemetry.Create(
+                    composeKind,
+                    firstAttemptContext.HostProfile.Name,
+                    attemptCount: 1,
+                    retryTriggered: false,
+                    retryReason: string.Empty,
+                    retryOutcome: "not_needed",
+                    failureCategory: "none"));
+        }
+
+        var firstFailureCategory = MapFailureCategory(firstResult);
+        if (MaximumComposeAttempts <= 1 ||
+            !TryBuildRetryDecision(firstResult, out var retryDecision))
+        {
+            return CompleteComposeOperation(
+                firstAttemptContext,
+                mode,
+                firstResult,
+                ComposeOperationTelemetry.Create(
+                    composeKind,
+                    firstAttemptContext.HostProfile.Name,
+                    attemptCount: 1,
+                    retryTriggered: false,
+                    retryReason: string.Empty,
+                    retryOutcome: "not_applicable",
+                    failureCategory: firstFailureCategory));
+        }
+
+        await Task.Delay(firstAttemptContext.HostProfile.RetryBackoffMs).ConfigureAwait(false);
+
+        var retryContextPreparation = PrepareRetryAttemptContext(firstAttemptContext, settings, retryDecision);
+        if (retryContextPreparation.BlockedResult is not null)
+        {
+            return CompleteComposeOperation(
+                firstAttemptContext,
+                mode,
+                retryContextPreparation.BlockedResult.Value,
+                ComposeOperationTelemetry.Create(
+                    composeKind,
+                    firstAttemptContext.HostProfile.Name,
+                    attemptCount: 1,
+                    retryTriggered: false,
+                    retryReason: retryDecision.RetryReason,
+                    retryOutcome: "cancelled_target_changed",
+                    failureCategory: MapFailureCategory(retryContextPreparation.BlockedResult.Value),
+                    targetChangedBeforeRetry: retryContextPreparation.TargetChangedBeforeRetry));
+        }
+
+        var retryAttemptContext = retryContextPreparation.AttemptContext!;
+        var retryResult = await executeAttemptAsync(retryAttemptContext).ConfigureAwait(false);
+        var retryOutcome = retryResult.Success ? "recovered" : "failed";
+        var retryTelemetry = ComposeOperationTelemetry.Create(
+            composeKind,
+            retryAttemptContext.HostProfile.Name,
+            attemptCount: retryAttemptContext.AttemptIndex,
+            retryTriggered: true,
+            retryReason: retryDecision.RetryReason,
+            retryOutcome: retryOutcome,
+            failureCategory: retryResult.Success ? "none" : MapFailureCategory(retryResult),
+            targetChangedBeforeRetry: retryContextPreparation.TargetChangedBeforeRetry);
+
+        if (retryResult.Success)
+        {
+            return CompleteComposeOperation(
+                retryAttemptContext,
+                mode,
+                new ReplyActionResult(true, $"首次尝试未稳定完成，已自动补救后成功：{retryResult.Message}"),
+                retryTelemetry);
+        }
+
+        return CompleteComposeOperation(
+            retryAttemptContext,
+            mode,
+            new ReplyActionResult(
+                false,
+                $"已自动补救 1 次，但仍失败：{retryResult.Message}",
+                FailureKind: ResolveFailureKind(retryResult),
+                UserGuidance: retryResult.UserGuidance),
+            retryTelemetry);
+    }
+
+    private async Task<ReplyActionResult> ExecuteTextWithFileBackedImagesAsync(
+        string text,
+        IReadOnlyList<string> imagePaths,
+        AppSettings settings,
+        ComposeActionMode mode,
+        ComposeAttemptContext attemptContext)
+    {
+        var diagnostics = CreateComposeDiagnosticsPayload("text_with_file_images", mode);
+        var stopwatch = Stopwatch.StartNew();
+        PopulateAttemptDiagnostics(diagnostics, attemptContext);
+        diagnostics["selectedSendPath"] = attemptContext.HostProfile.PreferConservativeRichPath
+            ? "safe_file_drop_then_text_send"
+            : "file_drop_then_text_send";
+
+        var activationResult = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
+        if (!activationResult.Success)
+        {
+            diagnostics["result"] = activationResult.FailureCode;
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+            return CreateTargetWindowUnavailableResult(activationResult.UserMessage);
+        }
+
+        diagnostics["activateWindowMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["snapshotMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["effectiveRestoreFocusDelayMs"] = GetEffectiveRichRestoreFocusDelayMs(settings, attemptContext.HostProfile);
+        diagnostics["hasText"] = true;
+        diagnostics["imageCount"] = imagePaths.Count;
+        diagnostics["phraseImageSendMode"] = settings.PhraseImageSendMode.ToString();
+        diagnostics["effectivePhraseImageSendMode"] = PhraseImageSendMode.ImageThenTextThenSend.ToString();
+        diagnostics["imageTransferStrategy"] = "file_drop_clipboard";
+
+        var clipboardSnapshot = await CaptureClipboardSnapshotAsync(diagnostics, stopwatch);
+
+        ClipboardFingerprint? clipboardPayloadFingerprint = null;
+        var fileDropWrite = await TryWriteClipboardPayloadAsync(
+            () => _clipboardService.SetFileDropListAsync(imagePaths, persist: false),
+            "file_drop",
+            diagnostics,
+            stopwatch,
+            ReplyActionFailureKind.ClipboardBusy,
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+            imagePaths[0]);
+        if (fileDropWrite.FailureResult is not null)
+        {
+            diagnostics["result"] = "clipboard_write_failed";
+            diagnostics["message"] = fileDropWrite.FailureResult.Value.Message;
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+            return fileDropWrite.FailureResult.Value;
+        }
+
+        clipboardPayloadFingerprint = fileDropWrite.Fingerprint;
+        var fileDropPasteFailure = await TryPasteClipboardPayloadAsync(
+            activationResult.TargetWindowHandle,
+            "file_drop",
+            attemptContext.HostProfile.FilePasteStableMs,
+            GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+            attemptContext.HostProfile.PollIntervalMs,
+            diagnostics,
+            stopwatch,
+            settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+        if (fileDropPasteFailure is not null)
+        {
+            if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
+            {
+                await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+            }
+
+            diagnostics["result"] = "send_failed";
+            diagnostics["message"] = fileDropPasteFailure.Value.Message;
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+            return CreateFailureResult(
+                ResolveFailureKind(fileDropPasteFailure.Value),
+                $"发送图文内容失败：{fileDropPasteFailure.Value.Message}",
+                fileDropPasteFailure.Value.UserGuidance);
+        }
+
+        var textPaste = await PasteTextAsync(
+            text,
+            settings,
+            activationResult.TargetWindowHandle,
+            diagnostics,
+            stopwatch,
+            attemptContext.HostProfile);
+        if (textPaste.FailureResult is not null)
+        {
+            if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
+            {
+                await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+            }
+
+            diagnostics["result"] = "send_failed";
+            diagnostics["message"] = textPaste.FailureResult.Value.Message;
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+            return CreateFailureResult(
+                ResolveFailureKind(textPaste.FailureResult.Value),
+                $"发送图文内容失败：{textPaste.FailureResult.Value.Message}",
+                textPaste.FailureResult.Value.UserGuidance);
+        }
+
+        clipboardPayloadFingerprint = textPaste.Fingerprint;
+        if (mode == ComposeActionMode.Send)
+        {
+            var sendFailure = await TrySendConfiguredHotkeyAsync(
+                activationResult.TargetWindowHandle,
+                settings.SendHotkeyMode,
+                attemptContext.HostProfile.RichSendStableMs,
+                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: true),
+                attemptContext.HostProfile.PollIntervalMs,
+                diagnostics,
+                stopwatch,
+                delayMsDiagnosticKey: "effectiveRichSendDelayMs");
+            if (sendFailure is not null)
+            {
+                if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
+                {
+                    await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                }
+
+                diagnostics["result"] = "send_failed";
+                diagnostics["message"] = sendFailure.Value.Message;
+                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+                SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+                return CreateFailureResult(
+                    ResolveFailureKind(sendFailure.Value),
+                    $"发送图文内容失败：{sendFailure.Value.Message}",
+                    sendFailure.Value.UserGuidance);
+            }
+        }
+
+        var effectiveClipboardRestoreDelayMs = GetEffectiveRichImageClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
+        var willRestoreClipboard = clipboardSnapshot.CanRestore && clipboardPayloadFingerprint is not null;
+        if (willRestoreClipboard)
+        {
+            QueueClipboardRestore(clipboardSnapshot, effectiveClipboardRestoreDelayMs, clipboardPayloadFingerprint);
+        }
+
+        diagnostics["queuedClipboardRestoreDelayMs"] = willRestoreClipboard ? effectiveClipboardRestoreDelayMs : null;
+        diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["result"] = "success";
+        SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+        return BuildRichTextResult(mode, hasText: true, imagePaths.Count, clipboardSnapshot, restoreDeferred: willRestoreClipboard);
+    }
+
+    public async Task<ReplyActionResult> ExecuteFilesAsync(
+        IReadOnlyCollection<string> filePaths,
+        AppSettings settings,
+        ComposeActionMode mode)
+    {
+        return await ExecuteWithAdaptiveRetryAsync(
+            "files",
+            mode,
+            settings,
+            attemptContext => ExecuteFilesCoreAsync(filePaths, settings, mode, attemptContext));
+    }
+
+    private async Task<ReplyActionResult> ExecuteFilesCoreAsync(
+        IReadOnlyCollection<string> filePaths,
+        AppSettings settings,
+        ComposeActionMode mode,
+        ComposeAttemptContext attemptContext)
+    {
+        var normalizedPaths = NormalizePaths(filePaths);
+        if (normalizedPaths.Length == 0)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.EmptyContent,
+                "未选择要发送的文件。",
+                "请先选择至少一个文件后再发送。");
+        }
+
+        var missingPath = normalizedPaths.FirstOrDefault(path => !File.Exists(path));
+        if (missingPath is not null)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.MissingInput,
+                $"文件不存在：{missingPath}",
+                "请确认文件仍存在，或重新选择文件后再试。");
+        }
+
+        var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
+        var stopwatch = Stopwatch.StartNew();
+        PopulateAttemptDiagnostics(diagnostics, attemptContext);
+        diagnostics["selectedSendPath"] = attemptContext.HostProfile.PreferConservativeRichPath
+            ? "safe_file_drop_send"
+            : "file_drop_send";
+
+        var clipboardSnapshot = await CaptureClipboardSnapshotAsync(diagnostics, stopwatch);
+
+        var fileDropWrite = await TryWriteClipboardPayloadAsync(
+            () => _clipboardService.SetFileDropListAsync(normalizedPaths, persist: false),
+            "file_drop",
+            diagnostics,
+            stopwatch,
+            ReplyActionFailureKind.ClipboardBusy,
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+            normalizedPaths[0]);
+        if (fileDropWrite.FailureResult is not null)
+        {
+            diagnostics["result"] = "clipboard_write_failed";
+            diagnostics["message"] = fileDropWrite.FailureResult.Value.Message;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+            return fileDropWrite.FailureResult.Value;
+        }
+
+        diagnostics["clipboardWriteMs"] = stopwatch.ElapsedMilliseconds;
+        var clipboardPayloadFingerprint = fileDropWrite.Fingerprint;
+
+        var activationResult = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
+        if (!activationResult.Success)
+        {
+            await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+            diagnostics["result"] = activationResult.FailureCode;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+            return CreateTargetWindowUnavailableResult(activationResult.UserMessage);
+        }
+
+        diagnostics["activateWindowMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["effectiveRestoreFocusDelayMs"] = GetEffectiveRichRestoreFocusDelayMs(settings, attemptContext.HostProfile);
+        var pasteFailure = await TryPasteClipboardPayloadAsync(
+            activationResult.TargetWindowHandle,
+            "file_drop",
+            attemptContext.HostProfile.FilePasteStableMs,
+            GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+            attemptContext.HostProfile.PollIntervalMs,
+            diagnostics,
+            stopwatch,
+            settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+        if (pasteFailure is not null)
+        {
+            await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+            diagnostics["result"] = "send_hotkey_skipped_target_not_foreground";
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+            return pasteFailure.Value;
+        }
+
+        if (mode == ComposeActionMode.Send)
+        {
+            var sendFailure = await TrySendConfiguredHotkeyAsync(
+                activationResult.TargetWindowHandle,
+                settings.SendHotkeyMode,
+                attemptContext.HostProfile.RichSendStableMs,
+                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: false),
+                attemptContext.HostProfile.PollIntervalMs,
+                diagnostics,
+                stopwatch,
+                delayMsDiagnosticKey: "effectiveSendDelayMs");
+            if (sendFailure is not null)
+            {
+                await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                diagnostics["result"] = "send_hotkey_skipped_target_not_foreground";
+                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+                SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+                return sendFailure.Value;
+            }
+        }
+
+        var effectiveClipboardRestoreDelayMs = GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
+        var willRestoreClipboard = clipboardSnapshot.CanRestore && clipboardPayloadFingerprint is not null;
+        if (willRestoreClipboard)
+        {
+            QueueClipboardRestore(clipboardSnapshot, effectiveClipboardRestoreDelayMs, clipboardPayloadFingerprint);
+        }
+
+        diagnostics["queuedClipboardRestoreDelayMs"] = willRestoreClipboard ? effectiveClipboardRestoreDelayMs : null;
+        diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["result"] = "success";
+        SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+        return BuildFileResult(mode, normalizedPaths.Length, clipboardSnapshot, restoreDeferred: willRestoreClipboard);
+    }
+
+    private async Task<ReplyActionResult> ExecuteTextOnlyAsync(
+        string text,
+        AppSettings settings,
+        ComposeActionMode mode,
+        ComposeAttemptContext attemptContext)
+    {
+        var diagnostics = CreateComposeDiagnosticsPayload("text_only", mode);
+        var stopwatch = Stopwatch.StartNew();
+        var normalizedText = NormalizeLineSeparators(text);
+        PopulateAttemptDiagnostics(diagnostics, attemptContext);
+        diagnostics["selectedSendPath"] = attemptContext.HostProfile.PreferFastTextPath
+            ? "fast_text_paste_send"
+            : "clipboard_text_paste_send";
+
+        var activationResult = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
+        if (!activationResult.Success)
+        {
+            diagnostics["result"] = activationResult.FailureCode;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_text_completed", diagnostics);
+            return CreateTargetWindowUnavailableResult(activationResult.UserMessage);
+        }
+
+        diagnostics["activateWindowMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["effectiveRestoreFocusDelayMs"] = GetEffectiveTextOnlyRestoreFocusDelayMs(settings, attemptContext.HostProfile);
+
+        var clipboardSnapshot = await CaptureClipboardSnapshotAsync(diagnostics, stopwatch);
+
+        var textWrite = await TryWriteClipboardPayloadAsync(
+            () => _clipboardService.SetTextAsync(normalizedText, persist: false),
+            "text",
+            diagnostics,
+            stopwatch,
+            ReplyActionFailureKind.ClipboardBusy,
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+        if (textWrite.FailureResult is not null)
+        {
+            diagnostics["result"] = "clipboard_write_failed";
+            diagnostics["message"] = textWrite.FailureResult.Value.Message;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_text_completed", diagnostics);
+            return textWrite.FailureResult.Value;
+        }
+
+        diagnostics["inputStrategy"] = "clipboard_paste";
+        diagnostics["clipboardWriteMs"] = stopwatch.ElapsedMilliseconds;
+        var clipboardPayloadFingerprint = textWrite.Fingerprint;
+        var pasteFailure = await TryPasteClipboardPayloadAsync(
+            activationResult.TargetWindowHandle,
+            "text",
+            attemptContext.HostProfile.TextPasteStableMs,
+            GetEffectiveTextPasteDelayMs(settings, attemptContext.HostProfile),
+            attemptContext.HostProfile.PollIntervalMs,
+            diagnostics,
+            stopwatch,
+            settleMsDiagnosticKey: "effectiveTextSettleDelayMs");
+        if (pasteFailure is not null)
+        {
+            await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+            diagnostics["result"] = "send_hotkey_skipped_target_not_foreground";
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_text_completed", diagnostics);
+            return pasteFailure.Value;
+        }
+
+        if (mode == ComposeActionMode.Send)
+        {
+            var sendFailure = await TrySendConfiguredHotkeyAsync(
+                activationResult.TargetWindowHandle,
+                settings.SendHotkeyMode,
+                attemptContext.HostProfile.TextSendStableMs,
+                GetEffectiveTextOnlySendDelayMs(settings, attemptContext.HostProfile),
+                attemptContext.HostProfile.PollIntervalMs,
+                diagnostics,
+                stopwatch,
+                delayMsDiagnosticKey: "effectiveSendDelayMs");
+            if (sendFailure is not null)
+            {
+                await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                diagnostics["result"] = "send_hotkey_skipped_target_not_foreground";
+                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+                SearchOverlayDiagnostics.Log("message_compose", "compose_text_completed", diagnostics);
+                return sendFailure.Value;
+            }
+        }
+
+        var effectiveClipboardRestoreDelayMs = GetEffectiveTextOnlyClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
+        var willRestoreClipboard = clipboardSnapshot.CanRestore && clipboardPayloadFingerprint is not null;
+        if (willRestoreClipboard)
+        {
+            QueueClipboardRestore(clipboardSnapshot, effectiveClipboardRestoreDelayMs, clipboardPayloadFingerprint);
+        }
+
+        diagnostics["queuedClipboardRestoreDelayMs"] = willRestoreClipboard ? effectiveClipboardRestoreDelayMs : null;
+        diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["result"] = "success";
+        SearchOverlayDiagnostics.Log("message_compose", "compose_text_completed", diagnostics);
+        return BuildTextResult(mode, clipboardSnapshot, restoreDeferred: willRestoreClipboard);
+    }
+
+    private async Task<ClipboardFingerprint?> ExecutePhraseWithImagesAsync(
+        string text,
+        IReadOnlyList<string> imagePaths,
+        AppSettings settings,
+        ComposeActionMode mode,
+        bool hasText,
+        IntPtr targetWindowHandle,
+        Dictionary<string, object?> diagnostics,
+        Stopwatch stopwatch)
+    {
+        var effectiveSendDelayMs = GetEffectiveRichSendDelayMs(settings, hasImages: imagePaths.Count > 0);
+        ClipboardFingerprint? lastClipboardPayloadFingerprint = null;
+        var effectiveImageSendMode = ResolveEffectivePhraseImageSendMode(settings.PhraseImageSendMode, hasText, imagePaths.Count);
+        diagnostics["hasText"] = hasText;
+        diagnostics["imageCount"] = imagePaths.Count;
+        diagnostics["phraseImageSendMode"] = settings.PhraseImageSendMode.ToString();
+        diagnostics["effectivePhraseImageSendMode"] = effectiveImageSendMode.ToString();
+        diagnostics["effectiveRichSendDelayMs"] = effectiveSendDelayMs;
+
+        switch (effectiveImageSendMode)
+        {
+            case PhraseImageSendMode.ImageThenTextThenSend:
+                foreach (var imagePath in imagePaths)
+                {
+                    var pasteResult = await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch);
+                    if (pasteResult.FailureResult is not null)
+                    {
+                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
+                    }
+
+                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
+                }
+
+                if (hasText)
+                {
+                    var pasteResult = await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch);
+                    if (pasteResult.FailureResult is not null)
+                    {
+                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
+                    }
+
+                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
+                }
+
+                if (mode == ComposeActionMode.Send)
+                {
+                    EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
+                    await Task.Delay(effectiveSendDelayMs);
+                    SendConfiguredHotkey(settings.SendHotkeyMode);
+                }
+                break;
+
+            case PhraseImageSendMode.ImageImmediateThenTextSend:
+                foreach (var imagePath in imagePaths)
+                {
+                    var pasteResult = await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch);
+                    if (pasteResult.FailureResult is not null)
+                    {
+                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
+                    }
+
+                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
+                    if (mode == ComposeActionMode.Send)
+                    {
+                        EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
+                        await Task.Delay(effectiveSendDelayMs);
+                        SendConfiguredHotkey(settings.SendHotkeyMode);
+                        await Task.Delay(GetEffectiveRichRestoreFocusDelayMs(settings));
+                    }
+                }
+
+                if (hasText)
+                {
+                    var pasteResult = await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch);
+                    if (pasteResult.FailureResult is not null)
+                    {
+                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
+                    }
+
+                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
+                    if (mode == ComposeActionMode.Send)
+                    {
+                        EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
+                        await Task.Delay(effectiveSendDelayMs);
+                        SendConfiguredHotkey(settings.SendHotkeyMode);
+                    }
+                }
+                break;
+
+            default:
+                if (hasText)
+                {
+                    var pasteResult = await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch);
+                    if (pasteResult.FailureResult is not null)
+                    {
+                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
+                    }
+
+                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
+                }
+
+                foreach (var imagePath in imagePaths)
+                {
+                    var pasteResult = await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch);
+                    if (pasteResult.FailureResult is not null)
+                    {
+                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
+                    }
+
+                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
+                }
+
+                if (mode == ComposeActionMode.Send)
+                {
+                    EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
+                    await Task.Delay(effectiveSendDelayMs);
+                    SendConfiguredHotkey(settings.SendHotkeyMode);
+                }
+                break;
+        }
+
+        return lastClipboardPayloadFingerprint;
+    }
+
+    private static PhraseImageSendMode ResolveEffectivePhraseImageSendMode(
+        PhraseImageSendMode configuredMode,
+        bool hasText,
+        int imageCount)
+    {
+        if (hasText &&
+            imageCount > 0 &&
+            configuredMode == PhraseImageSendMode.TextThenImageThenSend)
+        {
+            // Mixed text+image content is more reliable when the image clipboard write
+            // happens before the target app has a chance to hold the clipboard after text paste.
+            return PhraseImageSendMode.ImageThenTextThenSend;
+        }
+
+        return configuredMode;
+    }
+
+    private async Task<ClipboardStepResult> PasteTextAsync(
+        string text,
+        AppSettings settings,
+        IntPtr targetWindowHandle,
+        Dictionary<string, object?> diagnostics,
+        Stopwatch stopwatch)
+    {
+        return await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch, SendHostProfile.GenericDesktopInput);
+    }
+
+    private async Task<ClipboardStepResult> PasteTextAsync(
+        string text,
+        AppSettings settings,
+        IntPtr targetWindowHandle,
+        Dictionary<string, object?> diagnostics,
+        Stopwatch stopwatch,
+        SendHostProfile hostProfile)
+    {
+        var writeResult = await TryWriteClipboardPayloadAsync(
+            () => _clipboardService.SetTextAsync(NormalizeLineSeparators(text), persist: false),
+            "text",
+            diagnostics,
+            stopwatch,
+            ReplyActionFailureKind.ClipboardBusy,
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+        if (writeResult.FailureResult is not null)
+        {
+            return new ClipboardStepResult(writeResult.FailureResult.Value, null);
+        }
+
+        var clipboardPayloadFingerprint = writeResult.Fingerprint;
+        var pasteFailure = await TryPasteClipboardPayloadAsync(
+            targetWindowHandle,
+            "text",
+            hostProfile.TextPasteStableMs,
+            GetEffectiveTextPasteDelayMs(settings, hostProfile),
+            hostProfile.PollIntervalMs,
+            diagnostics,
+            stopwatch,
+            settleMsDiagnosticKey: "effectiveTextSettleDelayMs");
+        if (pasteFailure is not null)
+        {
+            return new ClipboardStepResult(pasteFailure.Value, clipboardPayloadFingerprint);
+        }
+
+        return new ClipboardStepResult(null, clipboardPayloadFingerprint);
+    }
+
+    private async Task<ClipboardStepResult> PasteImageAsync(
+        string imagePath,
+        AppSettings settings,
+        IntPtr targetWindowHandle,
+        Dictionary<string, object?> diagnostics,
+        Stopwatch stopwatch)
+    {
+        return await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch, SendHostProfile.GenericDesktopInput);
+    }
+
+    private async Task<ClipboardStepResult> PasteImageAsync(
+        string imagePath,
+        AppSettings settings,
+        IntPtr targetWindowHandle,
+        Dictionary<string, object?> diagnostics,
+        Stopwatch stopwatch,
+        SendHostProfile hostProfile)
+    {
+        var writeResult = await TryWriteClipboardPayloadAsync(
+            () => _clipboardService.SetImageAsync(imagePath, persist: false),
+            "image",
+            diagnostics,
+            stopwatch,
+            ReplyActionFailureKind.ClipboardBusy,
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+            imagePath);
+        if (writeResult.FailureResult is not null)
+        {
+            return new ClipboardStepResult(writeResult.FailureResult.Value, null);
+        }
+
+        diagnostics["imageClipboardPersisted"] = false;
+        diagnostics["lastImageClipboardWriteDurationMs"] = diagnostics["lastClipboardWriteDurationMs"];
+        var clipboardPayloadFingerprint = writeResult.Fingerprint;
+        var pasteFailure = await TryPasteClipboardPayloadAsync(
+            targetWindowHandle,
+            "image",
+            hostProfile.FilePasteStableMs,
+            GetEffectiveImagePasteDelayMs(settings, hostProfile),
+            hostProfile.PollIntervalMs,
+            diagnostics,
+            stopwatch,
+            settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+        if (pasteFailure is not null)
+        {
+            return new ClipboardStepResult(pasteFailure.Value, clipboardPayloadFingerprint);
+        }
+
+        return new ClipboardStepResult(null, clipboardPayloadFingerprint);
+    }
+
+    private async Task<ClipboardSnapshot> CaptureClipboardSnapshotAsync(
+        IDictionary<string, object?> diagnostics,
+        Stopwatch stopwatch)
+    {
+        var snapshot = await _clipboardService.CaptureSnapshotAsync().ConfigureAwait(false);
+        diagnostics["snapshotMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["snapshotCaptured"] = snapshot.CaptureSucceeded;
+        diagnostics["snapshotHasContent"] = snapshot.HasContent;
+        diagnostics["snapshotCanRestore"] = snapshot.CanRestore;
+        return snapshot;
+    }
+
+    private async Task<ClipboardWriteStepResult> TryWriteClipboardPayloadAsync(
+        Func<Task<ReplyActionResult>> writeAsync,
+        string clipboardKind,
+        IDictionary<string, object?> diagnostics,
+        Stopwatch stopwatch,
+        ReplyActionFailureKind defaultFailureKind,
+        string guidance,
+        string? lastImagePath = null)
+    {
+        var writeResult = AnnotateFailure(
+            await writeAsync().ConfigureAwait(false),
+            defaultFailureKind,
+            guidance);
+        diagnostics["lastClipboardWriteKind"] = clipboardKind;
+        diagnostics["lastClipboardWriteDurationMs"] = stopwatch.ElapsedMilliseconds;
+        if (!string.IsNullOrWhiteSpace(lastImagePath))
+        {
+            diagnostics["lastImagePath"] = lastImagePath;
+        }
+
+        if (!writeResult.Success)
+        {
+            return new ClipboardWriteStepResult(writeResult, null);
+        }
+
+        var fingerprint = await _clipboardService.CaptureCurrentFingerprintAsync().ConfigureAwait(false);
+        diagnostics["lastClipboardFingerprintDurationMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["lastClipboardFingerprintCaptured"] = fingerprint is not null;
+        return new ClipboardWriteStepResult(null, fingerprint);
+    }
+
+    private async Task<ReplyActionResult?> TryPasteClipboardPayloadAsync(
+        IntPtr targetWindowHandle,
+        string clipboardKind,
+        int requiredStableMs,
+        int timeoutMs,
+        int pollIntervalMs,
+        IDictionary<string, object?> diagnostics,
+        Stopwatch stopwatch,
+        string settleMsDiagnosticKey)
+    {
+        var stableForeground = await WaitForTargetForegroundStabilityAsync(
+            targetWindowHandle,
+            requiredStableMs,
+            timeoutMs,
+            pollIntervalMs).ConfigureAwait(false);
+        diagnostics["pasteForegroundWaitMs"] = stableForeground.ElapsedMs;
+        if (!stableForeground.Success)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.FocusLost,
+                "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
+                "请先重新点击聊天输入框，再执行发送。");
+        }
+
+        _keyboardInputSimulator.SendPasteShortcut();
+        diagnostics["lastPasteKind"] = clipboardKind;
+        diagnostics["lastPasteIssuedAtMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["pasteMs"] = stopwatch.ElapsedMilliseconds;
+
+        var settleResult = await WaitForTargetForegroundStabilityAsync(
+            targetWindowHandle,
+            requiredStableMs,
+            timeoutMs,
+            pollIntervalMs).ConfigureAwait(false);
+        diagnostics[settleMsDiagnosticKey] = settleResult.ElapsedMs;
+        diagnostics["pasteSettleMs"] = settleResult.ElapsedMs;
+        if (!settleResult.Success)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.FocusLost,
+                "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
+                "请先重新点击聊天输入框，再执行发送。");
+        }
+
+        return null;
+    }
+
+    private async Task<ReplyActionResult?> TrySendConfiguredHotkeyAsync(
+        IntPtr targetWindowHandle,
+        SendHotkeyMode mode,
+        int requiredStableMs,
+        int timeoutMs,
+        int pollIntervalMs,
+        IDictionary<string, object?> diagnostics,
+        Stopwatch stopwatch,
+        string delayMsDiagnosticKey)
+    {
+        var stableForeground = await WaitForTargetForegroundStabilityAsync(
+            targetWindowHandle,
+            requiredStableMs,
+            timeoutMs,
+            pollIntervalMs).ConfigureAwait(false);
+        diagnostics["sendForegroundWaitMs"] = stableForeground.ElapsedMs;
+        diagnostics[delayMsDiagnosticKey] = stableForeground.ElapsedMs;
+        if (!stableForeground.Success)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.FocusLost,
+                "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
+                "请先重新点击聊天输入框，再执行发送。");
+        }
+
+        SendConfiguredHotkey(mode);
+        diagnostics["sendHotkeyMs"] = stopwatch.ElapsedMilliseconds;
+        return null;
+    }
+
+    private void SendConfiguredHotkey(SendHotkeyMode mode)
+    {
+        switch (mode)
+        {
+            case SendHotkeyMode.Enter:
+                _keyboardInputSimulator.SendEnter();
+                break;
+            case SendHotkeyMode.CtrlEnter:
+                _keyboardInputSimulator.SendCtrlEnter();
+                break;
+            case SendHotkeyMode.AltS:
+                _keyboardInputSimulator.SendAltS();
+                break;
+        }
+    }
+
+    private async Task<ReplyActionResult> TryRestoreClipboardAsync(
+        ClipboardSnapshot snapshot,
+        ClipboardFingerprint? expectedCurrentFingerprint = null)
+    {
+        if (!snapshot.CaptureSucceeded)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.ClipboardBusy,
+                "未能备份原剪贴板内容。",
+                "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+        }
+
+        if (!snapshot.CanRestore)
+        {
+            return new ReplyActionResult(true, "未能完整备份原剪贴板内容，已跳过恢复。");
+        }
+
+        return await AnnotateClipboardResultAsync(
+            _clipboardService.RestoreSnapshotAsync(snapshot, expectedCurrentFingerprint),
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
+    }
+
+    private void QueueClipboardRestore(
+        ClipboardSnapshot snapshot,
+        int delayMs,
+        ClipboardFingerprint? expectedCurrentFingerprint = null)
+    {
+        if (!snapshot.CaptureSucceeded || !snapshot.CanRestore || expectedCurrentFingerprint is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (delayMs > 0)
+                {
+                    await Task.Delay(delayMs).ConfigureAwait(false);
+                }
+
+                await TryRestoreClipboardAsync(snapshot, expectedCurrentFingerprint).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        });
+    }
+
+    private static int GetEffectiveTextOnlyRestoreFocusDelayMs(AppSettings settings)
+    {
+        return GetEffectiveTextOnlyRestoreFocusDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveTextOnlyRestoreFocusDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.ActivationTimeoutMs, settings.RestoreFocusDelayMs);
+    }
+
+    private static int GetEffectiveTextOnlySendDelayMs(AppSettings settings)
+    {
+        return GetEffectiveTextOnlySendDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveTextOnlySendDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.TextSendTimeoutMs, settings.SendDelayMs);
+    }
+
+    private static int GetEffectiveTextOnlyClipboardRestoreDelayMs(AppSettings settings)
+    {
+        return GetEffectiveTextOnlyClipboardRestoreDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveTextOnlyClipboardRestoreDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.ClipboardRestoreDelayMs, settings.ClipboardRestoreDelayMs);
+    }
+
+    private static int GetEffectiveRichRestoreFocusDelayMs(AppSettings settings)
+    {
+        return GetEffectiveRichRestoreFocusDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveRichRestoreFocusDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.ActivationTimeoutMs, settings.RestoreFocusDelayMs);
+    }
+
+    private static int GetEffectiveRichSendDelayMs(AppSettings settings, bool hasImages)
+    {
+        return GetEffectiveRichSendDelayMs(settings, SendHostProfile.GenericDesktopInput, hasImages);
+    }
+
+    private static int GetEffectiveRichSendDelayMs(AppSettings settings, SendHostProfile hostProfile, bool hasImages)
+    {
+        var fallback = hasImages ? settings.RichImageSendDelayMs : settings.SendDelayMs;
+        return Math.Max(hostProfile.RichSendTimeoutMs, fallback);
+    }
+
+    private static int GetEffectiveRichImageClipboardRestoreDelayMs(AppSettings settings)
+    {
+        return GetEffectiveRichImageClipboardRestoreDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveRichImageClipboardRestoreDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.ClipboardRestoreDelayMs, settings.RichImageClipboardRestoreDelayMs);
+    }
+
+    private static int GetEffectiveTextPasteDelayMs(AppSettings settings)
+    {
+        return GetEffectiveTextPasteDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveTextPasteDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.TextPasteTimeoutMs, settings.TextPasteDelayMs);
+    }
+
+    private static int GetEffectiveImagePasteDelayMs(AppSettings settings)
+    {
+        return GetEffectiveImagePasteDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveImagePasteDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.FilePasteTimeoutMs, settings.ImagePasteDelayMs);
+    }
+
+    private static string NormalizeLineSeparators(string text)
+    {
+        return text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Replace('\u2028', '\n')
+            .Replace('\u2029', '\n');
+    }
+
+    private static Dictionary<string, object?> CreateComposeDiagnosticsPayload(string composeKind, ComposeActionMode mode)
+    {
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["composeKind"] = composeKind,
+            ["actionMode"] = mode.ToString()
+        };
+    }
+
+    private async Task<(bool Success, IntPtr TargetWindowHandle, string FailureCode, string UserMessage)> EnsureTargetWindowReadyAsync(
+        AppSettings settings,
+        Dictionary<string, object?> diagnostics,
+        Stopwatch stopwatch,
+        ComposeAttemptContext attemptContext)
+    {
+        var targetWindowHandle = NormalizeTargetWindowHandle(
+            attemptContext.TargetWindowInfo?.Handle ?? _externalWorkbenchService.GetLastExternalWindowHandle());
+        diagnostics["targetWindowHandle"] = SearchOverlayDiagnostics.FormatHandle(targetWindowHandle);
+
+        if (targetWindowHandle == IntPtr.Zero || !_windowFocusService.IsWindow(targetWindowHandle))
+        {
+            return (false, IntPtr.Zero, "target_window_missing", "未找到目标输入窗口。请先点击聊天输入框，再回到工具执行操作。");
+        }
+
+        for (var attempt = 1; attempt <= TargetActivationAttemptCount; attempt++)
+        {
+            var refreshedTargetWindowInfo = ResolveLatestTargetWindowInfo(attemptContext.TargetWindowInfo);
+            var refreshedTargetWindowHandle = NormalizeTargetWindowHandle(
+                refreshedTargetWindowInfo?.Handle ?? _externalWorkbenchService.GetLastExternalWindowHandle());
+            diagnostics["targetRefreshAttempt"] = attempt;
+            diagnostics["targetWindowHandleRefreshed"] = SearchOverlayDiagnostics.FormatHandle(refreshedTargetWindowHandle);
+
+            if (attemptContext.AttemptIndex > 1 &&
+                targetWindowHandle != IntPtr.Zero &&
+                refreshedTargetWindowHandle != IntPtr.Zero &&
+                refreshedTargetWindowHandle != targetWindowHandle)
+            {
+                diagnostics["targetWindowChangedBeforeRetry"] = true;
+                return (false, refreshedTargetWindowHandle, "target_window_changed", "检测到目标输入窗口已变化，已取消自动补救。请重新回到目标聊天窗口后再试。");
+            }
+
+            if (refreshedTargetWindowHandle != IntPtr.Zero)
+            {
+                targetWindowHandle = refreshedTargetWindowHandle;
+                diagnostics["targetWindowHandle"] = SearchOverlayDiagnostics.FormatHandle(targetWindowHandle);
+            }
+
+            var activated = _externalWorkbenchService.TryActivateLastExternalWindow();
+            diagnostics["windowActivated"] = activated;
+            diagnostics["activationAttempt"] = attempt;
+
+            if (!activated)
+            {
+                continue;
+            }
+
+            var activationWaitResult = await WaitForTargetForegroundStabilityAsync(
+                targetWindowHandle,
+                attemptContext.HostProfile.ActivationStableMs,
+                attempt == 1
+                    ? GetEffectiveRichRestoreFocusDelayMs(settings, attemptContext.HostProfile)
+                    : Math.Max(attemptContext.HostProfile.ActivationTimeoutMs, settings.ActivationRetryDelayMs),
+                attemptContext.HostProfile.PollIntervalMs).ConfigureAwait(false);
+            diagnostics["activationWaitMs"] = activationWaitResult.ElapsedMs;
+            var foregroundWindowHandle = _windowFocusService.NormalizeTopLevelWindow(_windowFocusService.GetForegroundWindow());
+            diagnostics["foregroundAfterActivation"] = SearchOverlayDiagnostics.FormatHandle(foregroundWindowHandle);
+            diagnostics["foregroundCheckAtMs"] = stopwatch.ElapsedMilliseconds;
+
+            if (activationWaitResult.Success && foregroundWindowHandle == targetWindowHandle)
+            {
+                return (true, targetWindowHandle, string.Empty, string.Empty);
+            }
+        }
+
+        return (false, targetWindowHandle, "target_window_not_foreground", "未能稳定切回目标输入窗口。请先点一下聊天输入框，再重试。");
+    }
+
+    private static ReplyActionResult CreateTargetWindowUnavailableResult(string message)
+    {
+        return CreateFailureResult(InferFailureKind(message), message, InferFailureGuidance(message));
+    }
+
+    private static int GetEffectiveClipboardRestoreDelayMs(AppSettings settings)
+    {
+        return GetEffectiveClipboardRestoreDelayMs(settings, SendHostProfile.GenericDesktopInput);
+    }
+
+    private static int GetEffectiveClipboardRestoreDelayMs(AppSettings settings, SendHostProfile hostProfile)
+    {
+        return Math.Max(hostProfile.ClipboardRestoreDelayMs, settings.ClipboardRestoreDelayMs);
+    }
+
+    private async Task<(bool Success, int ElapsedMs)> WaitForTargetForegroundStabilityAsync(
+        IntPtr targetWindowHandle,
+        int requiredStableMs,
+        int timeoutMs,
+        int pollIntervalMs)
+    {
+        requiredStableMs = Math.Max(0, requiredStableMs);
+        timeoutMs = Math.Max(requiredStableMs, timeoutMs);
+        pollIntervalMs = Math.Clamp(pollIntervalMs, 10, 50);
+
+        var stopwatch = Stopwatch.StartNew();
+        long? stableSinceMs = IsTargetWindowForeground(targetWindowHandle) ? 0 : null;
+
+        while (stopwatch.ElapsedMilliseconds <= timeoutMs)
+        {
+            if (IsTargetWindowForeground(targetWindowHandle))
+            {
+                stableSinceMs ??= stopwatch.ElapsedMilliseconds;
+                if (stopwatch.ElapsedMilliseconds - stableSinceMs.Value >= requiredStableMs)
+                {
+                    return (true, (int)stopwatch.ElapsedMilliseconds);
+                }
+            }
+            else
+            {
+                stableSinceMs = null;
+            }
+
+            await Task.Delay(pollIntervalMs).ConfigureAwait(false);
+        }
+
+        return (false, (int)stopwatch.ElapsedMilliseconds);
+    }
+
+    private ComposeAttemptContext CreateAttemptContext(
+        string composeKind,
+        AppSettings settings,
+        int attemptIndex,
+        string attemptReason,
+        WindowDockTargetInfo? preferredTargetWindowInfo = null)
+    {
+        var targetWindowInfo = ResolveLatestTargetWindowInfo(preferredTargetWindowInfo);
+
+        var hostProfile = SendHostProfileResolver.Resolve(targetWindowInfo);
+        return new ComposeAttemptContext(
+            composeKind,
+            attemptIndex,
+            attemptReason,
+            hostProfile,
+            targetWindowInfo,
+            settings);
+    }
+
+    private static void PopulateAttemptDiagnostics(
+        IDictionary<string, object?> diagnostics,
+        ComposeAttemptContext attemptContext)
+    {
+        diagnostics["attemptIndex"] = attemptContext.AttemptIndex;
+        diagnostics["attemptReason"] = attemptContext.AttemptReason;
+        diagnostics["hostProfile"] = attemptContext.HostProfile.Name;
+        if (attemptContext.TargetWindowInfo is not null)
+        {
+            diagnostics["targetProcessName"] = attemptContext.TargetWindowInfo.ProcessName;
+            diagnostics["targetWindowClassName"] = attemptContext.TargetWindowInfo.WindowClassName;
+            diagnostics["targetWindowTitle"] = attemptContext.TargetWindowInfo.Title;
+        }
+    }
+
+    private ReplyActionResult CompleteComposeOperation(
+        ComposeAttemptContext attemptContext,
+        ComposeActionMode mode,
+        ReplyActionResult result,
+        ComposeOperationTelemetry telemetry)
+    {
+        var completedResult = result with
+        {
+            ComposeTelemetry = telemetry
+        };
+
+        LogComposeOperationCompleted(attemptContext, mode, completedResult);
+        return completedResult;
+    }
+
+    private void LogComposeOperationCompleted(
+        ComposeAttemptContext attemptContext,
+        ComposeActionMode mode,
+        ReplyActionResult result)
+    {
+        var payload = CreateComposeDiagnosticsPayload(attemptContext.ComposeKind, mode);
+        PopulateAttemptDiagnostics(payload, attemptContext);
+        var composeTelemetry = result.ComposeTelemetry;
+        payload["finalSuccess"] = result.Success;
+        payload["finalMessage"] = result.Message;
+        payload["attemptCount"] = composeTelemetry?.AttemptCount ?? attemptContext.AttemptIndex;
+        payload["retryTriggered"] = composeTelemetry?.RetryTriggered ?? false;
+        payload["retryReason"] = composeTelemetry?.RetryReason ?? string.Empty;
+        payload["retryOutcome"] = composeTelemetry?.RetryOutcome ?? "unknown";
+        payload["failureCategory"] = composeTelemetry?.FailureCategory ?? (result.Success ? "none" : MapFailureCategory(result));
+        payload["targetChangedBeforeRetry"] = composeTelemetry?.TargetChangedBeforeRetry ?? false;
+        SearchOverlayDiagnostics.Log("message_compose", "compose_operation_completed", payload);
+    }
+
+    private static bool TryBuildRetryDecision(ReplyActionResult result, out ComposeRetryDecision retryDecision)
+    {
+        var failureKind = ResolveFailureKind(result);
+        var failureCategory = result.Success ? "none" : MapFailureCategory(result);
+        switch (failureKind)
+        {
+            case ReplyActionFailureKind.FocusLost:
+                retryDecision = new ComposeRetryDecision("focus_lost", failureCategory);
+                return true;
+            case ReplyActionFailureKind.ActivationFailed:
+                retryDecision = new ComposeRetryDecision("activation", failureCategory);
+                return true;
+            case ReplyActionFailureKind.ClipboardBusy:
+                retryDecision = new ComposeRetryDecision("clipboard", failureCategory);
+                return true;
+            default:
+                retryDecision = new ComposeRetryDecision(string.Empty, failureCategory);
+                return false;
+        }
+    }
+
+    private static string MapFailureCategory(ReplyActionResult result)
+    {
+        return ResolveFailureKind(result) switch
+        {
+            ReplyActionFailureKind.None => "none",
+            ReplyActionFailureKind.EmptyContent => "empty",
+            ReplyActionFailureKind.MissingInput => "missing_input",
+            ReplyActionFailureKind.MissingTargetWindow => "missing_target",
+            ReplyActionFailureKind.ActivationFailed => "activation",
+            ReplyActionFailureKind.FocusLost => "focus_lost",
+            ReplyActionFailureKind.ClipboardBusy => "clipboard",
+            ReplyActionFailureKind.TargetChanged => "target_changed",
+            ReplyActionFailureKind.ExternalTool => "external_tool",
+            _ => "other"
+        };
+    }
+
+    private bool IsTargetWindowForeground(IntPtr targetWindowHandle)
+    {
+        return targetWindowHandle != IntPtr.Zero &&
+               NormalizeTargetWindowHandle(_windowFocusService.GetForegroundWindow()) ==
+               NormalizeTargetWindowHandle(targetWindowHandle);
+    }
+
+    private void EnsureTargetWindowStillForegroundOrThrow(IntPtr targetWindowHandle)
+    {
+        if (!IsTargetWindowForeground(targetWindowHandle))
+        {
+            throw new InvalidOperationException("目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。");
+        }
+    }
+
+    private static string[] NormalizePaths(IEnumerable<string> filePaths)
+    {
+        return filePaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Path.GetFullPath(path.Trim()))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static ReplyActionResult BuildTextResult(
+        ComposeActionMode mode,
+        ClipboardSnapshot clipboardSnapshot,
+        bool restoreDeferred = false,
+        ReplyActionResult? restoreResult = null)
+    {
+        var actionText = mode == ComposeActionMode.Send
+            ? "已粘贴并发送"
+            : "已输入到当前窗口";
+
+        if (!clipboardSnapshot.CaptureSucceeded)
+        {
+            return new ReplyActionResult(true, $"{actionText}，但未能备份原剪贴板，当前剪贴板内容已被本次短语覆盖。");
+        }
+
+        if (!clipboardSnapshot.CanRestore)
+        {
+            return new ReplyActionResult(true, $"{actionText}，但未能完整备份原剪贴板，当前剪贴板可能仍保留本次内容。");
+        }
+
+        if (restoreDeferred)
+        {
+            return new ReplyActionResult(true, $"{actionText}，剪贴板将在后台自动恢复。");
+        }
+
+        var completedRestoreResult = restoreResult ?? new ReplyActionResult(false, "未执行剪贴板恢复。");
+        return completedRestoreResult.Success
+            ? new ReplyActionResult(true, $"{actionText}，并恢复原剪贴板。")
+            : new ReplyActionResult(true, $"{actionText}，但{completedRestoreResult.Message}");
+    }
+
+    private static ReplyActionResult BuildDirectTextResult(ComposeActionMode mode)
+    {
+        return mode == ComposeActionMode.Send
+            ? new ReplyActionResult(true, "已直接输入并发送。")
+            : new ReplyActionResult(true, "已直接输入到当前窗口。");
+    }
+
+    private static ReplyActionResult BuildFileResult(
+        ComposeActionMode mode,
+        int fileCount,
+        ClipboardSnapshot clipboardSnapshot,
+        bool restoreDeferred = false,
+        ReplyActionResult? restoreResult = null)
+    {
+        var actionText = mode == ComposeActionMode.Send
+            ? $"已粘贴并发送 {fileCount} 个文件"
+            : $"已将 {fileCount} 个文件粘贴到当前窗口";
+
+        if (!clipboardSnapshot.CaptureSucceeded)
+        {
+            return new ReplyActionResult(true, $"{actionText}，但未能备份原剪贴板，当前剪贴板内容已被本次文件覆盖。");
+        }
+
+        if (!clipboardSnapshot.CanRestore)
+        {
+            return new ReplyActionResult(true, $"{actionText}，但未能完整备份原剪贴板，当前剪贴板可能仍保留本次内容。");
+        }
+
+        if (restoreDeferred)
+        {
+            return new ReplyActionResult(true, $"{actionText}，剪贴板将在后台自动恢复。");
+        }
+
+        var completedRestoreResult = restoreResult ?? new ReplyActionResult(false, "未执行剪贴板恢复。");
+        return completedRestoreResult.Success
+            ? new ReplyActionResult(true, $"{actionText}，并恢复原剪贴板。")
+            : new ReplyActionResult(true, $"{actionText}，但{completedRestoreResult.Message}");
+    }
+
+    private static ReplyActionResult BuildRichTextResult(
+        ComposeActionMode mode,
+        bool hasText,
+        int imageCount,
+        ClipboardSnapshot clipboardSnapshot,
+        bool restoreDeferred = false,
+        ReplyActionResult? restoreResult = null)
+    {
+        var payloadText = hasText
+            ? imageCount > 1 ? $"图文短语（含 {imageCount} 张图片）" : "图文短语"
+            : imageCount > 1 ? $"图片（共 {imageCount} 张）" : "图片";
+        var actionText = mode == ComposeActionMode.Send
+            ? $"已发送{payloadText}"
+            : $"已输入{payloadText}";
+
+        if (!clipboardSnapshot.CaptureSucceeded)
+        {
+            return new ReplyActionResult(true, $"{actionText}，但未能备份原剪贴板，当前剪贴板内容已被覆盖。");
+        }
+
+        if (!clipboardSnapshot.CanRestore)
+        {
+            return new ReplyActionResult(true, $"{actionText}，但未能完整备份原剪贴板，当前剪贴板可能仍保留本次内容。");
+        }
+
+        if (restoreDeferred)
+        {
+            return new ReplyActionResult(true, $"{actionText}，剪贴板将在后台自动恢复。");
+        }
+
+        var completedRestoreResult = restoreResult ?? new ReplyActionResult(false, "未执行剪贴板恢复。");
+        return completedRestoreResult.Success
+            ? new ReplyActionResult(true, $"{actionText}，并恢复原剪贴板。")
+            : new ReplyActionResult(true, $"{actionText}，但{completedRestoreResult.Message}");
+    }
+
+    private sealed record ComposeAttemptContext(
+        string ComposeKind,
+        int AttemptIndex,
+        string AttemptReason,
+        SendHostProfile HostProfile,
+        WindowDockTargetInfo? TargetWindowInfo,
+        AppSettings Settings);
+
+    private readonly record struct ComposeRetryDecision(
+        string RetryReason,
+        string FailureCategory);
+
+    private readonly record struct RetryAttemptPreparation(
+        ComposeAttemptContext? AttemptContext,
+        ReplyActionResult? BlockedResult,
+        bool TargetChangedBeforeRetry);
+
+    private readonly record struct ClipboardStepResult(
+        ReplyActionResult? FailureResult,
+        ClipboardFingerprint? Fingerprint);
+
+    private readonly record struct ClipboardWriteStepResult(
+        ReplyActionResult? FailureResult,
+        ClipboardFingerprint? Fingerprint);
+
+    private RetryAttemptPreparation PrepareRetryAttemptContext(
+        ComposeAttemptContext firstAttemptContext,
+        AppSettings settings,
+        ComposeRetryDecision retryDecision)
+    {
+        var refreshedTargetWindowInfo = ResolveLatestTargetWindowInfo(firstAttemptContext.TargetWindowInfo);
+        var initialTargetWindowHandle = NormalizeTargetWindowHandle(firstAttemptContext.TargetWindowInfo?.Handle ?? IntPtr.Zero);
+        var refreshedTargetWindowHandle = NormalizeTargetWindowHandle(
+            refreshedTargetWindowInfo?.Handle ?? _externalWorkbenchService.GetLastExternalWindowHandle());
+        var targetChangedBeforeRetry = initialTargetWindowHandle != IntPtr.Zero &&
+                                       refreshedTargetWindowHandle != IntPtr.Zero &&
+                                       initialTargetWindowHandle != refreshedTargetWindowHandle;
+        if (targetChangedBeforeRetry)
+        {
+            return new RetryAttemptPreparation(
+                null,
+                CreateFailureResult(
+                    ReplyActionFailureKind.TargetChanged,
+                    "检测到目标输入窗口已变化，已取消自动补救。请重新回到目标聊天窗口后再试。",
+                    "请重新切回目标聊天输入框后再执行发送。"),
+                true);
+        }
+
+        return new RetryAttemptPreparation(
+            CreateAttemptContext(
+                firstAttemptContext.ComposeKind,
+                settings,
+                attemptIndex: 2,
+                attemptReason: retryDecision.RetryReason,
+                preferredTargetWindowInfo: refreshedTargetWindowInfo),
+            null,
+            false);
+    }
+
+    private WindowDockTargetInfo? ResolveLatestTargetWindowInfo(WindowDockTargetInfo? fallbackWindowInfo)
+    {
+        if (_externalWorkbenchService.TryGetLastExternalWindowInfo(out var latestWindowInfo) &&
+            latestWindowInfo is not null)
+        {
+            return latestWindowInfo;
+        }
+
+        var lastHandle = _externalWorkbenchService.GetLastExternalWindowHandle();
+        if (lastHandle != IntPtr.Zero &&
+            _externalWorkbenchService.TryGetWindowInfo(lastHandle, out var windowInfoByHandle) &&
+            windowInfoByHandle is not null)
+        {
+            return windowInfoByHandle;
+        }
+
+        return fallbackWindowInfo;
+    }
+
+    private IntPtr NormalizeTargetWindowHandle(IntPtr windowHandle)
+    {
+        return _windowFocusService.NormalizeTopLevelWindow(windowHandle);
+    }
+
+    private static ReplyActionResult CreateFailureResult(
+        ReplyActionFailureKind failureKind,
+        string message,
+        string guidance = "")
+    {
+        return new ReplyActionResult(false, message, FailureKind: failureKind, UserGuidance: guidance);
+    }
+
+    private static ReplyActionResult AnnotateFailure(
+        ReplyActionResult result,
+        ReplyActionFailureKind failureKind,
+        string guidance = "")
+    {
+        if (result.Success)
+        {
+            return result;
+        }
+
+        return result with
+        {
+            FailureKind = result.FailureKind == ReplyActionFailureKind.None ? failureKind : result.FailureKind,
+            UserGuidance = string.IsNullOrWhiteSpace(result.UserGuidance) ? guidance : result.UserGuidance
+        };
+    }
+
+    private static async Task<ReplyActionResult> AnnotateClipboardResultAsync(
+        Task<ReplyActionResult> resultTask,
+        string clipboardGuidance)
+    {
+        var result = await resultTask.ConfigureAwait(false);
+        return AnnotateFailure(result, ResolveFailureKind(result, ReplyActionFailureKind.ClipboardBusy), clipboardGuidance);
+    }
+
+    private static ReplyActionFailureKind ResolveFailureKind(
+        ReplyActionResult result,
+        ReplyActionFailureKind fallback = ReplyActionFailureKind.Unexpected)
+    {
+        if (result.Success)
+        {
+            return ReplyActionFailureKind.None;
+        }
+
+        return result.FailureKind != ReplyActionFailureKind.None
+            ? result.FailureKind
+            : InferFailureKind(result.Message, fallback);
+    }
+
+    private static ReplyActionFailureKind InferFailureKind(
+        string message,
+        ReplyActionFailureKind fallback = ReplyActionFailureKind.Unexpected)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return fallback;
+        }
+
+        if (message.Contains("未找到目标输入窗口", StringComparison.Ordinal))
+        {
+            return ReplyActionFailureKind.MissingTargetWindow;
+        }
+
+        if (message.Contains("未能稳定切回目标输入窗口", StringComparison.Ordinal))
+        {
+            return ReplyActionFailureKind.ActivationFailed;
+        }
+
+        if (message.Contains("目标输入窗口已变化", StringComparison.Ordinal))
+        {
+            return ReplyActionFailureKind.TargetChanged;
+        }
+
+        if (message.Contains("焦点已丢失", StringComparison.Ordinal) ||
+            message.Contains("先点一下聊天输入框", StringComparison.Ordinal))
+        {
+            return ReplyActionFailureKind.FocusLost;
+        }
+
+        if (message.Contains("OpenClipboard", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("CLIPBRD", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("占用", StringComparison.Ordinal) ||
+            message.Contains("Insufficient memory", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("超时", StringComparison.Ordinal))
+        {
+            return ReplyActionFailureKind.ClipboardBusy;
+        }
+
+        if (message.Contains("文件不存在", StringComparison.Ordinal) ||
+            message.Contains("未找到图片文件", StringComparison.Ordinal))
+        {
+            return ReplyActionFailureKind.MissingInput;
+        }
+
+        return fallback;
+    }
+
+    private static string InferFailureGuidance(string message)
+    {
+        return InferFailureKind(message) switch
+        {
+            ReplyActionFailureKind.MissingTargetWindow => "请先点击目标聊天输入框，再回到工具执行发送。",
+            ReplyActionFailureKind.ActivationFailed => "请先切回目标聊天输入框后重试。",
+            ReplyActionFailureKind.FocusLost => "请重新点击聊天输入框后重试。",
+            ReplyActionFailureKind.ClipboardBusy => "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+            ReplyActionFailureKind.MissingInput => "请确认图片或文件仍存在，或重新选择后再试。",
+            ReplyActionFailureKind.TargetChanged => "请重新确认当前聊天窗口后再重试。",
+            _ => string.Empty
+        };
+    }
+}

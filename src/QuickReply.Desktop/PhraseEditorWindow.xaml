@@ -1,0 +1,327 @@
+﻿<Window x:Class="QuickReply.Desktop.PhraseEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:QuickReply.Desktop"
+        Title="短语编辑"
+        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Width="760"
+        Height="720"
+        MinWidth="700"
+        MinHeight="620"
+        Background="Transparent"
+        FontFamily="Segoe UI Variable Text"
+        AllowsTransparency="True"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        WindowStyle="None">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanVisibilityConverter" />
+
+        <Style x:Key="EditorTextBoxStyle"
+               TargetType="TextBox"
+               BasedOn="{StaticResource AppleInputTextBoxStyle}">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="EditorMultiLineTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource EditorTextBoxStyle}">
+            <Setter Property="Height" Value="Auto" />
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="MinHeight" Value="300" />
+        </Style>
+
+        <Style x:Key="SubtleButtonStyle" TargetType="Button" BasedOn="{StaticResource AppleSecondaryButtonStyle}" />
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ApplePrimaryButtonStyle}" />
+        <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource AppleCompactButtonStyle}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="MinWidth" Value="24" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="12" Style="{StaticResource AppleWindowChromeStyle}">
+        <Border Style="{StaticResource AppleWindowInnerPanelStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,12" MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               FontSize="13"
+                               Foreground="{StaticResource AppleMutedBrush}"
+                               Text="{Binding DialogHeading}" />
+                    <Button Grid.Column="1"
+                            Width="32"
+                            Height="32"
+                            Padding="0"
+                            Click="CloseButton_OnClick"
+                            Content="×"
+                            FontSize="16"
+                            Style="{StaticResource SubtleButtonStyle}" />
+                </Grid>
+
+                <Border Grid.Row="1"
+                        Margin="0,0,0,14"
+                        Style="{StaticResource AppleEditorHeaderCardStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Width="48"
+                                Height="48"
+                                Margin="0,0,14,0"
+                                CornerRadius="14"
+                                Style="{StaticResource AppleStepBadgeStyle}">
+                            <TextBlock HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="22"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       Text="文" />
+                        </Border>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock FontSize="24"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource AppleTitleBrush}"
+                                       Text="{Binding DialogHeading}" />
+                            <TextBlock Margin="0,6,0,0"
+                                       Foreground="{StaticResource AppleMutedBrush}"
+                                       Text="备注标签用于搜索和识别，正文就是实际发给客户的话术内容。支持直接拖入图片，或在内容框按 Ctrl+V 粘贴图片。"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Margin="0,0,0,16" Style="{StaticResource AppleSectionCardStyle}">
+                            <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Foreground="{StaticResource AppleTextBrush}"
+                                           FontWeight="SemiBold"
+                                           Text="备注标签" />
+                                <TextBlock Grid.Column="1"
+                                           Foreground="{StaticResource AppleMutedBrush}"
+                                           Text="用于搜索" />
+                            </Grid>
+                            <TextBox x:Name="TitleTextBox"
+                                     Grid.Row="1"
+                                     Margin="0,8,0,0"
+                                     Style="{StaticResource EditorTextBoxStyle}"
+                                     Text="{Binding PhraseTitle, UpdateSourceTrigger=PropertyChanged}"
+                                     PreviewKeyDown="EditorField_OnPreviewKeyDown" />
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource AppleSectionCardStyle}">
+                            <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Foreground="{StaticResource AppleTextBrush}"
+                                           FontWeight="SemiBold"
+                                           Text="快捷短语内容" />
+                                <TextBlock Grid.Column="1"
+                                           Foreground="{StaticResource AppleMutedBrush}"
+                                           Text="支持多行内容" />
+                            </Grid>
+
+                            <TextBox x:Name="ContentTextBox"
+                                     Grid.Row="1"
+                                     Margin="0,8,0,0"
+                                     Style="{StaticResource EditorMultiLineTextBoxStyle}"
+                                     Text="{Binding PhraseContent, UpdateSourceTrigger=PropertyChanged}"
+                                     AllowDrop="True"
+                                     PreviewKeyDown="EditorField_OnPreviewKeyDown"
+                                     DragOver="PhraseImageDropHost_OnDragOver"
+                                     Drop="PhraseImageDropHost_OnDrop" />
+
+                            <Border Grid.Row="2"
+                                    Margin="0,12,0,0"
+                                    AllowDrop="True"
+                                    DragOver="PhraseImageDropHost_OnDragOver"
+                                    Drop="PhraseImageDropHost_OnDrop"
+                                    Style="{StaticResource AppleSelectionStateStyle}">
+                                <StackPanel>
+                                    <Border Margin="0,0,0,10" Style="{StaticResource AppleToolbarRowStyle}">
+                                        <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Vertical">
+                                            <TextBlock Foreground="{StaticResource AppleTextBrush}"
+                                                       FontWeight="SemiBold"
+                                                       Text="图片预览" />
+                                            <TextBlock Margin="0,4,0,0"
+                                                       Foreground="{StaticResource AppleMutedBrush}"
+                                                       Text="最多 3 张。支持拖入或在内容框按 Ctrl+V 粘贴。" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Width="96"
+                                                Click="ClearAllImagesButton_OnClick"
+                                                Content="清空图片"
+                                                IsEnabled="{Binding HasPhraseImages}"
+                                                IsTabStop="False"
+                                                Style="{StaticResource SubtleButtonStyle}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <TextBlock Margin="0,0,0,10"
+                                               Foreground="{StaticResource AppleSuccessBrush}"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding PhraseImageSummary}" />
+
+                                    <ItemsControl ItemsSource="{Binding ImageSlots}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="3" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type local:PhraseEditorImageSlot}">
+                                                <Border Margin="0,0,10,0"
+                                                        Padding="8"
+                                                        Style="{StaticResource AppleListItemCardStyle}">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="*" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Foreground="{StaticResource AppleMutedBrush}"
+                                                                       FontSize="12"
+                                                                       Text="{Binding SlotTitle}" />
+                                                            <Button Grid.Column="1"
+                                                                    Tag="{Binding SlotIndex}"
+                                                                    Click="RemoveSlotImageButton_OnClick"
+                                                                    Content="×"
+                                                                    Visibility="{Binding HasImage, Converter={StaticResource BooleanVisibilityConverter}}"
+                                                                    IsTabStop="False"
+                                                                    Style="{StaticResource IconButtonStyle}" />
+                                                        </Grid>
+
+                                                        <Border Grid.Row="1"
+                                                                Margin="0,8,0,0"
+                                                                MinHeight="108"
+                                                                Style="{StaticResource AppleSelectionStateStyle}">
+                                                            <Grid>
+                                                                <Image Stretch="UniformToFill"
+                                                                       Source="{Binding Preview}">
+                                                                    <Image.Style>
+                                                                        <Style TargetType="Image">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding HasImage}" Value="True">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Image.Style>
+                                                                </Image>
+                                                                <TextBlock HorizontalAlignment="Center"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="12"
+                                                                           Foreground="{StaticResource AppleMutedBrush}"
+                                                                           Text="{Binding PlaceholderText}"
+                                                                           TextAlignment="Center"
+                                                                           TextWrapping="Wrap">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding HasImage}" Value="True">
+                                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <TextBlock Grid.Row="1"
+                                                                   Margin="0,122,0,0"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{StaticResource AppleMutedBrush}"
+                                                                   FontSize="11"
+                                                                   Text="{Binding FileName}"
+                                                                   TextAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Visibility="{Binding HasImage, Converter={StaticResource BooleanVisibilityConverter}}" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border Grid.Row="3" Margin="0,16,0,0" Style="{StaticResource AppleDialogFooterBarStyle}">
+                    <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{StaticResource AppleMutedBrush}"
+                               Text="保存后会立即同步到快捷短语栏和搜索结果。" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Width="86"
+                                Margin="0,0,10,0"
+                                Click="CancelButton_OnClick"
+                                Content="取消"
+                                Style="{StaticResource SubtleButtonStyle}" />
+                        <Button Width="112"
+                                IsDefault="True"
+                                Click="SaveButton_OnClick"
+                                Content="{Binding ConfirmButtonText}"
+                                Style="{StaticResource PrimaryButtonStyle}" />
+                    </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Border>
+</Window>

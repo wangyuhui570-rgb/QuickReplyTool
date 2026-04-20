@@ -1,0 +1,89 @@
+﻿<Window x:Class="QuickReply.Desktop.CategoryEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="分类"
+        Width="360"
+        Height="212"
+        MinWidth="320"
+        MinHeight="190"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        Background="Transparent"
+        FontFamily="Segoe UI Variable Text">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="4"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <StaticResource x:Key="TitleBrush" ResourceKey="AppleTitleBrush" />
+        <StaticResource x:Key="TextBrush" ResourceKey="AppleTextBrush" />
+        <StaticResource x:Key="MutedBrush" ResourceKey="AppleMutedBrush" />
+    </Window.Resources>
+
+    <Border Margin="12" Style="{StaticResource AppleWindowChromeStyle}">
+        <Border Style="{StaticResource AppleWindowInnerPanelStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
+                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <StackPanel>
+                        <TextBlock FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}"
+                                   Text="{Binding DialogHeading, RelativeSource={RelativeSource AncestorType=Window}}" />
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="分类会显示在顶部标签栏里，支持拖动排序。"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Style="{StaticResource AppleCompactDialogBodyCardStyle}">
+                    <StackPanel>
+                        <TextBlock Margin="0,0,0,6"
+                                   Foreground="{StaticResource TextBrush}"
+                                   FontWeight="SemiBold"
+                                   Text="分类名称" />
+                        <TextBox x:Name="NameTextBox"
+                                 Style="{StaticResource AppleInputTextBoxStyle}"
+                                 Text="{Binding CategoryName, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Grid.Row="2"
+                           Margin="0,0,0,12"
+                           Foreground="{StaticResource MutedBrush}"
+                           TextWrapping="Wrap"
+                           Text="建议控制在 5 个中文字符左右。超过标签宽度的部分会自动收起，但悬停时仍可查看完整名称。" />
+
+                <Border Grid.Row="3" Style="{StaticResource AppleDialogFooterBarStyle}">
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <Button Width="78"
+                                Margin="0,0,8,0"
+                                Click="CancelButton_OnClick"
+                                Content="取消"
+                                Style="{StaticResource AppleSecondaryButtonStyle}" />
+                        <Button Width="88"
+                                IsDefault="True"
+                                Click="SaveButton_OnClick"
+                                Content="{Binding ConfirmButtonText, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Style="{StaticResource ApplePrimaryButtonStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Border>
+</Window>

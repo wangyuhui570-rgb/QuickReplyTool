@@ -1,0 +1,1001 @@
+﻿<Window x:Class="QuickReply.Desktop.SearchOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Width="640"
+        Height="214"
+        MinWidth="320"
+        Background="Transparent"
+        AllowsTransparency="True"
+        FontFamily="Segoe UI Variable Text"
+        ResizeMode="NoResize"
+        ShowActivated="True"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStyle="None">
+    <Border x:Name="OverlayChrome"
+            Margin="0"
+            Padding="10"
+            Background="{DynamicResource SearchOverlayBackgroundBrush}"
+            BorderBrush="{DynamicResource SearchOverlayBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="20"
+            Opacity="1"
+            Effect="{StaticResource AppleFloatingShadowEffect}"
+            RenderTransformOrigin="0.5,0.08">
+        <Border.RenderTransform>
+            <ScaleTransform ScaleX="1"
+                            ScaleY="1" />
+        </Border.RenderTransform>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid>
+                <Grid x:Name="SearchInputHost"
+                      HorizontalAlignment="Left">
+                    <Border x:Name="SearchInputChrome"
+                            Background="{DynamicResource SearchInputBackgroundBrush}"
+                            BorderBrush="{DynamicResource SearchInputBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="14">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderBrush" Value="{DynamicResource SearchInputBorderBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ElementName=SearchTextBox, Path=IsKeyboardFocusWithin}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource AppleAccentBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <TextBox x:Name="SearchTextBox"
+                                     Margin="12,0,88,0"
+                                     Padding="0"
+                                     VerticalAlignment="Center"
+                                     VerticalContentAlignment="Center"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     FontFamily="Microsoft YaHei UI"
+                                     FontSize="13"
+                                     Foreground="{DynamicResource SearchInputForegroundBrush}"
+                                     CaretBrush="{StaticResource AppleAccentBrush}"
+                                     SelectionBrush="#A8D7F6FF"
+                                     TextChanged="SearchTextBox_OnTextChanged"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     TextOptions.TextFormattingMode="Display" />
+                            <TextBlock x:Name="SearchPlaceholderTextBlock"
+                                       Margin="12,0,88,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SearchOverlayMutedBrush}"
+                                       IsHitTestVisible="False"
+                                       Text="{Binding SearchPlaceholderText}"
+                                       TextTrimming="CharacterEllipsis"
+                                       Visibility="Collapsed" />
+                            <Button x:Name="SidebarWorkModeButton"
+                                    Margin="0,0,6,0"
+                                    MinWidth="68"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Click="SidebarWorkModeButton_OnClick"
+                                    Content="{Binding SidebarModeButtonText}"
+                                    Style="{StaticResource AppleSecondaryButtonStyle}"
+                                    ToolTip="{Binding SidebarModeButtonToolTip}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <Border x:Name="ModeToastHost"
+                        Margin="14,-16,0,0"
+                        Padding="12,6"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Background="#F9FBFF"
+                        BorderBrush="{StaticResource AppleAccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        IsHitTestVisible="False"
+                        Opacity="0"
+                        Panel.ZIndex="10"
+                        Visibility="Collapsed">
+                    <TextBlock x:Name="ModeToastTextBlock"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AppleAccentBrush}" />
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="1"
+                    Margin="0,8,0,0"
+                    Padding="10,7"
+                    Background="{DynamicResource RecommendationCardBackgroundBrush}"
+                    BorderBrush="{DynamicResource RecommendationCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasOverlayAssistText}" Value="True">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsOverlayAssistWarning}" Value="True">
+                                <Setter Property="Background" Value="#FFF8E7E7" />
+                                <Setter Property="BorderBrush" Value="#FFD97777" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock FontSize="11"
+                           Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                           Text="{Binding OverlayAssistText}"
+                           TextWrapping="Wrap" />
+            </Border>
+
+            <Border Grid.Row="2"
+                    Margin="0,8,0,0"
+                    Padding="10,8"
+                    Background="{DynamicResource RecommendationPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource RecommendationPanelBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="18">
+                <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShouldShowRecommendationPanel}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                </Border.Style>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              CanContentScroll="True">
+                <StackPanel>
+                    <DockPanel LastChildFill="True">
+                        <TextBlock FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                                   Text="识别推荐" />
+                        <StackPanel DockPanel.Dock="Right"
+                                    Orientation="Horizontal">
+                            <Button Margin="8,0,0,0"
+                                    Click="BeginRecognitionCorrectionButton_OnClick"
+                                    Content="修正识别"
+                                    Style="{StaticResource AppleCompactButtonStyle}" />
+                        </StackPanel>
+                    </DockPanel>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                               Text="{Binding RecognizedCustomerMessageText}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRecognizedCustomerMessage}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="10"
+                               Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                               Text="{Binding RecommendationContextText}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRecommendationContextText}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="10"
+                               Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                               Text="{Binding RecommendationStatusText}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRecommendationStatusText}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="10"
+                               Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                               Text="{Binding RecommendationHintText}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRecommendationHintText}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="10"
+                               Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                               Text="{Binding GroundingSummaryText}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasGroundingSummaryText}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="10"
+                               Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                               Text="{Binding AiDraftStatusMessage}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasAiDraftStatusMessage}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock Margin="0,8,0,0"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                               Text="AI 草稿">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasGeneratedReplies}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding HasAiDraftStatusMessage}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <ItemsControl Margin="0,8,0,0"
+                                  ItemsSource="{Binding AiDraftItems}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasGeneratedReplies}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,8,8"
+                                        Padding="12,10"
+                                        MinWidth="200"
+                                        MaxWidth="240"
+                                        Background="{DynamicResource RecommendationCardBackgroundBrush}"
+                                        BorderBrush="{DynamicResource RecommendationCardBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="16">
+                                    <StackPanel>
+                                        <DockPanel LastChildFill="True">
+                                            <Border DockPanel.Dock="Left"
+                                                    Margin="0,0,6,0"
+                                                    Padding="6,1"
+                                                    Background="{DynamicResource RecommendationBadgeBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource RecommendationBadgeBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource RecommendationBadgeForegroundBrush}"
+                                                           Text="{Binding SourceBadgeText}" />
+                                            </Border>
+                                            <TextBlock FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                       Text="{Binding ProviderDisplayText}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <TextBlock Margin="0,6,0,0"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                   Text="{Binding Text}"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="80" />
+                                        <TextBlock Margin="0,6,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                                                   Text="{Binding Reason}"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="52" />
+                                        <TextBlock Margin="0,4,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                                                   Text="{Binding GroundingSummaryText}"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="42" />
+                                        <StackPanel Margin="0,8,0,0"
+                                                    Orientation="Horizontal"
+                                                    HorizontalAlignment="Right">
+                                            <Button Margin="0,0,6,0"
+                                                    Click="AiDraftInputButton_OnClick"
+                                                    Content="输入"
+                                                    Style="{StaticResource AppleCompactButtonStyle}" />
+                                            <Button Click="AiDraftSendButton_OnClick"
+                                                    Content="发送"
+                                                    Style="{StaticResource AppleCompactPrimaryButtonStyle}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                               Text="推荐短语">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRecommendations}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <ItemsControl Margin="0,6,0,0"
+                                  ItemsSource="{Binding RecommendationItems}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRecommendations}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Margin="0,0,8,8"
+                                        Padding="12,10"
+                                        MinWidth="180"
+                                        MaxWidth="220"
+                                        HorizontalContentAlignment="Stretch"
+                                        ToolTip="{Binding ReasonText}"
+                                        Style="{StaticResource AppleCardButtonStyle}">
+                                        <StackPanel>
+                                            <DockPanel LastChildFill="True">
+                                            <Border DockPanel.Dock="Left"
+                                                    Margin="0,0,6,0"
+                                                    Padding="4,1"
+                                                    Background="{DynamicResource RecommendationBadgeBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource RecommendationBadgeBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="Bold"
+                                                           Foreground="{DynamicResource RecommendationBadgeForegroundBrush}"
+                                                           Text="{Binding DisplayRank}" />
+                                            </Border>
+                                            <Border DockPanel.Dock="Left"
+                                                    Margin="0,0,6,0"
+                                                    Padding="6,1"
+                                                    Background="{DynamicResource RecommendationBadgeBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource RecommendationBadgeBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource RecommendationBadgeForegroundBrush}"
+                                                           Text="{Binding SourceBadgeText}" />
+                                            </Border>
+                                            <TextBlock FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                       Text="{Binding Phrase.DisplayTitle}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <TextBlock Margin="0,4,0,0"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                   Text="{Binding Phrase.Content}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap" />
+                                            <TextBlock Margin="0,4,0,0"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                                                       Text="{Binding ReasonText}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="NoWrap" />
+                                            <StackPanel Margin="0,8,0,0"
+                                                        Orientation="Horizontal"
+                                                        HorizontalAlignment="Right">
+                                                <Button Margin="0,0,6,0"
+                                                        Click="RecommendationInputButton_OnClick"
+                                                        Content="输入"
+                                                        Style="{StaticResource AppleCompactButtonStyle}" />
+                                                <Button
+                                                        Click="RecommendationButton_OnClick"
+                                                        Content="发送"
+                                                        Style="{StaticResource AppleCompactPrimaryButtonStyle}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Margin="0,6,0,0"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                               Text="已发布知识">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasKnowledgeCardMatches}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <ItemsControl Margin="0,6,0,0"
+                                  ItemsSource="{Binding KnowledgeCardItems}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasKnowledgeCardMatches}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,8,8"
+                                        Padding="12,10"
+                                        MinWidth="200"
+                                        MaxWidth="240"
+                                        Background="{DynamicResource RecommendationCardBackgroundBrush}"
+                                        BorderBrush="{DynamicResource RecommendationCardBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="16">
+                                    <StackPanel>
+                                        <DockPanel LastChildFill="True">
+                                            <Border DockPanel.Dock="Left"
+                                                    Margin="0,0,6,0"
+                                                    Padding="6,1"
+                                                    Background="{DynamicResource RecommendationBadgeBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource RecommendationBadgeBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource RecommendationBadgeForegroundBrush}"
+                                                           Text="{Binding SourceBadgeText}" />
+                                            </Border>
+                                            <TextBlock FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                       Text="{Binding Card.ProductKey}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <TextBlock Margin="0,6,0,0"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                   Text="{Binding Card.Question}"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="42" />
+                                        <TextBlock Margin="0,4,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                   Text="{Binding Card.Answer}"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="66" />
+                                        <TextBlock Margin="0,6,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                                                   Text="{Binding ReasonText}"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="42" />
+                                        <StackPanel Margin="0,8,0,0"
+                                                    Orientation="Horizontal"
+                                                    HorizontalAlignment="Right">
+                                            <Button Margin="0,0,6,0"
+                                                    Click="KnowledgeCardInputButton_OnClick"
+                                                    Content="输入"
+                                                    Style="{StaticResource AppleCompactButtonStyle}" />
+                                            <Button Click="KnowledgeCardSendButton_OnClick"
+                                                    Content="发送"
+                                                    Style="{StaticResource AppleCompactPrimaryButtonStyle}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <ItemsControl Margin="0,2,0,0"
+                                  ItemsSource="{Binding SimilarReplyGroups}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSimilarReplyGroups}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,4,0,0"
+                                        Padding="8,6"
+                                        Background="{DynamicResource RecommendationCardBackgroundBrush}"
+                                        BorderBrush="{DynamicResource RecommendationCardBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="14">
+                                    <StackPanel>
+                                        <DockPanel LastChildFill="True">
+                                            <TextBlock FontSize="10"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                                                       Text="{Binding MatchReasonText}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource RecommendationPanelForegroundBrush}"
+                                                       Text="{Binding LastOccurredAtText}" />
+                                        </DockPanel>
+                                        <TextBlock Margin="0,3,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                   Text="{Binding RecognizedCustomerText}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap" />
+                                        <TextBlock Margin="0,3,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource SearchOverlayMutedBrush}"
+                                                   Text="{Binding RepliesPreviewText}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Row="2"
+                  Margin="0,8,0,0">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShouldShowSearchResultsPanel}" Value="True">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0"
+                           LastChildFill="True">
+                    <TextBlock FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                               Text="{Binding ResultsSectionTitle}" />
+                    <TextBlock DockPanel.Dock="Right"
+                               Margin="10,0,0,0"
+                               FontSize="10"
+                               Foreground="{DynamicResource SearchOverlayMutedBrush}"
+                               Text="{Binding ResultsSectionSummary}"
+                               TextTrimming="CharacterEllipsis">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasResultsSectionSummary}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </DockPanel>
+
+                <ListBox x:Name="ResultsList"
+                         Grid.Row="1"
+                         Margin="0,8,0,0"
+                         ItemsSource="{Binding Results}"
+                         SelectedItem="{Binding SelectedResult}"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         HorizontalContentAlignment="Stretch"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.Style>
+                        <Style TargetType="ListBox">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasResults}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.Style>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="{Binding DataContext.ResultItemMargin, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Focusable" Value="False" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Button Tag="{Binding Number}"
+                                    Padding="0"
+                                    Click="ResultButton_OnClick"
+                                    Cursor="Hand"
+                                    HorizontalContentAlignment="Stretch"
+                                    ToolTipOpening="ResultPreviewToolTip_OnOpening"
+                                    ToolTipService.InitialShowDelay="{Binding DataContext.Settings.PhraseHoverPreviewDelayMs, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    ToolTipService.ShowDuration="20000"
+                                    PreviewMouseRightButtonDown="ResultRow_OnPreviewMouseRightButtonDown">
+                                <Button.ToolTip>
+                                    <ToolTip Placement="Mouse"
+                                             HasDropShadow="True"
+                                             Background="{DynamicResource PhraseTooltipBackgroundBrush}"
+                                             BorderBrush="{DynamicResource PhraseTooltipBorderBrush}"
+                                             BorderThickness="1"
+                                             Padding="10"
+                                             MaxWidth="560" />
+                                </Button.ToolTip>
+                                <Button.ContextMenu>
+                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                                 Opened="ResultContextMenu_OnOpened" />
+                                </Button.ContextMenu>
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource AppleSearchResultButtonStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Phrase.IsMultiSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SearchResultSelectedBackgroundBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource SearchResultSelectedBorderBrush}" />
+                                                <Setter Property="BorderThickness" Value="2" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SearchResultSelectedBackgroundBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource SearchResultSelectedBorderBrush}" />
+                                                <Setter Property="BorderThickness" Value="2" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Grid Margin="{Binding DataContext.ResultOuterMargin, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="4" />
+                                        <ColumnDefinition Width="22" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0"
+                                            Width="4"
+                                            Margin="0,2,6,2"
+                                            CornerRadius="2"
+                                            Background="{DynamicResource SearchResultSelectedAccentBrush}">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Phrase.IsMultiSelected}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+
+                                    <Border Grid.Column="1"
+                                            Width="{Binding DataContext.ResultNumberSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            Height="{Binding DataContext.ResultNumberSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource SearchPillBackgroundBrush}"
+                                            CornerRadius="9">
+                                        <TextBlock HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource SearchPillForegroundBrush}"
+                                                   Text="{Binding NumberLabel, Mode=OneWay}" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2"
+                                                Margin="0,0,6,0"
+                                                VerticalAlignment="Center">
+                                        <Border Padding="5,1"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Setter Property="Background" Value="{DynamicResource SearchPillBackgroundBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource SearchPillBorderBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasLabel}" Value="False">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Mode}" Value="File">
+                                                            <Setter Property="Background" Value="{DynamicResource FilePillBackgroundBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource FilePillBorderBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="10"
+                                                       FontWeight="SemiBold"
+                                                       Text="{Binding LabelText}"
+                                                       TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SearchPillForegroundBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Mode}" Value="File">
+                                                                <Setter Property="Foreground" Value="{DynamicResource FilePillForegroundBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+                                        <Border Margin="0,4,0,0"
+                                                Padding="5,1"
+                                                Background="{DynamicResource RecommendationBadgeBackgroundBrush}"
+                                                BorderBrush="{DynamicResource RecommendationBadgeBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsRecommended}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="10"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource RecommendationBadgeForegroundBrush}"
+                                                       Text="{Binding RecommendationBadgeText}" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="3"
+                                                VerticalAlignment="Center">
+                                        <TextBlock FontSize="{Binding DataContext.ResultTitleFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                                   Text="{Binding Title, Mode=OneWay}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Mode}" Value="File">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                            <Setter Property="FontWeight" Value="Bold" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <DockPanel LastChildFill="True">
+                                            <Border Margin="0,0,6,0"
+                                                    Padding="5,1"
+                                                    VerticalAlignment="Center"
+                                                    Background="{DynamicResource RecommendationBadgeBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource RecommendationBadgeBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    DockPanel.Dock="Left">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Phrase.HasImage}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Mode}" Value="File">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource RecommendationBadgeForegroundBrush}"
+                                                           Text="图" />
+                                            </Border>
+                                            <TextBlock Text="{Binding SingleLineContent, Mode=OneWay}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="NoWrap">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="FontSize" Value="{Binding DataContext.ResultTitleFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource SearchOverlayForegroundBrush}" />
+                                                        <Setter Property="FontWeight" Value="Normal" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Mode}" Value="File">
+                                                                <Setter Property="FontSize" Value="11" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource SearchOverlayMutedBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DockPanel>
+
+                                        <TextBlock Margin="0,3,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource RecommendationPanelMutedBrush}"
+                                                   Text="{Binding RecommendationDetailText}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsRecommended}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Border Grid.Row="1"
+                        Margin="0,8,0,0"
+                        Padding="16,14"
+                        Background="{DynamicResource RecommendationCardBackgroundBrush}"
+                        BorderBrush="{DynamicResource RecommendationCardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="16">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasEmptyState}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SearchOverlayForegroundBrush}"
+                                   Text="{Binding EmptyStateTitle}" />
+                        <TextBlock Margin="0,6,0,0"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource SearchOverlayMutedBrush}"
+                                   Text="{Binding EmptyStateHintText}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Popup x:Name="ResultImagePreviewPopup"
+                       AllowsTransparency="True"
+                       Placement="Right"
+                       PopupAnimation="Fade"
+                       StaysOpen="False">
+                    <Border Padding="10"
+                            Background="Transparent">
+                        <Border x:Name="ResultImagePreviewPopupChrome"
+                                MaxWidth="620"
+                                Padding="14"
+                                Background="{StaticResource AppleSurfaceBrush}"
+                                BorderBrush="{StaticResource AppleAccentBrush}"
+                                BorderThickness="1"
+                                CornerRadius="18" />
+                    </Border>
+                </Popup>
+
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

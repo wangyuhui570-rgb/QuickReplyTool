@@ -1,0 +1,618 @@
+﻿<Window x:Class="QuickReply.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="clr-namespace:QuickReply.Desktop.Models"
+        xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
+        mc:Ignorable="d"
+        Title="快捷短语栏"
+        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Width="340"
+        Height="640"
+        MinWidth="180"
+        MinHeight="380"
+        Background="Transparent"
+        AllowsTransparency="True"
+        FontFamily="Segoe UI Variable Text"
+        ResizeMode="NoResize"
+        ShowActivated="False"
+        ShowInTaskbar="False"
+        Topmost="False"
+        WindowStyle="None">
+    <Window.Resources>
+        <Style x:Key="SidebarFooterButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource AppleCompactButtonStyle}">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Background" Value="{DynamicResource FooterSecondaryBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FooterSecondaryBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource FooterSecondaryForegroundBrush}" />
+        </Style>
+        <Style x:Key="SidebarPrimaryFooterButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource AppleCompactPrimaryButtonStyle}">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Background" Value="{DynamicResource FooterPrimaryBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FooterPrimaryBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource FooterPrimaryForegroundBrush}" />
+        </Style>
+        <Style x:Key="SidebarLauncherButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource ApplePrimaryButtonStyle}">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="108" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Background" Value="{DynamicResource FooterPrimaryBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FooterPrimaryBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource FooterPrimaryForegroundBrush}" />
+        </Style>
+    </Window.Resources>
+    <Border Margin="0"
+            Padding="6"
+            Background="{DynamicResource SidebarChromeBrush}"
+            BorderBrush="{DynamicResource SidebarBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="22">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.RowSpan="3"
+                    Padding="8"
+                    Background="{DynamicResource SidebarPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource SidebarPanelBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="18"
+                    Visibility="{Binding CompactLauncherVisibility}">
+                <Grid>
+                    <Button HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Click="CompactSidebarLauncherButton_OnClick"
+                            Style="{StaticResource SidebarLauncherButtonStyle}"
+                            ToolTip="打开侧面快捷短语栏">
+                        <TextBlock Text="展开侧栏"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="0"
+                    Margin="0,0,0,8"
+                    Padding="8,8,8,4"
+                    Background="{DynamicResource SidebarPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource SidebarPanelBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="18"
+                    Visibility="{Binding SidebarWorkspaceVisibility}">
+                <StackPanel>
+                    <Border x:Name="NewCategoryInlineHost"
+                            Margin="2,0,2,8"
+                            Padding="10,6"
+                            Background="{DynamicResource CategoryChipBackgroundBrush}"
+                            BorderBrush="{DynamicResource CategoryChipSelectedBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Visibility="Collapsed">
+                        <TextBox x:Name="NewCategoryInlineTextBox"
+                                 Padding="0"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 FontSize="{Binding Settings.CategoryFontSize}"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource CategoryChipForegroundBrush}"
+                                 Loaded="NewCategoryInlineTextBox_OnLoaded"
+                                 LostKeyboardFocus="NewCategoryInlineTextBox_OnLostKeyboardFocus"
+                                 PreviewKeyDown="NewCategoryInlineTextBox_OnPreviewKeyDown" />
+                    </Border>
+                <ListBox x:Name="CategoryTabs"
+                         ItemsSource="{Binding Categories}"
+                         SelectedItem="{Binding SelectedCategory}"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Focusable="False"
+                         HorizontalContentAlignment="Stretch"
+                         IsTabStop="False"
+                         KeyboardNavigation.TabNavigation="None"
+                         Padding="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.Template>
+                        <ControlTemplate TargetType="ListBox">
+                            <ScrollViewer Padding="0"
+                                          Focusable="False"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Disabled">
+                                <ItemsPresenter />
+                            </ScrollViewer>
+                        </ControlTemplate>
+                    </ListBox.Template>
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <primitives:UniformGrid Columns="{Binding DataContext.Settings.CategoryTabsPerRow, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    IsItemsHost="True" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="2,0,2,6" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:ReplyCategory}">
+                            <Border x:Name="CategoryChipBorder"
+                                    MinHeight="32"
+                                    Padding="10,6"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    SnapsToDevicePixels="True"
+                                    AllowDrop="True"
+                                    Cursor="Hand"
+                                    ToolTip="{Binding Name}"
+                                    MouseRightButtonDown="CategoryChip_OnMouseRightButtonDown"
+                                    PreviewMouseLeftButtonDown="CategoryChip_OnPreviewMouseLeftButtonDown"
+                                    PreviewMouseLeftButtonUp="CategoryChip_OnPreviewMouseLeftButtonUp"
+                                    PreviewMouseMove="CategoryChip_OnPreviewMouseMove"
+                                    DragOver="CategoryChip_OnDragOver"
+                                    Drop="CategoryChip_OnDrop">
+                                <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{DynamicResource CategoryChipBackgroundBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource CategoryChipBorderBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInlineEditing}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource CategoryChipEditingBackgroundBrush}" />
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource CategoryChipSelectedBorderBrush}" />
+                                                    </DataTrigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource CategoryChipHoverBackgroundBrush}" />
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource CategoryChipHoverBorderBrush}" />
+                                                    </Trigger>
+                                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource CategoryChipSelectedBackgroundBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource CategoryChipSelectedBorderBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Border.ContextMenu>
+                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                                 Opened="CategoryContextMenu_OnOpened" />
+                                </Border.ContextMenu>
+                                <Grid>
+                                    <TextBlock HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               FontSize="{Binding DataContext.CategoryChipFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource CategoryChipForegroundBrush}"
+                                               Text="{Binding Name}"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInlineEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                </StackPanel>
+            </Border>
+
+            <Popup x:Name="CategoryEditPopup"
+                   AllowsTransparency="True"
+                   Placement="Bottom"
+                   PopupAnimation="Fade"
+                   StaysOpen="True"
+                   Closed="CategoryEditPopup_OnClosed"
+                   Opened="CategoryEditPopup_OnOpened">
+                <Border Padding="10"
+                        Background="Transparent">
+                    <Border MinWidth="240"
+                            MaxWidth="320"
+                            Padding="12"
+                            Background="{StaticResource AppleSurfaceBrush}"
+                            BorderBrush="{StaticResource AppleAccentBrush}"
+                            BorderThickness="1"
+                            CornerRadius="16">
+                        <StackPanel>
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource AppleAccentBrush}"
+                                       Text="编辑分类" />
+                            <TextBox x:Name="CategoryPopupTextBox"
+                                     Margin="0,8,0,10"
+                                     Style="{StaticResource AppleInputTextBoxStyle}"
+                                     PreviewKeyDown="CategoryPopupTextBox_OnPreviewKeyDown" />
+                            <StackPanel HorizontalAlignment="Right"
+                                        Orientation="Horizontal">
+                                <Button Width="70"
+                                        Margin="0,0,8,0"
+                                        Click="CategoryEditCancelButton_OnClick"
+                                        Content="取消"
+                                        Style="{StaticResource AppleCompactButtonStyle}" />
+                                <Button Width="76"
+                                        Click="CategoryEditSaveButton_OnClick"
+                                        Content="保存"
+                                        Style="{StaticResource AppleCompactPrimaryButtonStyle}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Border>
+            </Popup>
+
+            <Popup x:Name="PhraseImagePreviewPopup"
+                   AllowsTransparency="True"
+                   Placement="Right"
+                   PopupAnimation="Fade"
+                   StaysOpen="False">
+                <Border Padding="10"
+                        Background="Transparent">
+                    <Border x:Name="PhraseImagePreviewPopupChrome"
+                            MaxWidth="620"
+                            Padding="14"
+                            Background="{StaticResource AppleSurfaceBrush}"
+                            BorderBrush="{StaticResource AppleAccentBrush}"
+                            BorderThickness="1"
+                            CornerRadius="18" />
+                </Border>
+            </Popup>
+
+            <ListBox x:Name="PhraseList"
+                     Grid.Row="1"
+                     Margin="0,0,0,6"
+                     ItemsSource="{Binding FilteredPhrases}"
+                     SelectedItem="{Binding SelectedPhrase}"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Focusable="False"
+                     HorizontalContentAlignment="Stretch"
+                     IsTabStop="False"
+                     KeyboardNavigation.TabNavigation="None"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     TabIndex="0"
+                     Visibility="{Binding SidebarWorkspaceVisibility}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type models:ReplyPhrase}">
+                        <StackPanel Margin="{Binding DataContext.PhraseRowMargin, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    PreviewMouseRightButtonDown="PhraseRow_OnPreviewMouseRightButtonDown">
+                            <Border Margin="30,0,0,4"
+                                    Padding="10,8"
+                                    Background="{DynamicResource PhraseInlineEditorBackgroundBrush}"
+                                    BorderBrush="{DynamicResource PhraseInlineEditorBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsInlineInsertEditing}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBox MinHeight="34"
+                                         Padding="6,4"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         AcceptsReturn="False"
+                                         Loaded="InlineInsertTextBox_OnLoaded"
+                                         LostKeyboardFocus="InlineInsertTextBox_OnLostKeyboardFocus"
+                                         PreviewKeyDown="InlineInsertTextBox_OnPreviewKeyDown"
+                                         PreviewMouseLeftButtonDown="InlineInsertTextBox_OnPreviewMouseLeftButtonDown"
+                                         PreviewMouseLeftButtonUp="InlineInsertTextBox_OnPreviewMouseLeftButtonUp"
+                                         Text="{Binding InlineInsertDraft, UpdateSourceTrigger=PropertyChanged}" />
+                            </Border>
+
+                        <Grid x:Name="PhraseHoverHost">
+                            <Grid.ContextMenu>
+                                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                             Opened="PhraseContextMenu_OnOpened" />
+                            </Grid.ContextMenu>
+
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="0" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0"
+                                    Grid.ColumnSpan="2"
+                                    Panel.ZIndex="3"
+                                    Width="{Binding DataContext.PhraseArrowButtonSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    Height="{Binding DataContext.PhraseArrowButtonSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    Margin="{Binding DataContext.PhraseArrowMargin, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    HorizontalAlignment="Left"
+                                    Padding="0"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource PhraseArrowBackgroundBrush}"
+                                    BorderBrush="{DynamicResource PhraseArrowBorderBrush}"
+                                    BorderThickness="1"
+                                    Click="SendPhraseButton_OnClick"
+                                    Content="←"
+                                    FontSize="{Binding DataContext.PhraseArrowFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    FontWeight="Bold"
+                                    Foreground="{DynamicResource PhraseArrowForegroundBrush}"
+                                    ToolTip="直接发送给客户">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Focusable" Value="False" />
+                                        <Setter Property="IsTabStop" Value="False" />
+                                        <Setter Property="Opacity" Value="0" />
+                                        <Setter Property="IsHitTestVisible" Value="False" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="ArrowBorder"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="12">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="ArrowBorder" Property="Background" Value="{DynamicResource PhraseArrowHoverBackgroundBrush}" />
+                                                            <Setter TargetName="ArrowBorder" Property="BorderBrush" Value="{DynamicResource PhraseArrowHoverBorderBrush}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsPressed" Value="True">
+                                                            <Setter TargetName="ArrowBorder" Property="Opacity" Value="0.9" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ElementName=PhraseHoverHost, Path=IsMouseOver}" Value="True">
+                                                <Setter Property="Opacity" Value="0.96" />
+                                                <Setter Property="IsHitTestVisible" Value="True" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Border Grid.Column="0"
+                                    Grid.ColumnSpan="2"
+                                    Padding="{Binding DataContext.PhraseCardPadding, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    CornerRadius="16"
+                                    MouseLeftButtonUp="PhraseItem_OnMouseLeftButtonUp"
+                                    PreviewMouseLeftButtonDown="PhraseItem_OnPreviewMouseLeftButtonDown"
+                                    ToolTipOpening="PhrasePreviewToolTip_OnOpening"
+                                    ToolTipService.InitialShowDelay="{Binding DataContext.Settings.PhraseHoverPreviewDelayMs, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    ToolTipService.ShowDuration="20000">
+                                <Border.ToolTip>
+                                    <ToolTip Placement="Mouse"
+                                             HasDropShadow="True"
+                                             Background="{DynamicResource PhraseTooltipBackgroundBrush}"
+                                             BorderBrush="{DynamicResource PhraseTooltipBorderBrush}"
+                                             BorderThickness="1"
+                                             Padding="10"
+                                             MaxWidth="560" />
+                                </Border.ToolTip>
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{DynamicResource PhraseCardBackgroundBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource PhraseCardBorderBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMultiSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource PhraseCardSelectedBackgroundBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource PhraseCardSelectedBorderBrush}" />
+                                                <Setter Property="BorderThickness" Value="2" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0"
+                                            Margin="0,0,6,0"
+                                            Padding="6,2"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource TagBadgeBackgroundBrush}"
+                                            BorderBrush="{DynamicResource TagBadgeBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInlineTagEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBox MinWidth="96"
+                                                 MaxWidth="160"
+                                                 Padding="0"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 FontSize="10"
+                                                 FontWeight="SemiBold"
+                                                 Foreground="{DynamicResource TagBadgeForegroundBrush}"
+                                                 Loaded="InlineTagTextBox_OnLoaded"
+                                                 LostKeyboardFocus="InlineTagTextBox_OnLostKeyboardFocus"
+                                                 PreviewKeyDown="InlineTagTextBox_OnPreviewKeyDown"
+                                                 PreviewMouseLeftButtonDown="InlineTagTextBox_OnPreviewMouseLeftButtonDown"
+                                                 PreviewMouseLeftButtonUp="InlineTagTextBox_OnPreviewMouseLeftButtonUp"
+                                                 Text="{Binding InlineTagDraft, UpdateSourceTrigger=PropertyChanged}" />
+                                    </Border>
+
+                                    <Border Grid.Column="0"
+                                            Margin="0,0,6,0"
+                                            Padding="5,1"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource TagBadgeBackgroundBrush}"
+                                            BorderBrush="{DynamicResource TagBadgeBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasDisplayTitle}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsInlineTagEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TagBadgeForegroundBrush}"
+                                                   Text="{Binding DisplayTitle}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Border>
+
+                                    <Border Grid.Column="0"
+                                            Margin="0,0,6,0"
+                                            Padding="5,1"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource PhraseImageBadgeBackgroundBrush}"
+                                            BorderBrush="{DynamicResource PhraseImageBadgeBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasImage}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HasDisplayTitle}" Value="True">
+                                                        <Setter Property="Margin" Value="52,0,6,0" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsInlineTagEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource PhraseImageBadgeForegroundBrush}"
+                                                   Text="图" />
+                                    </Border>
+
+                                    <TextBox Grid.Column="1"
+                                             x:Name="PhraseInlineContentTextBox"
+                                             MinHeight="60"
+                                             Padding="0"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Hidden"
+                                             FontSize="{Binding DataContext.PhraseTitleFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                             Foreground="{DynamicResource PhraseCardForegroundBrush}"
+                                             Loaded="InlineContentTextBox_OnLoaded"
+                                             LostKeyboardFocus="InlineContentTextBox_OnLostKeyboardFocus"
+                                             PreviewKeyDown="InlineContentTextBox_OnPreviewKeyDown"
+                                             PreviewMouseLeftButtonDown="InlineContentTextBox_OnPreviewMouseLeftButtonDown"
+                                             PreviewMouseLeftButtonUp="InlineContentTextBox_OnPreviewMouseLeftButtonUp"
+                                             Text="{Binding InlineContentDraft, UpdateSourceTrigger=PropertyChanged}">
+                                        <TextBox.Style>
+                                            <Style TargetType="TextBox">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInlineContentEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBox.Style>
+                                    </TextBox>
+
+                                    <TextBlock Grid.Column="1"
+                                               x:Name="PhraseContentTextBlock"
+                                               FontSize="{Binding DataContext.PhraseTitleFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                               Foreground="{DynamicResource PhraseCardForegroundBrush}"
+                                               Text="{Binding SingleLineContent}"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInlineContentEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Grid Grid.Row="2"
+                  Visibility="{Binding SidebarWorkspaceVisibility}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button MinWidth="64"
+                        HorizontalAlignment="Left"
+                        Click="SettingsButton_OnClick"
+                        Content="&#x9009;&#x9879;"
+                        Style="{StaticResource SidebarFooterButtonStyle}"
+                        ToolTip="&#x6253;&#x5F00;&#x8BBE;&#x7F6E;&#x83DC;&#x5355;" />
+
+                <Button Grid.Column="1"
+                        MinWidth="72"
+                        HorizontalAlignment="Right"
+                        Click="AddPhraseButton_OnClick"
+                        Content="新建"
+                        Style="{StaticResource SidebarPrimaryFooterButtonStyle}"
+                        ToolTip="快速新建短语" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+

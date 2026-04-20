@@ -1,0 +1,42 @@
+﻿客服效率工具绿色版说明
+
+本文件夹只包含程序文件。
+不包含用户个人数据。
+
+个人数据保存位置
+
+- %AppData%\QuickReplyTool\quick-reply.db
+- %AppData%\QuickReplyTool\phrase-images
+- %AppData%\QuickReplyTool\logs
+
+首次使用
+
+1. 请先把整个绿色版文件夹放到一个固定位置。
+2. 双击 START_HERE.bat 启动程序。
+3. 也可以直接运行 Launch-QuickReplyTool.bat 或 app\QuickReplyTool.exe。
+4. 如果后续开启了开机启动或管理员启动，请不要随意移动这个文件夹。
+
+推荐升级方式
+
+1. 先关闭客服效率工具。
+2. 把新的绿色版压缩包解压到一个临时文件夹。
+3. 运行新包里的 Upgrade-Portable.bat。
+4. 选择你当前正在使用的旧绿色版根目录。
+5. 脚本会原地更新程序文件，不会动 %AppData%\QuickReplyTool 里的个人数据。
+
+手动升级方式
+
+1. 先关闭客服效率工具。
+2. 保持旧绿色版安装路径不变。
+3. 用新包里的 app 文件夹内容覆盖旧 app 文件夹内容。
+4. 同时替换根目录下这些辅助文件：
+   Launch-QuickReplyTool.bat
+   Upgrade-Portable.bat
+   使用说明.txt
+   版本信息.txt
+
+注意事项
+
+1. 把绿色版发给别人时，不要把 %AppData%\QuickReplyTool 一起打包出去。
+2. 如果收件人在一个完全不同的路径直接运行新包，原来的开机启动或管理员计划任务可能还指向旧路径。
+3. 这种情况下，打开程序后把开机启动或管理员启动设置重新保存一次即可刷新路径。

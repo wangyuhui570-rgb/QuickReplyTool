@@ -1,0 +1,287 @@
+﻿<Window x:Class="QuickReply.Desktop.PhraseCleanupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:models="clr-namespace:QuickReply.Desktop.Models"
+        Title="整理快捷短语"
+        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Width="980"
+        Height="760"
+        MinWidth="860"
+        MinHeight="620"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        Background="Transparent"
+        FontFamily="Segoe UI Variable Text">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <StaticResource x:Key="TitleBrush" ResourceKey="AppleTitleBrush" />
+        <StaticResource x:Key="TextBrush" ResourceKey="AppleTextBrush" />
+        <StaticResource x:Key="MutedBrush" ResourceKey="AppleMutedBrush" />
+
+        <Style x:Key="SurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource AppleSurfaceCardStyle}">
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+            <Setter Property="CornerRadius" Value="18" />
+        </Style>
+        <Style x:Key="SummaryCardStyle" TargetType="Border" BasedOn="{StaticResource AppleEditorHeaderCardStyle}">
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+        <Style x:Key="HeaderActionCardStyle" TargetType="Border" BasedOn="{StaticResource AppleToolbarRowStyle}">
+            <Setter Property="Margin" Value="0,0,0,14" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style x:Key="GroupCardStyle" TargetType="Border" BasedOn="{StaticResource AppleStatsCardStyle}">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="CornerRadius" Value="16" />
+        </Style>
+        <Style x:Key="NeutralGroupCardStyle" TargetType="Border" BasedOn="{StaticResource AppleInsetCardStyle}">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="CornerRadius" Value="16" />
+        </Style>
+        <Style x:Key="ItemCardStyle" TargetType="Border" BasedOn="{StaticResource AppleListItemCardStyle}">
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource AppleSecondaryButtonStyle}" />
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ApplePrimaryButtonStyle}" />
+        <Style x:Key="CleanupTabControlStyle" TargetType="TabControl" BasedOn="{StaticResource AppleTabControlStyle}">
+            <Setter Property="ItemContainerStyle" Value="{StaticResource AppleTabItemStyle}" />
+        </Style>
+        <Style x:Key="CleanupTabItemStyle" TargetType="TabItem" BasedOn="{StaticResource AppleTabItemStyle}" />
+        <Style x:Key="SummaryBadgeStyle" TargetType="Border" BasedOn="{StaticResource AppleCountBadgeStyle}">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+        <Style x:Key="SummaryBadgeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource AppleCountBadgeTextStyle}" />
+        <Style x:Key="NeutralBadgeStyle" TargetType="Border" BasedOn="{StaticResource AppleSubtleCountBadgeStyle}" />
+        <Style x:Key="NeutralBadgeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource AppleSubtleCountBadgeTextStyle}" />
+        <Style x:Key="FooterBarStyle" TargetType="Border" BasedOn="{StaticResource AppleDialogFooterBarStyle}">
+            <Setter Property="Margin" Value="0,0,0,0" />
+        </Style>
+    </Window.Resources>
+    <Border Margin="12" Style="{StaticResource AppleWindowChromeStyle}">
+        <Border Style="{StaticResource AppleWindowInnerPanelStyle}">
+            <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Style="{StaticResource SummaryCardStyle}" MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right"
+                        Width="100"
+                        Margin="12,0,0,0"
+                        Click="RescanButton_OnClick"
+                        Content="重新扫描"
+                        Style="{StaticResource ActionButtonStyle}" />
+                <StackPanel>
+                    <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="整理快捷短语" />
+                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="先找出完全重复的短语，再列出内容高度相似的候选项。勾选后统一删除，未勾选的保留。" TextWrapping="Wrap" />
+                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding SummaryText}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TabControl Grid.Row="1" Background="Transparent" Style="{StaticResource CleanupTabControlStyle}">
+            <TabItem Header="完全重复">
+                <Grid Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" Style="{StaticResource HeaderActionCardStyle}">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right"
+                                    Width="144"
+                                    Click="DeleteExactSelectedButton_OnClick"
+                                    Content="{Binding DeleteExactButtonText}"
+                                    IsEnabled="{Binding CanDeleteExactSelection}"
+                                    Style="{StaticResource PrimaryButtonStyle}" />
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="完全重复项" />
+                                <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding ExactSummaryText}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Row="1" Style="{StaticResource SurfaceCardStyle}">
+                        <Grid>
+                            <TextBlock Foreground="{StaticResource MutedBrush}" Text="当前没有扫描到完全重复的快捷短语。">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasExactGroups}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding ExactDuplicateGroups}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:PhraseCleanupGroup}">
+                                            <Border Margin="0,0,0,12" Style="{StaticResource GroupCardStyle}">
+                                                <StackPanel>
+                                                    <DockPanel LastChildFill="True">
+                                                        <Border DockPanel.Dock="Right" Style="{StaticResource SummaryBadgeStyle}">
+                                                            <TextBlock Style="{StaticResource SummaryBadgeTextStyle}" Text="{Binding SelectedSummary}" />
+                                                        </Border>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding Header}" />
+                                                            <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                    <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding Items}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type models:PhraseCleanupItem}">
+                                                                <Border Margin="0,0,0,8" Style="{StaticResource ItemCardStyle}">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <CheckBox Margin="0,2,12,0" VerticalAlignment="Top" IsChecked="{Binding IsSelected}" />
+                                                                        <StackPanel Grid.Column="1">
+                                                                            <TextBlock FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                                                            <TextBlock Margin="0,3,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding ContentPreview}" TextWrapping="Wrap" />
+                                                                            <TextBlock Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" Text="{Binding CategoryName}" />
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="2" Margin="12,0,0,0" HorizontalAlignment="Right">
+                                                                            <Border Margin="0,0,0,6" Style="{StaticResource NeutralBadgeStyle}">
+                                                                                <TextBlock Style="{StaticResource NeutralBadgeTextStyle}" Text="{Binding UsageSummary}" />
+                                                                            </Border>
+                                                                            <Border Style="{StaticResource NeutralBadgeStyle}">
+                                                                                <TextBlock Style="{StaticResource NeutralBadgeTextStyle}" Text="{Binding ImageSummary}" />
+                                                                            </Border>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem Header="内容相似">
+                <Grid Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" Style="{StaticResource HeaderActionCardStyle}">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right"
+                                    Width="144"
+                                    Click="DeleteSimilarSelectedButton_OnClick"
+                                    Content="{Binding DeleteSimilarButtonText}"
+                                    IsEnabled="{Binding CanDeleteSimilarSelection}"
+                                    Style="{StaticResource PrimaryButtonStyle}" />
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="相似短语候选" />
+                                <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding SimilarSummaryText}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Row="1" Style="{StaticResource SurfaceCardStyle}">
+                        <Grid>
+                            <TextBlock Foreground="{StaticResource MutedBrush}" Text="当前没有扫描到内容高度相似的快捷短语。">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasSimilarGroups}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding SimilarGroups}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:PhraseCleanupGroup}">
+                                            <Border Margin="0,0,0,12" Style="{StaticResource NeutralGroupCardStyle}">
+                                                <StackPanel>
+                                                    <DockPanel LastChildFill="True">
+                                                        <Border DockPanel.Dock="Right" Style="{StaticResource NeutralBadgeStyle}">
+                                                            <TextBlock Style="{StaticResource NeutralBadgeTextStyle}" Text="{Binding SelectedSummary}" />
+                                                        </Border>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding Header}" />
+                                                            <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                    <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding Items}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type models:PhraseCleanupItem}">
+                                                                <Border Margin="0,0,0,8" Style="{StaticResource ItemCardStyle}">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <CheckBox Margin="0,2,12,0" VerticalAlignment="Top" IsChecked="{Binding IsSelected}" />
+                                                                        <StackPanel Grid.Column="1">
+                                                                            <TextBlock FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                                                            <TextBlock Margin="0,3,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding ContentPreview}" TextWrapping="Wrap" />
+                                                                            <TextBlock Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" Text="{Binding CategoryName}" />
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="2" Margin="12,0,0,0" HorizontalAlignment="Right">
+                                                                            <Border Margin="0,0,0,6" Style="{StaticResource NeutralBadgeStyle}">
+                                                                                <TextBlock Style="{StaticResource NeutralBadgeTextStyle}" Text="{Binding UsageSummary}" />
+                                                                            </Border>
+                                                                            <Border Style="{StaticResource NeutralBadgeStyle}">
+                                                                                <TextBlock Style="{StaticResource NeutralBadgeTextStyle}" Text="{Binding ImageSummary}" />
+                                                                            </Border>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Style="{StaticResource FooterBarStyle}">
+            <DockPanel>
+                <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="删除后会同步清理对应图片、快捷标签和统计孤儿数据。" />
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Width="92" Margin="0,0,10,0" Click="CloseButton_OnClick" Content="关闭" Style="{StaticResource ActionButtonStyle}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+            </Grid>
+        </Border>
+    </Border>
+</Window>

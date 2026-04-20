@@ -1,0 +1,103 @@
+name: quickreply-ci
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      includePackagingChecks:
+        description: Run portable and patch smoke packaging checks
+        required: false
+        default: false
+        type: boolean
+      includeInstallerCheck:
+        description: Install Inno Setup and run installer smoke packaging check
+        required: false
+        default: false
+        type: boolean
+      releaseEvidenceVersion:
+        description: Optional version label for generating and uploading release evidence
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\NuGet\Cache
+            ~\AppData\Local\NuGet\v3-cache
+            ~\.nuget\packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve artifact names
+        id: artifact-names
+        shell: pwsh
+        env:
+          RELEASE_EVIDENCE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.releaseEvidenceVersion || '' }}
+        run: |
+          $suffix = $env:RELEASE_EVIDENCE_VERSION
+          if ([string]::IsNullOrWhiteSpace($suffix)) {
+            $suffix = 'run-${{ github.run_number }}'
+          }
+
+          $safeSuffix = ($suffix -replace '[^A-Za-z0-9._-]', '-').Trim('-')
+          if ([string]::IsNullOrWhiteSpace($safeSuffix)) {
+            $safeSuffix = 'run-${{ github.run_number }}'
+          }
+
+          "test_gates_name=test-gates-$safeSuffix" >> $env:GITHUB_OUTPUT
+          "release_evidence_name=release-evidence-$safeSuffix" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        if: github.event_name == 'workflow_dispatch' && inputs.includeInstallerCheck
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Run local test gates
+        shell: pwsh
+        env:
+          INCLUDE_INSTALLER_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.includeInstallerCheck || false }}
+          RELEASE_EVIDENCE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.releaseEvidenceVersion || '' }}
+        run: |
+          $gateArgs = @('-IncludePackagingChecks')
+          if ($env:INCLUDE_INSTALLER_CHECK -eq 'true') {
+            $gateArgs += '-IncludeInstallerCheck'
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_EVIDENCE_VERSION)) {
+            $gateArgs += @('-ReleaseEvidenceVersion', $env:RELEASE_EVIDENCE_VERSION)
+          }
+          ./scripts/run-test-gates.ps1 @gateArgs
+
+      - name: Upload gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-names.outputs.test_gates_name }}
+          path: artifacts/test-gates/**
+          if-no-files-found: warn
+
+      - name: Upload release evidence artifacts
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.releaseEvidenceVersion != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-names.outputs.release_evidence_name }}
+          path: artifacts/release-evidence/**
+          if-no-files-found: warn

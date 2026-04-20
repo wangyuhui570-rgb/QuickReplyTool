@@ -1,0 +1,91 @@
+﻿<Window x:Class="QuickReply.Desktop.ImportProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="导入快捷短语"
+        Width="420"
+        Height="170"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        Background="Transparent"
+        FontFamily="Segoe UI Variable Text">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="4"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <StaticResource x:Key="TitleBrush" ResourceKey="AppleTitleBrush" />
+        <StaticResource x:Key="MutedBrush" ResourceKey="AppleMutedBrush" />
+
+        <Style x:Key="ProgressTrackStyle" TargetType="ProgressBar">
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Foreground" Value="{StaticResource AppleAccentBrush}" />
+            <Setter Property="Background" Value="{StaticResource AppleProgressTrackBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="5">
+                            <Grid x:Name="PART_Track">
+                                <Border x:Name="PART_Indicator"
+                                        HorizontalAlignment="Left"
+                                        Background="{TemplateBinding Foreground}"
+                                        CornerRadius="5" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Orientation" Value="Vertical">
+                                <Setter TargetName="PART_Indicator" Property="VerticalAlignment" Value="Bottom" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="12" Style="{StaticResource AppleWindowChromeStyle}">
+        <Border Style="{StaticResource AppleWindowInnerPanelStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Margin="0,0,0,12"
+                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
+                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <TextBlock x:Name="StatusTextBlock"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}"
+                               Text="准备导入..." />
+                </Border>
+
+                <Border Grid.Row="1"
+                        Margin="0,0,0,10"
+                        Style="{StaticResource AppleCompactDialogBodyCardStyle}">
+                    <ProgressBar x:Name="ImportProgressBar"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Value="0"
+                                 Style="{StaticResource ProgressTrackStyle}" />
+                </Border>
+
+                <TextBlock x:Name="PercentTextBlock"
+                           Grid.Row="2"
+                           HorizontalAlignment="Right"
+                           Foreground="{StaticResource MutedBrush}"
+                           Text="0%" />
+            </Grid>
+        </Border>
+    </Border>
+</Window>

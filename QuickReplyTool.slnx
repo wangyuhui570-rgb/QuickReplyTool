@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QuickReply.Desktop/QuickReply.Desktop.csproj" />
+    <Project Path="src/QuickReply.ReplayEval/QuickReply.ReplayEval.csproj" />
+  </Folder>
+</Solution>

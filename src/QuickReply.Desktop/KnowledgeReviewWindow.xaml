@@ -1,0 +1,222 @@
+<Window x:Class="QuickReply.Desktop.KnowledgeReviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="知识候选审核"
+        Width="1180"
+        Height="760"
+        MinWidth="980"
+        MinHeight="640"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Padding="14" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="#0F172A" Text="知识候选审核" />
+                    <TextBlock Margin="0,6,0,0"
+                               Foreground="#475569"
+                               Text="{Binding HeaderSummary}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Margin="0,8,0,0"
+                               Foreground="#64748B"
+                               Text="{Binding EndpointSummary}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button Width="96" Height="34" Margin="0,0,10,0" Click="RefreshButton_OnClick" Content="刷新队列" />
+                    <Button Width="96" Height="34" Click="CloseButton_OnClick" Content="关闭" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="360" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Padding="12" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Margin="0,0,0,8"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="#0F172A"
+                               Text="{Binding QueueSummary}" />
+                    <ListBox x:Name="QueueListBox"
+                             ItemsSource="{Binding CandidateItems}"
+                             SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                             SelectionChanged="QueueListBox_OnSelectionChanged"
+                             BorderThickness="0"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,0,8" Padding="10" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Left" FontWeight="SemiBold" Foreground="#0F172A" Text="{Binding Question}" TextWrapping="Wrap" />
+                                            <TextBlock DockPanel.Dock="Right" Foreground="#475569" Text="{Binding StatusText}" />
+                                        </DockPanel>
+                                        <TextBlock Margin="0,6,0,0" Foreground="#334155" Text="{Binding AnswerPreview}" TextWrapping="Wrap" />
+                                        <TextBlock Margin="0,8,0,0" Foreground="#64748B" Text="{Binding MetaSummary}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2" Padding="12" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="#0F172A" Text="{Binding DetailTitle}" />
+                        <TextBlock Margin="0,6,0,0" Foreground="#64748B" Text="{Binding DetailMetaSummary}" TextWrapping="Wrap" />
+
+                        <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Foreground="#0F172A" Text="候选答案" />
+                        <TextBox Margin="0,8,0,0"
+                                 MinHeight="88"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Text="{Binding AnswerFinalText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Foreground="#0F172A" Text="同义问法（逗号分隔）" />
+                        <TextBox Margin="0,8,0,0"
+                                 Text="{Binding SynonymsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Foreground="#0F172A" Text="标签（逗号分隔）" />
+                        <TextBox Margin="0,8,0,0"
+                                 Text="{Binding TagsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Foreground="#0F172A" Text="使用说明" />
+                        <TextBox Margin="0,8,0,0"
+                                 MinHeight="56"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Text="{Binding UsageNotesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <Grid Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="220" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Foreground="#0F172A" Text="审核备注" />
+                                <TextBox Margin="0,8,0,0"
+                                         MinHeight="68"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Text="{Binding ReviewCommentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock FontWeight="SemiBold" Foreground="#0F172A" Text="发布版本" />
+                                <TextBox Margin="0,8,0,0"
+                                         Text="{Binding VersionText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Foreground="#0F172A" Text="拒绝原因" />
+                                <TextBox Margin="0,8,0,0"
+                                         MinHeight="68"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Text="{Binding RejectReasonText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Foreground="#0F172A" Text="来源样本" />
+                        <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding SourceItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,8" Padding="10" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10">
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Foreground="#0F172A" Text="{Binding SourceHeader}" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#334155" Text="{Binding Excerpt}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <DockPanel Margin="0,16,0,0">
+                            <TextBlock DockPanel.Dock="Left"
+                                       VerticalAlignment="Center"
+                                       FontWeight="SemiBold"
+                                       Foreground="#0F172A"
+                                       Text="审核历史" />
+                            <ComboBox Width="148"
+                                      Margin="12,0,0,0"
+                                      HorizontalAlignment="Right"
+                                      DisplayMemberPath="DisplayName"
+                                      ItemsSource="{Binding HistoryFilterOptions}"
+                                      SelectedValue="{Binding SelectedHistoryFilterKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      SelectedValuePath="Key"
+                                      SelectionChanged="HistoryFilterComboBox_OnSelectionChanged" />
+                        </DockPanel>
+                        <TextBlock Margin="0,8,0,0"
+                                   Foreground="#9A3412"
+                                   Text="{Binding HistorySummary}"
+                                   TextWrapping="Wrap" />
+                        <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding HistoryItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,8" Padding="10" Background="#FFF7ED" BorderBrush="#FED7AA" BorderThickness="1" CornerRadius="10">
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Foreground="#9A3412" Text="{Binding ActionText}" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#7C2D12" Text="{Binding MetaSummary}" TextWrapping="Wrap" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#9A3412" Text="{Binding DetailText}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="2" Margin="0,16,0,0" Padding="12" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock VerticalAlignment="Center" Foreground="#334155" Text="{Binding OperationSummary}" TextWrapping="Wrap" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Width="128"
+                            Height="34"
+                            Margin="0,0,10,0"
+                            Click="UnpublishButton_OnClick"
+                            Content="下线已发布"
+                            IsEnabled="{Binding CanUnpublishSelection}" />
+                    <Button Width="112"
+                            Height="34"
+                            Margin="0,0,10,0"
+                            Click="ApproveButton_OnClick"
+                            Content="通过发布"
+                            IsEnabled="{Binding HasSelection}" />
+                    <Button Width="112"
+                            Height="34"
+                            Click="RejectButton_OnClick"
+                            Content="拒绝候选"
+                            IsEnabled="{Binding HasSelection}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

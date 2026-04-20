@@ -1,0 +1,11 @@
+root = true
+
+[*.{cs,csproj,sln,md,txt,ps1,psm1,psd1,iss,xaml}]
+charset = utf-8-bom
+end_of_line = crlf
+insert_final_newline = true
+
+[*.{bat,cmd}]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
