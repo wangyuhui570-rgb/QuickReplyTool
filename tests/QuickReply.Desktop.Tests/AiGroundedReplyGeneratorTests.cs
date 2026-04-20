@@ -63,7 +63,7 @@ public sealed class AiGroundedReplyGeneratorTests
 
         var provider = new FakeAiDraftProvider("ollama", (_, request, _) =>
         {
-            Assert.Empty(request.GroundingSuggestions);
+            Assert.Empty(request.GroundingPhrases);
             Assert.Single(request.GroundingKnowledgeCards);
             return Task.FromResult(
                 AiDraftProviderResponse.Succeeded(

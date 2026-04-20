@@ -70,7 +70,7 @@ internal sealed class OllamaAiDraftProvider : IAiDraftProvider
                 ProviderType,
                 settings.OllamaModelName,
                 request.DraftCount,
-                request.GroundingSuggestions,
+                request.GroundingPhrases,
                 request.GroundingKnowledgeCards,
                 stopwatch.ElapsedMilliseconds,
                 string.Empty);

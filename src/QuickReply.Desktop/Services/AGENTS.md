@@ -7,6 +7,8 @@ This directory contains side-effect-heavy code. Follow the root and desktop guid
 - Keep OS integration, persistence, process control, logging, sync, update, and recommendation orchestration inside services.
 - Prefer reusing an existing service and model pair instead of duplicating logic in a new helper.
 - Keep service interfaces and data contracts stable unless a change truly requires a boundary change.
+- If a service/helper becomes deterministic and UI-agnostic, consider moving it to `src/QuickReply.Core` instead of leaving it in the desktop services layer.
+- For AI/recommendation flows, keep prompt composition, keyword extraction, and provider DTOs in `src/QuickReply.Core`; desktop services should mainly adapt desktop-only models into those contracts and execute Windows/runtime side effects.
 
 ## High-risk areas
 
@@ -29,8 +31,7 @@ This directory contains side-effect-heavy code. Follow the root and desktop guid
   - `SettingsWindowSelectionMapper`
 - Search-overlay interaction helpers:
   - `SearchOverlayShortcutPolicy`
-  - `SearchOverlayActionFeedbackFormatter`
-  - `SearchOverlayPanelStatusBuilder`
+  - desktop-side status/presentation builders that still depend on desktop-only models
 - Main-view-model support services:
   - `AppSettingsSnapshotService`
   - `FileLibraryCatalogService`
@@ -68,6 +69,7 @@ This directory contains side-effect-heavy code. Follow the root and desktop guid
 - Keep desktop runtime workflows such as startup sync/update checks in dedicated coordinators. `App.xaml.cs` should remain the composition root, not the long-term home for every background workflow.
 - Keep settings session orchestration, preview coordination, and settings-selection mapping in dedicated services. Do not push those cross-window behaviors back into `MainWindow` or `SettingsWindow`.
 - Keep file-library catalog mutation, appearance-theme catalog persistence, and full `AppSettings` snapshot copy logic in services. `MainViewModel` may coordinate UI state around them, but should not re-grow those long persistence/mapping blocks inline.
+- Keep Windows-only orchestration here, but avoid re-pulling pure data contracts and generic helper logic back out of `QuickReply.Core`.
 - Keep search-overlay shortcut detection and failure-feedback formatting in dedicated helpers. Do not fall back to single-key send/save gestures or UI-side string matching for send failures.
 - Keep search-overlay phase/status copy in dedicated builders. OCR/recognition, recommendation availability, AI skip/failure, and empty result states should stay visible and explainable instead of collapsing into a silent empty panel.
 - Keep search-overlay layout mode explicit: non-empty manual search text should switch the main pane to search results, while an empty search box should give the remaining space to the scrollable recognition/recommendation pane.

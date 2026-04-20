@@ -1,6 +1,6 @@
 namespace QuickReply.Desktop.Services;
 
-internal static class SearchOverlayLayoutModeResolver
+public static class SearchOverlayLayoutModeResolver
 {
     public static bool HasManualSearchText(string? searchText) =>
         !string.IsNullOrWhiteSpace(searchText);

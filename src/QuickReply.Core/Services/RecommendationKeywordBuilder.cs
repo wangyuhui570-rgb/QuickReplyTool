@@ -1,4 +1,4 @@
-﻿namespace QuickReply.Desktop.Services;
+namespace QuickReply.Desktop.Services;
 
 public static class RecommendationKeywordBuilder
 {

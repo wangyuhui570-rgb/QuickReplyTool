@@ -5,6 +5,7 @@ This guide adds desktop-app-specific rules on top of the repository root `AGENTS
 ## Role of this project
 
 - `QuickReply.Desktop` is the primary WPF application.
+- `QuickReply.Core` now carries part of the shared model/helper surface that does not require Windows APIs; keep desktop-only behavior in this project and move pure logic downward when practical.
 - `App.xaml.cs` is the composition root that wires services, view models, windows, tray behavior, logging, sync, updates, and the screenshot-tool bridge.
 - Keep app startup composition centralized there, but push runtime workflows into dedicated coordinators instead of growing more behavior directly inside `App`.
 - Current desktop responsibilities also include:
@@ -16,9 +17,11 @@ This guide adds desktop-app-specific rules on top of the repository root `AGENTS
 
 - `ViewModels/` owns UI-facing state, commands, and presentation flow.
 - `Services/` owns persistence, system integration, sync/update flows, diagnostics, screenshot integration, and recommendation orchestration.
-- `Models/` owns durable data models, DTOs, enums, and settings objects.
+- `Models/` owns desktop-specific durable data models, DTOs, enums, and settings objects that still require the desktop assembly.
 - Window `.xaml.cs` files should stay thin and UI-event-focused.
 - Do not move business logic into XAML or code-behind when it belongs in a service or view model.
+- If a helper or model no longer depends on WPF, Win32, desktop state, or screenshot/runtime integration, prefer moving it into `QuickReply.Core` instead of keeping it here.
+- Recommendation/query contracts and AI prompt/provider DTOs should keep migrating downward. Let this project own desktop-only mapping from `ReplyPhrase` or other observable/view-facing types into `QuickReply.Core` contracts rather than keeping those contracts here.
 - Dedicated operator windows such as knowledge review or hotkey capture should stay UI-shell-oriented; endpoint fallback, persistence, and orchestration stay in services.
 - Settings-window session orchestration now belongs in `Services/SettingsWindowCoordinator`, and settings-to-selection mapping belongs in `Services/SettingsWindowSelectionMapper`. Keep `MainWindow` and `SettingsWindow` from re-growing those responsibilities inline.
 - `MainViewModel` no longer owns every settings/file/theme helper inline. Keep file-library catalog work, settings snapshot copy logic, and appearance-theme persistence in dedicated services instead of re-expanding `MainViewModel`.

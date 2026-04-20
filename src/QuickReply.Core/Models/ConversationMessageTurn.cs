@@ -1,4 +1,4 @@
-﻿namespace QuickReply.Desktop.Models;
+namespace QuickReply.Desktop.Models;
 
 public sealed class ConversationMessageTurn
 {

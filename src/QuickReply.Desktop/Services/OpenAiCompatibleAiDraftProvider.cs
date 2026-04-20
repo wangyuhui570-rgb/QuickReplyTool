@@ -81,7 +81,7 @@ internal sealed class OpenAiCompatibleAiDraftProvider : IAiDraftProvider
                 ProviderType,
                 settings.AiApiModelName,
                 request.DraftCount,
-                request.GroundingSuggestions,
+                request.GroundingPhrases,
                 request.GroundingKnowledgeCards,
                 stopwatch.ElapsedMilliseconds,
                 "ollama_failed");

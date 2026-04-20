@@ -1,6 +1,6 @@
 namespace QuickReply.Desktop.Services;
 
-internal static class SearchOverlayActionFeedbackFormatter
+public static class SearchOverlayActionFeedbackFormatter
 {
     public static string BuildMessage(ReplyActionResult result)
     {

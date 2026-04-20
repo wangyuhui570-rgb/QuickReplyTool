@@ -4,7 +4,7 @@ using QuickReply.Desktop.Models;
 
 namespace QuickReply.Desktop.Services;
 
-internal static class AiDraftPromptComposer
+public static class AiDraftPromptComposer
 {
     public static string BuildSystemPrompt()
     {
@@ -32,20 +32,20 @@ internal static class AiDraftPromptComposer
         builder.AppendLine($"建议生成条数：{Math.Max(1, request.DraftCount)}");
         builder.AppendLine("参考短语：");
 
-        if (request.GroundingSuggestions.Count == 0)
+        if (request.GroundingPhrases.Count == 0)
         {
             builder.AppendLine("- （无）");
         }
         else
         {
-            foreach (var suggestion in request.GroundingSuggestions.Take(5))
+            foreach (var phrase in request.GroundingPhrases.Take(5))
             {
                 builder.Append("- 标题：");
-                builder.AppendLine(Normalize(suggestion.Phrase.DisplayTitle, "未命名短语"));
+                builder.AppendLine(Normalize(phrase.Title, "未命名短语"));
                 builder.Append("  内容：");
-                builder.AppendLine(Normalize(suggestion.Phrase.Content, "（空）"));
+                builder.AppendLine(Normalize(phrase.Content, "（空）"));
                 builder.Append("  理由：");
-                builder.AppendLine(Normalize(suggestion.ReasonText, "历史高频"));
+                builder.AppendLine(Normalize(phrase.ReasonText, "历史高频"));
             }
         }
 
@@ -76,18 +76,18 @@ internal static class AiDraftPromptComposer
         string providerType,
         string modelName,
         int draftCount,
-        IReadOnlyList<PhraseRecommendationSuggestion> groundingSuggestions,
+        IReadOnlyList<AiDraftGroundingPhrase> groundingPhrases,
         IReadOnlyList<KnowledgeCardSuggestion> groundingKnowledgeCards,
         long latencyMs,
         string fallbackReason)
     {
         if (TryParseJsonDrafts(responseContent, out var drafts))
         {
-            return BuildCandidates(drafts, providerType, modelName, draftCount, groundingSuggestions, groundingKnowledgeCards, latencyMs, fallbackReason);
+            return BuildCandidates(drafts, providerType, modelName, draftCount, groundingPhrases, groundingKnowledgeCards, latencyMs, fallbackReason);
         }
 
         var fallbackDrafts = ParseLineBasedDrafts(responseContent);
-        return BuildCandidates(fallbackDrafts, providerType, modelName, draftCount, groundingSuggestions, groundingKnowledgeCards, latencyMs, fallbackReason);
+        return BuildCandidates(fallbackDrafts, providerType, modelName, draftCount, groundingPhrases, groundingKnowledgeCards, latencyMs, fallbackReason);
     }
 
     private static IReadOnlyList<GeneratedReplyCandidate> BuildCandidates(
@@ -95,13 +95,13 @@ internal static class AiDraftPromptComposer
         string providerType,
         string modelName,
         int draftCount,
-        IReadOnlyList<PhraseRecommendationSuggestion> groundingSuggestions,
+        IReadOnlyList<AiDraftGroundingPhrase> groundingPhrases,
         IReadOnlyList<KnowledgeCardSuggestion> groundingKnowledgeCards,
         long latencyMs,
         string fallbackReason)
     {
-        var groundingTitles = groundingSuggestions
-            .Select(item => item.Phrase.DisplayTitle)
+        var groundingTitles = groundingPhrases
+            .Select(item => item.Title)
             .Where(title => !string.IsNullOrWhiteSpace(title))
             .Distinct(StringComparer.Ordinal)
             .Take(3)
@@ -148,14 +148,14 @@ internal static class AiDraftPromptComposer
                 Confidence = Math.Max(0.35d, 0.88d - (index * 0.08d)),
                 ProviderType = providerType,
                 ModelName = modelName,
-                GroundingPhraseCount = groundingSuggestions.Count,
+                GroundingPhraseCount = groundingPhrases.Count,
                 GroundingKnowledgeCount = groundingKnowledgeCards.Count,
                 GroundingKnowledgeIdsJson = groundingKnowledgeIdsJson,
                 LatencyMs = latencyMs,
                 CharacterCount = NormalizeDraftText(item.Text).Length,
                 FallbackReason = fallbackReason,
-                BackingPhraseId = groundingSuggestions.FirstOrDefault()?.Phrase.Id,
-                BackingPhraseTitle = groundingSuggestions.FirstOrDefault()?.Phrase.DisplayTitle ?? string.Empty
+                BackingPhraseId = groundingPhrases.FirstOrDefault()?.PhraseId,
+                BackingPhraseTitle = groundingPhrases.FirstOrDefault()?.Title ?? string.Empty
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.Text))
             .DistinctBy(item => item.Text)

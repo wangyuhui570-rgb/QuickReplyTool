@@ -105,7 +105,7 @@ public sealed class AiDraftGenerationStatus
     public bool ShouldSurfaceStatus => State is AiDraftGenerationState.ContextSkipped or AiDraftGenerationState.ProviderFailed;
 }
 
-internal interface IAiDraftGenerationStatusSource
+public interface IAiDraftGenerationStatusSource
 {
     AiDraftGenerationStatus LastStatus { get; }
 }

@@ -82,7 +82,16 @@ internal sealed class AiGroundedReplyGenerator : IReplyGenerator, IAiDraftGenera
         var providerRequest = new AiDraftProviderRequest
         {
             Snapshot = snapshot,
-            GroundingSuggestions = groundingSuggestions,
+            GroundingPhrases = groundingSuggestions
+                .Select(item => new AiDraftGroundingPhrase
+                {
+                    PhraseId = item.Phrase.Id,
+                    Title = item.Phrase.DisplayTitle,
+                    Content = item.Phrase.Content?.Trim() ?? string.Empty,
+                    ReasonText = item.ReasonText,
+                    SourceBadgeText = item.SourceBadgeText
+                })
+                .ToArray(),
             GroundingKnowledgeCards = groundingKnowledgeCards,
             DraftCount = Math.Clamp(Math.Min(request.GeneratedReplyCount, _settings.AiDraftCount), 1, 3)
         };

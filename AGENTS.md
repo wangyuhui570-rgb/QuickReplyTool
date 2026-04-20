@@ -4,6 +4,7 @@
 
 - This repository contains a Windows desktop tool for customer-service reply workflows.
 - The main app is a WPF/.NET 8 desktop project under `src/QuickReply.Desktop`.
+- `src/QuickReply.Core` is the cross-platform core layer for shared models and deterministic business logic.
 - `src/QuickReply.CloudService` is the local/server-side cloud skeleton for knowledge review, published-knowledge sync, AI auth, and asynchronous candidate synthesis.
 - `src/QuickReply.ReplayEval` is a console-style offline evaluation tool that reuses desktop-side models and services.
 - `tests`, `scripts`, `packaging`, `docs`, and `截图工具源码` are support areas with their own local guidance files.
@@ -76,5 +77,6 @@
 - Reuse existing project structure and service boundaries instead of inventing parallel subsystems.
 - If a change touches cloud sync, updates, issue reporting, or release packaging, check whether `docs/` also needs an update.
 - AI QA knowledge-base work is cloud-first and asynchronous: candidates are reviewed server-side, only published knowledge is consumed by the desktop client.
+- Prefer putting pure models and UI-agnostic helper logic into `src/QuickReply.Core`; keep `QuickReply.Desktop` focused on WPF, Win32, hotkeys, clipboard, screenshot integration, and other Windows-only behavior.
 - After changing code in a directory tree that has its own `AGENTS.md`, review that local guide and update it if responsibilities, entry points, validation commands, or operator expectations changed.
 - If a code change introduces a new long-lived subsystem in a directory tree that does not yet have a meaningful local guide, add or extend the nearest appropriate `AGENTS.md` instead of leaving the documentation drift unresolved.

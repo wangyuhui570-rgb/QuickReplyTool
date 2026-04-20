@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.CloudService", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.CloudService.Tests", "tests\QuickReply.CloudService.Tests\QuickReply.CloudService.Tests.csproj", "{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.Core", "src\QuickReply.Core\QuickReply.Core.csproj", "{695EF5E6-6D56-4CF7-872B-55335E5BF351}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,6 +50,10 @@ Global
 		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -59,6 +65,7 @@ Global
 		{9496FBB1-48C7-4D1C-B301-8E32051469C9} = {1B40FE9B-CB36-4A5C-B826-F21165E549FF}
 		{57908560-8810-4AF7-8986-11FBC07913C3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0} = {1B40FE9B-CB36-4A5C-B826-F21165E549FF}
+		{695EF5E6-6D56-4CF7-872B-55335E5BF351} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {D512671E-8B61-4381-83E0-7FF0969993A8}
