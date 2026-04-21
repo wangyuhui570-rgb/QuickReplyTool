@@ -14,21 +14,6 @@ public sealed class SearchOverlayLayoutModeResolverTests
     }
 
     [Fact]
-    public void ShouldShowRecommendationPanel_OnlyWhenSearchTextIsEmpty()
-    {
-        Assert.True(SearchOverlayLayoutModeResolver.ShouldShowRecommendationPanel(string.Empty, true));
-        Assert.False(SearchOverlayLayoutModeResolver.ShouldShowRecommendationPanel("发货", true));
-        Assert.False(SearchOverlayLayoutModeResolver.ShouldShowRecommendationPanel(string.Empty, false));
-    }
-
-    [Fact]
-    public void ShouldShowSearchResultsPanel_OnlyWhenManualSearchExists()
-    {
-        Assert.False(SearchOverlayLayoutModeResolver.ShouldShowSearchResultsPanel(string.Empty));
-        Assert.True(SearchOverlayLayoutModeResolver.ShouldShowSearchResultsPanel("安装"));
-    }
-
-    [Fact]
     public void ShouldShowOverlayAssistText_ShowsActionStatusEvenWithoutManualSearch()
     {
         Assert.False(SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText(string.Empty, false));

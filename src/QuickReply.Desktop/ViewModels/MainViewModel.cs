@@ -23,7 +23,8 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
     private readonly StartupRegistrationService _startupRegistrationService;
     private readonly IExternalWorkbenchService _windowTracker;
     private readonly WindowDockService _windowDockService;
-    private readonly ConversationLoggingService _conversationLoggingService;
+    private readonly Func<ConversationLoggingService> _conversationLoggingServiceFactory;
+    private ConversationLoggingService? _conversationLoggingService;
     private readonly ExceptionLogService _exceptionLogService;
     private readonly DispatcherTimer _saveTimer;
     private readonly HashSet<Guid> _dirtyCategoryIds = [];
@@ -58,7 +59,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         PersonalConfigService personalConfigService,
         IExternalWorkbenchService windowTracker,
         WindowDockService windowDockService,
-        ConversationLoggingService conversationLoggingService,
+        Func<ConversationLoggingService> conversationLoggingServiceFactory,
         ExceptionLogService exceptionLogService)
     {
         _dataStore = dataStore;
@@ -72,7 +73,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         _startupRegistrationService = new StartupRegistrationService();
         _windowTracker = windowTracker;
         _windowDockService = windowDockService;
-        _conversationLoggingService = conversationLoggingService;
+        _conversationLoggingServiceFactory = conversationLoggingServiceFactory;
         _exceptionLogService = exceptionLogService;
         _windowDockService.CompactSidebarExpandedChanged += OnCompactSidebarExpandedChanged;
 
@@ -99,6 +100,37 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         MoveQuickTagLeftCommand = new AsyncRelayCommand<QuickTag>(tag => MoveQuickTagAsync(tag, -1), tag => CanMoveQuickTag(tag, -1));
         MoveQuickTagRightCommand = new AsyncRelayCommand<QuickTag>(tag => MoveQuickTagAsync(tag, 1), tag => CanMoveQuickTag(tag, 1));
         SaveNowCommand = new AsyncRelayCommand(() => SaveNowAsync(true));
+    }
+
+    private ConversationLoggingService ConversationLoggingService
+    {
+        get
+        {
+            if (_conversationLoggingService is not null)
+            {
+                return _conversationLoggingService;
+            }
+
+            _conversationLoggingService = _conversationLoggingServiceFactory();
+            if (_isInitialized)
+            {
+                _conversationLoggingService.ApplySettings(Settings);
+                _conversationLoggingService.RequestMaintenance();
+            }
+
+            return _conversationLoggingService;
+        }
+    }
+
+    private void RefreshConversationLoggingSettingsIfActive()
+    {
+        if (_conversationLoggingService is null)
+        {
+            return;
+        }
+
+        _conversationLoggingService.ApplySettings(Settings);
+        _conversationLoggingService.RequestMaintenance();
     }
 
     public ObservableCollection<ReplyCategory> Categories => _data.Categories;
@@ -388,8 +420,6 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         StartupTrace.Mark("main_vm.initialize.image_layout_ready");
         LoadPhraseUsageStats(await _dataStore.LoadPhraseUsageStatsAsync());
         LoadFileUsageStats(await _dataStore.LoadFileUsageStatsAsync());
-        _conversationLoggingService.ApplySettings(_data.Settings);
-        _conversationLoggingService.RequestMaintenance();
         RememberAppliedStartupConfiguration(Settings.LaunchAtStartup, Settings.RunAsAdministrator);
         WireData();
         SyncPhraseCategoryNames();
@@ -418,6 +448,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         await _dataStore.RecordAppLaunchAsync();
         StartupTrace.Mark("main_vm.initialize.launch_recorded");
         _isInitialized = true;
+        RefreshConversationLoggingSettingsIfActive();
         StatusMessage = $"已从 SQLite 加载 {Categories.Sum(category => category.Phrases.Count)} 条短语，分类 {Categories.Count} 个。";
         StartupTrace.Mark("main_vm.initialize.completed");
     }
@@ -611,7 +642,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
             var result = await _messageComposeService.ExecuteAsync(normalizedContent, Settings, ComposeActionMode.Send);
-            _conversationLoggingService.LogPlainTextUsage(
+            ConversationLoggingService.LogPlainTextUsage(
                 normalizedContent,
                 triggerSource,
                 ComposeActionMode.Send,
@@ -633,7 +664,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         catch (Exception ex)
         {
             var failedResult = new ReplyActionResult(false, $"发送原文失败：{ex.Message}");
-            _conversationLoggingService.LogPlainTextUsage(
+            ConversationLoggingService.LogPlainTextUsage(
                 normalizedContent,
                 triggerSource,
                 ComposeActionMode.Send,
@@ -666,7 +697,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
             var result = await _messageComposeService.ExecuteAsync(normalizedContent, Settings, ComposeActionMode.Input);
-            _conversationLoggingService.LogPlainTextUsage(
+            ConversationLoggingService.LogPlainTextUsage(
                 normalizedContent,
                 triggerSource,
                 ComposeActionMode.Input,
@@ -682,7 +713,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         catch (Exception ex)
         {
             var failedResult = new ReplyActionResult(false, $"输入原文失败：{ex.Message}");
-            _conversationLoggingService.LogPlainTextUsage(
+            ConversationLoggingService.LogPlainTextUsage(
                 normalizedContent,
                 triggerSource,
                 ComposeActionMode.Input,
@@ -753,7 +784,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
     public async Task<ReplyActionResult> AcceptFrequentReplyPhraseSuggestionAsync(FrequentReplyPhraseSuggestion suggestion)
     {
         var result = await SavePlainTextAsPhraseAsync(suggestion.PayloadText);
-        await _conversationLoggingService.LogOperationEventAsync(
+        await ConversationLoggingService.LogOperationEventAsync(
             "frequent_reply_suggestion",
             "accepted",
             result.Success,
@@ -772,7 +803,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     public void DismissFrequentReplyPhraseSuggestion(FrequentReplyPhraseSuggestion suggestion)
     {
-        _ = _conversationLoggingService.LogOperationEventAsync(
+        _ = ConversationLoggingService.LogOperationEventAsync(
             "frequent_reply_suggestion",
             "dismissed",
             success: true,
@@ -1318,17 +1349,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     public Task<ConversationLogStats> GetConversationLogStatsAsync()
     {
-        return _conversationLoggingService.GetStatsAsync();
+        return ConversationLoggingService.GetStatsAsync();
     }
 
     public Task RunConversationLogMaintenanceAsync()
     {
-        return _conversationLoggingService.RunMaintenanceAsync();
+        return ConversationLoggingService.RunMaintenanceAsync();
     }
 
     public async Task<int> ClearConversationLogCapturesAsync()
     {
-        var removedCount = await _conversationLoggingService.DeleteAllCapturesAsync();
+        var removedCount = await ConversationLoggingService.DeleteAllCapturesAsync();
         StatusMessage = removedCount == 0
             ? "当前没有可清理的日志截图。"
             : $"已清空 {removedCount} 个日志截图。";
@@ -1758,8 +1789,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             await PersistSettingsAsync();
             _windowDockService.ApplySettings(Settings);
             _windowDockService.RefreshNow();
-            _conversationLoggingService.ApplySettings(Settings);
-            _conversationLoggingService.RequestMaintenance();
+            RefreshConversationLoggingSettingsIfActive();
             StatusMessage = "已恢复默认个性化配置。";
         }
         catch
@@ -2287,7 +2317,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return;
         }
 
-        var suggestion = await _conversationLoggingService.GetFrequentPlainTextSuggestionAsync(normalizedContent, 1);
+        var suggestion = await ConversationLoggingService.GetFrequentPlainTextSuggestionAsync(normalizedContent, 1);
         if (suggestion is null)
         {
             return;
@@ -2303,7 +2333,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         };
 
         _pendingPlainTextSuggestionKeys.Add(suggestionKey);
-        await _conversationLoggingService.LogOperationEventAsync(
+        await ConversationLoggingService.LogOperationEventAsync(
             "frequent_reply_suggestion",
             "shown",
             success: true,
@@ -2562,8 +2592,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
         if (e.PropertyName is nameof(AppSettings.LogScreenshotRetentionDays) or nameof(AppSettings.LogScreenshotMaxSizeMb))
         {
-            _conversationLoggingService.ApplySettings(Settings);
-            _conversationLoggingService.RequestMaintenance();
+            RefreshConversationLoggingSettingsIfActive();
         }
 
         if (e.PropertyName == nameof(AppSettings.PhraseImageFolderPath))
@@ -3150,7 +3179,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         IntPtr targetWindowHandle,
         ConversationRecommendationSnapshot? recognitionOverride = null)
     {
-        _conversationLoggingService.LogPhraseUsage(
+        ConversationLoggingService.LogPhraseUsage(
             phrase,
             triggerSource,
             actionMode,
@@ -3170,7 +3199,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         ReplyActionResult result,
         IntPtr targetWindowHandle)
     {
-        _conversationLoggingService.LogFileUsage(
+        ConversationLoggingService.LogFileUsage(
             fileItem,
             triggerSource,
             actionMode,
@@ -3188,7 +3217,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         ReplyActionResult result,
         IntPtr targetWindowHandle)
     {
-        _conversationLoggingService.LogQuickTagUsage(
+        ConversationLoggingService.LogQuickTagUsage(
             quickTag,
             triggerSource,
             actionMode,

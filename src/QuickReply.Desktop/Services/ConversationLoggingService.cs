@@ -19,8 +19,7 @@ public sealed class ConversationLoggingService :
     IAsyncDisposable,
     IConversationContextCaptureService,
     IContextRecognizer,
-    IRecommendationQueryService,
-    IRecommendationTrackingService
+    IRecommendationQueryService
 {
     private const int MaxCapturedTextLength = 16000;
     private const int MaxAutomationNodes = 400;

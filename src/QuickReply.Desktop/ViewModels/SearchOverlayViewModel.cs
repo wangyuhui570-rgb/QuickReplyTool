@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Threading;
 using System.Windows;
 using QuickReply.Desktop.Models;
 using QuickReply.Desktop.Services;
@@ -10,20 +9,8 @@ namespace QuickReply.Desktop.ViewModels;
 
 public sealed class SearchOverlayViewModel : ObservableObject
 {
-    private const int MinimumRecommendationSampleCount = 3;
-    private const int RecommendationContextPreviewMaxLength = 160;
     private readonly MainViewModel _mainViewModel;
-    private readonly IRecommendationOrchestrator _recommendationOrchestrator;
-    private readonly IRecommendationTrackingService _recommendationTrackingService;
     private IReadOnlyList<SearchOverlayResultItem> _results = Array.Empty<SearchOverlayResultItem>();
-    private IReadOnlyList<PhraseRecommendationSuggestion> _recommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
-    private IReadOnlyList<KnowledgeCardSuggestion> _knowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
-    private IReadOnlyList<HistoricalReplyGroupSuggestion> _similarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
-    private ConversationRecommendationSnapshot _recommendationSnapshot = new();
-    private Guid _recommendationSessionId;
-    private Guid _knowledgeCardSessionId;
-    private bool _isEditingRecognition;
-    private string _recognitionCorrectionText = string.Empty;
     private string _actionStatusMessage = string.Empty;
     private string _searchText = string.Empty;
     private string _statusMessage = "输入关键词后，可按数字 1-9 或 Enter 发送结果；Ctrl+S 仅保存原文，Ctrl+Shift+S 发送并保存。";
@@ -31,17 +18,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
     private SearchOverlayMode _currentMode = SearchOverlayMode.Phrase;
     private bool _isSettingsPreviewMode;
     private bool _isActionStatusWarning;
-    private bool _isRefreshingRecommendations;
-    private int _recommendationRefreshVersion;
 
-    public SearchOverlayViewModel(
-        MainViewModel mainViewModel,
-        IRecommendationOrchestrator recommendationOrchestrator,
-        IRecommendationTrackingService recommendationTrackingService)
+    public SearchOverlayViewModel(MainViewModel mainViewModel)
     {
         _mainViewModel = mainViewModel;
-        _recommendationOrchestrator = recommendationOrchestrator;
-        _recommendationTrackingService = recommendationTrackingService;
         _mainViewModel.Settings.PropertyChanged += Settings_OnPropertyChanged;
     }
 
@@ -63,68 +43,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
     }
 
-    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendedPhrases
-    {
-        get => _recommendedPhrases;
-        private set
-        {
-            if (SetProperty(ref _recommendedPhrases, value))
-            {
-                OnPropertyChanged(nameof(HasRecommendations));
-                OnPropertyChanged(nameof(RecommendationItems));
-                NotifyRecommendationContextChanged();
-                NotifyRecommendationPanelStateChanged();
-                OnPropertyChanged(nameof(RecommendationHintText));
-                OnPropertyChanged(nameof(HasRecommendationHintText));
-                OnPropertyChanged(nameof(GroundingSummaryText));
-                OnPropertyChanged(nameof(HasGroundingSummaryText));
-                OnPropertyChanged(nameof(SearchBoxHintText));
-                OnPropertyChanged(nameof(ResultsSectionSummary));
-                OnPropertyChanged(nameof(HasResultsSectionSummary));
-                OnPropertyChanged(nameof(EmptyStateHintText));
-            }
-        }
-    }
-
-    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendationItems => RecommendedPhrases.Take(RecommendationDisplayCount).ToArray();
-
-    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCards
-    {
-        get => _knowledgeCards;
-        private set
-        {
-            if (SetProperty(ref _knowledgeCards, value))
-            {
-                OnPropertyChanged(nameof(HasKnowledgeCardMatches));
-                OnPropertyChanged(nameof(KnowledgeCardItems));
-                NotifyRecommendationPanelStateChanged();
-                OnPropertyChanged(nameof(RecommendationHintText));
-                OnPropertyChanged(nameof(HasRecommendationHintText));
-                OnPropertyChanged(nameof(GroundingSummaryText));
-                OnPropertyChanged(nameof(HasGroundingSummaryText));
-                OnPropertyChanged(nameof(ResultsSectionSummary));
-                OnPropertyChanged(nameof(HasResultsSectionSummary));
-                OnPropertyChanged(nameof(EmptyStateHintText));
-            }
-        }
-    }
-
-    public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups
-    {
-        get => _similarReplyGroups;
-        private set
-        {
-            if (SetProperty(ref _similarReplyGroups, value))
-            {
-                OnPropertyChanged(nameof(HasSimilarReplyGroups));
-                NotifyRecommendationPanelStateChanged();
-                OnPropertyChanged(nameof(ResultsSectionSummary));
-                OnPropertyChanged(nameof(HasResultsSectionSummary));
-                OnPropertyChanged(nameof(EmptyStateHintText));
-            }
-        }
-    }
-
     public string SearchText
     {
         get => _searchText;
@@ -140,8 +58,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             OnPropertyChanged(nameof(EmptyStateTitle));
             OnPropertyChanged(nameof(EmptyStateHintText));
             OnPropertyChanged(nameof(HasManualSearchText));
-            OnPropertyChanged(nameof(ShouldShowRecommendationPanel));
-            OnPropertyChanged(nameof(ShouldShowSearchResultsPanel));
             OnPropertyChanged(nameof(HasOverlayAssistText));
             RefreshResults();
         }
@@ -196,50 +112,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public bool HasResults => Results.Count > 0;
 
-    public bool HasRecommendations => RecommendedPhrases.Count > 0;
-
-    public bool HasKnowledgeCardMatches => KnowledgeCards.Count > 0;
-
-    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCardItems => KnowledgeCards.Take(RecommendationDisplayCount).ToArray();
-
-    public bool HasRecommendationContext =>
-        !string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedCustomerText) ||
-        _recommendationSnapshot.Product.HasValue;
-
-    public bool HasRecognizedCustomerMessage => !string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedCustomerText);
-
-    public string RecognizedCustomerMessageText => string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedCustomerText)
-        ? string.Empty
-        : $"识别内容：{BuildPreviewText(_recommendationSnapshot.RecognizedCustomerText, 120)}";
-
-    public bool HasRecommendationPanelContent =>
-        HasRecommendationStatusText ||
-        HasRecommendationContext ||
-        HasRecommendations ||
-        HasKnowledgeCardMatches ||
-        HasSimilarReplyGroups;
-
     public bool HasManualSearchText => SearchOverlayLayoutModeResolver.HasManualSearchText(SearchText);
-
-    public bool ShouldShowRecommendationPanel =>
-        SearchOverlayLayoutModeResolver.ShouldShowRecommendationPanel(SearchText, HasRecommendationPanelContent);
-
-    public bool ShouldShowSearchResultsPanel =>
-        SearchOverlayLayoutModeResolver.ShouldShowSearchResultsPanel(SearchText);
-
-    public bool HasSimilarReplyGroups => SimilarReplyGroups.Count > 0;
-
-    public bool IsEditingRecognition
-    {
-        get => _isEditingRecognition;
-        private set => SetProperty(ref _isEditingRecognition, value);
-    }
-
-    public string RecognitionCorrectionText
-    {
-        get => _recognitionCorrectionText;
-        set => SetProperty(ref _recognitionCorrectionText, value);
-    }
 
     public AppSettings Settings => _mainViewModel.Settings;
 
@@ -264,8 +137,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
     public bool IsMixedMode => CurrentMode == SearchOverlayMode.Mixed;
 
     public bool IsCompactSidebarMode => Settings.SidebarWorkMode == SidebarWorkMode.Compact;
-
-    public int RecommendationDisplayCount => Math.Clamp(Settings.RecommendationDisplayCount, 1, 5);
 
     public string CurrentModeDisplayText => CurrentMode switch
     {
@@ -308,28 +179,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
         _ => "短语模式  左右切换"
     };
 
-    public string RecommendationHintText => SearchOverlayRecommendationSummaryBuilder.BuildRecommendationHintText(
-        RecommendedPhrases,
-        KnowledgeCards);
-
-    public bool HasRecommendationHintText => !string.IsNullOrWhiteSpace(RecommendationHintText);
-
-    public string RecommendationStatusText => _isSettingsPreviewMode
-        ? "当前为搜索浮层预览，推荐短语不会在预览模式下实时刷新。"
-        : SearchOverlayPanelStatusBuilder.BuildRecommendationStatusText(
-            _recommendationSnapshot,
-            RecommendedPhrases,
-            KnowledgeCards,
-            IsRefreshingRecommendations);
-
-    public bool HasRecommendationStatusText => !string.IsNullOrWhiteSpace(RecommendationStatusText);
-
-    public string GroundingSummaryText => SearchOverlayRecommendationSummaryBuilder.BuildGroundingSummaryText(
-        RecommendedPhrases,
-        KnowledgeCards);
-
-    public bool HasGroundingSummaryText => !string.IsNullOrWhiteSpace(GroundingSummaryText);
-
     public string ActionStatusMessage
     {
         get => _actionStatusMessage;
@@ -367,57 +216,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public bool IsOverlayAssistWarning => HasActionStatusMessage && IsActionStatusWarning;
 
-    public bool IsRefreshingRecommendations
-    {
-        get => _isRefreshingRecommendations;
-        private set
-        {
-            if (SetProperty(ref _isRefreshingRecommendations, value))
-            {
-                NotifyRecommendationPanelStateChanged();
-            }
-        }
-    }
-
-    public string RecommendationContextText
-    {
-        get
-        {
-            var parts = new List<string>();
-            if (_recommendationSnapshot.Product.HasValue)
-            {
-                var productSegments = new[]
-                {
-                    string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedProductId)
-                        ? string.Empty
-                        : $"ID {_recommendationSnapshot.RecognizedProductId}",
-                    string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedProductName)
-                        ? string.Empty
-                        : _recommendationSnapshot.RecognizedProductName
-                }.Where(segment => !string.IsNullOrWhiteSpace(segment));
-                parts.Add($"\u8bc6\u522b\u5230\u7684\u5546\u54c1\uff1a{string.Join(" / ", productSegments)}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedContextText))
-            {
-                parts.Add($"上下文：{BuildPreviewText(_recommendationSnapshot.RecognizedContextText, RecommendationContextPreviewMaxLength)}");
-            }
-
-            return string.Join("  |  ", parts);
-        }
-    }
-
-    public bool HasRecommendationContextText => !string.IsNullOrWhiteSpace(RecommendationContextText);
-
     public string SearchBoxHintText
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(SearchText) && HasRecommendations && CurrentMode != SearchOverlayMode.File)
-            {
-                return RecommendationHintText;
-            }
-
             return CurrentMode switch
             {
                 SearchOverlayMode.File => "文件搜索模式，按左右方向键切换模式",
@@ -441,8 +243,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
     public string ResultsSectionSummary => SearchOverlayPanelStatusBuilder.BuildResultsSectionSummary(
         CurrentMode,
         SearchText,
-        Results.Count,
-        HasRecommendationPanelContent);
+        Results.Count);
 
     public bool HasResultsSectionSummary => !string.IsNullOrWhiteSpace(ResultsSectionSummary);
 
@@ -452,41 +253,12 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public string EmptyStateHintText => SearchOverlayPanelStatusBuilder.BuildEmptyStateHintText(
         CurrentMode,
-        SearchText,
-        HasRecommendationPanelContent);
-
-    private void NotifyRecommendationPanelStateChanged()
-    {
-        OnPropertyChanged(nameof(HasRecommendationPanelContent));
-        OnPropertyChanged(nameof(ShouldShowRecommendationPanel));
-        OnPropertyChanged(nameof(RecommendationStatusText));
-        OnPropertyChanged(nameof(HasRecommendationStatusText));
-    }
-
-    private void NotifyRecommendationContextChanged()
-    {
-        OnPropertyChanged(nameof(HasRecommendationContext));
-        OnPropertyChanged(nameof(HasRecognizedCustomerMessage));
-        OnPropertyChanged(nameof(RecognizedCustomerMessageText));
-        OnPropertyChanged(nameof(RecommendationContextText));
-        OnPropertyChanged(nameof(HasRecommendationContextText));
-    }
+        SearchText);
 
     public void PrepareForOpen()
     {
-        Interlocked.Increment(ref _recommendationRefreshVersion);
         _isSettingsPreviewMode = false;
-        _recommendationSnapshot = new ConversationRecommendationSnapshot();
-        _recommendationSessionId = Guid.Empty;
-        _knowledgeCardSessionId = Guid.Empty;
-        SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
         ClearActionStatus();
-        KnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
-        IsEditingRecognition = false;
-        RecognitionCorrectionText = string.Empty;
-        NotifyRecommendationContextChanged();
-        OnPropertyChanged(nameof(RecommendationStatusText));
-        OnPropertyChanged(nameof(HasRecommendationStatusText));
         CurrentMode = Settings.DefaultSearchOverlayMode;
         StatusMessage = CurrentMode switch
         {
@@ -505,26 +277,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
     }
 
-    public Task RefreshRecommendationsForOpenAsync()
-    {
-        return Task.CompletedTask;
-    }
-
     public void BeginSettingsPreview(SearchOverlayMode mode)
     {
         _isSettingsPreviewMode = true;
-        _recommendationSnapshot = new ConversationRecommendationSnapshot();
-        _recommendationSessionId = Guid.Empty;
-        _knowledgeCardSessionId = Guid.Empty;
-        SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
         ClearActionStatus();
-        KnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
-        IsEditingRecognition = false;
-        RecognitionCorrectionText = string.Empty;
-        NotifyRecommendationContextChanged();
-        OnPropertyChanged(nameof(RecommendationStatusText));
-        OnPropertyChanged(nameof(HasRecommendationStatusText));
-        RecommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
         CurrentMode = mode;
         _searchText = mode switch
         {
@@ -564,18 +320,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
 
         _isSettingsPreviewMode = false;
-        _recommendationSnapshot = new ConversationRecommendationSnapshot();
-        _recommendationSessionId = Guid.Empty;
-        _knowledgeCardSessionId = Guid.Empty;
-        SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
         ClearActionStatus();
-        KnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
-        IsEditingRecognition = false;
-        RecognitionCorrectionText = string.Empty;
-        NotifyRecommendationContextChanged();
-        OnPropertyChanged(nameof(RecommendationStatusText));
-        OnPropertyChanged(nameof(HasRecommendationStatusText));
-        RecommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
         SearchText = string.Empty;
     }
 
@@ -645,93 +390,12 @@ public sealed class SearchOverlayViewModel : ObservableObject
         return SelectedResult ?? Results.FirstOrDefault();
     }
 
-    public async Task<ReplyActionResult> SendRecommendedPhraseAsync(PhraseRecommendationSuggestion suggestion)
-    {
-        var result = await _mainViewModel.SendPhraseDirectAsync(
-            suggestion.Phrase,
-            "search_overlay_recommendation_send",
-            SearchText,
-            _recommendationSnapshot);
-
-        _recommendationTrackingService.LogRecommendationAccepted(
-            suggestion,
-            _recommendationSessionId,
-            CurrentMode,
-            SearchText,
-            ComposeActionMode.Send,
-            result.Success);
-
-        ShowActionStatus(result);
-        return result;
-    }
-
-    public async Task<ReplyActionResult> InputRecommendedPhraseAsync(PhraseRecommendationSuggestion suggestion)
-    {
-        var result = await _mainViewModel.InputPhraseDirectAsync(
-            suggestion.Phrase,
-            "search_overlay_recommendation_input",
-            SearchText,
-            _recommendationSnapshot);
-
-        _recommendationTrackingService.LogRecommendationAccepted(
-            suggestion,
-            _recommendationSessionId,
-            CurrentMode,
-            SearchText,
-            ComposeActionMode.Input,
-            result.Success);
-
-        ShowActionStatus(result);
-        return result;
-    }
-
-    public async Task<ReplyActionResult> SendKnowledgeCardAsync(KnowledgeCardSuggestion knowledgeCard)
-    {
-        var result = await _mainViewModel.SendPlainTextAsync(
-            knowledgeCard.Card.Answer,
-            "search_overlay_knowledge_card_send",
-            SearchText,
-            _recommendationSnapshot);
-
-        _recommendationTrackingService.LogKnowledgeCardAccepted(
-            knowledgeCard,
-            _knowledgeCardSessionId,
-            CurrentMode,
-            SearchText,
-            ComposeActionMode.Send,
-            result.Success);
-
-        ShowActionStatus(result);
-        return result;
-    }
-
-    public async Task<ReplyActionResult> InputKnowledgeCardAsync(KnowledgeCardSuggestion knowledgeCard)
-    {
-        var result = await _mainViewModel.InputPlainTextAsync(
-            knowledgeCard.Card.Answer,
-            "search_overlay_knowledge_card_input",
-            SearchText,
-            _recommendationSnapshot);
-
-        _recommendationTrackingService.LogKnowledgeCardAccepted(
-            knowledgeCard,
-            _knowledgeCardSessionId,
-            CurrentMode,
-            SearchText,
-            ComposeActionMode.Input,
-            result.Success);
-
-        ShowActionStatus(result);
-        return result;
-    }
-
     public async Task<ReplyActionResult> SendSearchTextAsync()
     {
         var result = await _mainViewModel.SendPlainTextAsync(
             SearchText,
             "search_overlay_plain_text_send",
-            SearchText,
-            _recommendationSnapshot);
+            SearchText);
 
         if (result.Success)
         {
@@ -761,8 +425,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         var sendResult = await _mainViewModel.SendPlainTextAsync(
             pendingSearchText,
             "search_overlay_plain_text_send_and_save",
-            pendingSearchText,
-            _recommendationSnapshot);
+            pendingSearchText);
 
         if (!sendResult.Success)
         {
@@ -800,204 +463,9 @@ public sealed class SearchOverlayViewModel : ObservableObject
         IsActionStatusWarning = false;
     }
 
-    public void BeginRecognitionCorrection()
-    {
-        RecognitionCorrectionText = _recommendationSnapshot.RecognizedCustomerText;
-        IsEditingRecognition = true;
-    }
-
-    public void CancelRecognitionCorrection()
-    {
-        IsEditingRecognition = false;
-        RecognitionCorrectionText = _recommendationSnapshot.RecognizedCustomerText;
-    }
-
-    public async Task SaveRecognitionCorrectionAsync()
-    {
-        var correctedText = RecognitionCorrectionText.Trim();
-        if (string.IsNullOrWhiteSpace(correctedText))
-        {
-            StatusMessage = "修正后的客户消息不能为空。";
-            return;
-        }
-
-        await _recommendationTrackingService.SaveRecognitionCorrectionAsync(
-            _recommendationSessionId,
-            _recommendationSnapshot,
-            new ConversationRecognitionCorrection
-            {
-                CustomerText = correctedText,
-                ContextText = _recommendationSnapshot.RecognizedContextText,
-                ProductId = _recommendationSnapshot.RecognizedProductId,
-                ProductName = _recommendationSnapshot.RecognizedProductName,
-                Messages = _recommendationSnapshot.Messages
-            });
-        _recommendationSnapshot = new ConversationRecommendationSnapshot
-        {
-            PlatformHint = _recommendationSnapshot.PlatformHint,
-            WindowTitle = _recommendationSnapshot.WindowTitle,
-            WindowClassName = _recommendationSnapshot.WindowClassName,
-            ProcessName = _recommendationSnapshot.ProcessName,
-            ProcessPath = _recommendationSnapshot.ProcessPath,
-            CaptureStatus = _recommendationSnapshot.CaptureStatus,
-            CapturedText = _recommendationSnapshot.CapturedText,
-            RecognitionStatus = _recommendationSnapshot.RecognitionStatus,
-            RecognitionMethod = _recommendationSnapshot.RecognitionMethod,
-            RecognitionConfidence = _recommendationSnapshot.RecognitionConfidence,
-            RecognizedCustomerText = correctedText,
-            RecognizedContextText = _recommendationSnapshot.RecognizedContextText,
-            Product = _recommendationSnapshot.Product,
-            Messages = _recommendationSnapshot.Messages,
-            Keywords = RecommendationKeywordBuilder.Build(
-                correctedText,
-                _recommendationSnapshot.RecognizedContextText,
-                _recommendationSnapshot.RecognizedProductId,
-                _recommendationSnapshot.RecognizedProductName)
-        };
-
-        IsEditingRecognition = false;
-        NotifyRecommendationContextChanged();
-        OnPropertyChanged(nameof(RecommendationStatusText));
-        OnPropertyChanged(nameof(HasRecommendationStatusText));
-        StatusMessage = "已记录这次人工修正，后续会优先用于训练数据。";
-    }
-
     public IReadOnlyList<string> GetPhraseImageAbsolutePaths(ReplyPhrase phrase)
     {
         return _mainViewModel.GetPhraseImageAbsolutePaths(phrase);
-    }
-
-    public ConversationRecognitionCorrection CreateRecognitionCorrectionDraft()
-    {
-        return new ConversationRecognitionCorrection
-        {
-            CustomerText = _recommendationSnapshot.RecognizedCustomerText,
-            ContextText = _recommendationSnapshot.RecognizedContextText,
-            ProductId = _recommendationSnapshot.RecognizedProductId,
-            ProductName = _recommendationSnapshot.RecognizedProductName,
-            Messages = _recommendationSnapshot.Messages
-        };
-    }
-
-    public async Task SaveRecognitionCorrectionAsync(ConversationRecognitionCorrection correction)
-    {
-        var normalizedCorrection = NormalizeRecognitionCorrection(correction);
-        if (!HasRecognitionCorrectionChanges(normalizedCorrection))
-        {
-            StatusMessage = "未检测到新的修正内容。";
-            return;
-        }
-
-        await _recommendationTrackingService.SaveRecognitionCorrectionAsync(
-            _recommendationSessionId,
-            _recommendationSnapshot,
-            normalizedCorrection);
-
-        _recommendationSnapshot = new ConversationRecommendationSnapshot
-        {
-            PlatformHint = _recommendationSnapshot.PlatformHint,
-            WindowTitle = _recommendationSnapshot.WindowTitle,
-            WindowClassName = _recommendationSnapshot.WindowClassName,
-            ProcessName = _recommendationSnapshot.ProcessName,
-            ProcessPath = _recommendationSnapshot.ProcessPath,
-            CaptureStatus = _recommendationSnapshot.CaptureStatus,
-            CapturedText = _recommendationSnapshot.CapturedText,
-            RecognitionStatus = _recommendationSnapshot.RecognitionStatus,
-            RecognitionMethod = _recommendationSnapshot.RecognitionMethod,
-            RecognitionConfidence = _recommendationSnapshot.RecognitionConfidence,
-            RecognizedCustomerText = normalizedCorrection.CustomerText,
-            RecognizedContextText = normalizedCorrection.ContextText,
-            Product = new ConversationProductContext
-            {
-                ProductId = normalizedCorrection.ProductId,
-                ProductName = normalizedCorrection.ProductName
-            },
-            Messages = normalizedCorrection.Messages,
-            Keywords = RecommendationKeywordBuilder.Build(
-                normalizedCorrection.CustomerText,
-                normalizedCorrection.ContextText,
-                normalizedCorrection.ProductId,
-                normalizedCorrection.ProductName)
-        };
-
-        RecognitionCorrectionText = normalizedCorrection.CustomerText;
-        IsEditingRecognition = false;
-        NotifyRecommendationContextChanged();
-        OnPropertyChanged(nameof(RecommendationStatusText));
-        OnPropertyChanged(nameof(HasRecommendationStatusText));
-        StatusMessage = "已记录这次人工修正，后续会优先用于训练数据。";
-    }
-
-    private bool HasRecognitionCorrectionChanges(ConversationRecognitionCorrection correction)
-    {
-        return !string.Equals(correction.CustomerText, _recommendationSnapshot.RecognizedCustomerText, StringComparison.Ordinal) ||
-               !string.Equals(correction.ContextText, _recommendationSnapshot.RecognizedContextText, StringComparison.Ordinal) ||
-               !string.Equals(correction.ProductId, _recommendationSnapshot.RecognizedProductId, StringComparison.Ordinal) ||
-               !string.Equals(correction.ProductName, _recommendationSnapshot.RecognizedProductName, StringComparison.Ordinal) ||
-               !AreMessagesEquivalent(correction.Messages, _recommendationSnapshot.Messages);
-    }
-
-    private static ConversationRecognitionCorrection NormalizeRecognitionCorrection(ConversationRecognitionCorrection correction)
-    {
-        var customerLines = SplitCorrectionLines(correction.CustomerText);
-        var contextLines = SplitCorrectionLines(correction.ContextText);
-        var customerLineSet = customerLines.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var contextLineSet = contextLines.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var messages = correction.Messages
-            .Where(message => !string.IsNullOrWhiteSpace(message.Text))
-            .Select(message => message.Text.Trim())
-            .Where(text => !string.IsNullOrWhiteSpace(text))
-            .Distinct()
-            .Select((text, index) => new ConversationMessageTurn
-            {
-                Index = index,
-                Text = text,
-                Score = 0d,
-                Reason = "manual_correction",
-                SelectedForCustomerText = customerLineSet.Contains(text),
-                IncludedInContext = contextLineSet.Contains(text)
-            })
-            .ToArray();
-
-        return new ConversationRecognitionCorrection
-        {
-            CustomerText = string.Join(Environment.NewLine, customerLines),
-            ContextText = string.Join(Environment.NewLine, contextLines),
-            ProductId = correction.ProductId.Trim(),
-            ProductName = correction.ProductName.Trim(),
-            Messages = messages
-        };
-    }
-
-    private static IReadOnlyList<string> SplitCorrectionLines(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value)
-            ? []
-            : value
-                .Replace("\r", string.Empty, StringComparison.Ordinal)
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(line => !string.IsNullOrWhiteSpace(line))
-                .ToArray();
-    }
-
-    private static bool AreMessagesEquivalent(
-        IReadOnlyList<ConversationMessageTurn> left,
-        IReadOnlyList<ConversationMessageTurn> right)
-    {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            if (!string.Equals(left[index].Text, right[index].Text, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     public IReadOnlyList<ReplyCategory> GetCategories()
@@ -1065,8 +533,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
                 return new ReplyActionResult(false, "当前短语结果无效。");
             }
 
-            result = await _mainViewModel.SendPhraseDirectAsync(item.Phrase, "search_overlay_phrase_send", SearchText, _recommendationSnapshot);
-            TrackRecommendationAcceptance(item, ComposeActionMode.Send, result.Success);
+            result = await _mainViewModel.SendPhraseDirectAsync(item.Phrase, "search_overlay_phrase_send", SearchText);
         }
 
         StatusMessage = result.Message;
@@ -1099,7 +566,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             }
 
             result = await _mainViewModel.CopyPhraseDirectAsync(item.Phrase, "search_overlay_phrase_copy", SearchText);
-            TrackRecommendationAcceptance(item, ComposeActionMode.Copy, result.Success);
         }
 
         StatusMessage = result.Message;
@@ -1120,7 +586,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
 
         var result = await _mainViewModel.CopyPhraseImagesDirectAsync(item.Phrase, "search_overlay_phrase_copy_images", SearchText);
-        TrackRecommendationAcceptance(item, ComposeActionMode.Copy, result.Success);
         StatusMessage = result.Message;
         return result;
     }
@@ -1151,7 +616,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             }
 
             result = await _mainViewModel.InputPhraseDirectAsync(item.Phrase, "search_overlay_phrase_input", SearchText);
-            TrackRecommendationAcceptance(item, ComposeActionMode.Input, result.Success);
         }
 
         StatusMessage = result.Message;
@@ -1267,106 +731,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
         OnPropertyChanged(nameof(EmptyMessage));
     }
 
-    private Task RefreshRecommendationsAsync()
-    {
-        var refreshVersion = Interlocked.Increment(ref _recommendationRefreshVersion);
-        IsRefreshingRecommendations = true;
-        return RefreshRecommendationsCoreAsync(refreshVersion);
-    }
-
-    private async Task RefreshRecommendationsCoreAsync(int refreshVersion)
-    {
-        try
-        {
-            if (_isSettingsPreviewMode)
-            {
-                if (refreshVersion != _recommendationRefreshVersion)
-                {
-                    return;
-                }
-
-                _recommendationSnapshot = new ConversationRecommendationSnapshot();
-                _recommendationSessionId = Guid.Empty;
-                _knowledgeCardSessionId = Guid.Empty;
-                SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
-                IsEditingRecognition = false;
-                RecognitionCorrectionText = string.Empty;
-                NotifyRecommendationContextChanged();
-                OnPropertyChanged(nameof(RecommendationStatusText));
-                OnPropertyChanged(nameof(HasRecommendationStatusText));
-                RecommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
-                RefreshResults();
-                return;
-            }
-
-            var context = await _recommendationOrchestrator.GetRecommendationContextAsync(new RecommendationRequest
-            {
-                DisplayCount = RecommendationDisplayCount,
-                MinimumSampleCount = MinimumRecommendationSampleCount
-            });
-            if (refreshVersion != _recommendationRefreshVersion || _isSettingsPreviewMode)
-            {
-                return;
-            }
-
-            _recommendationSnapshot = context.Snapshot;
-            SimilarReplyGroups = context.Suggestions.Count == 0
-                ? Array.Empty<HistoricalReplyGroupSuggestion>()
-                : context.SimilarReplyGroups;
-            KnowledgeCards = context.KnowledgeCards;
-            IsEditingRecognition = false;
-            RecognitionCorrectionText = _recommendationSnapshot.RecognizedCustomerText;
-            NotifyRecommendationContextChanged();
-            OnPropertyChanged(nameof(RecommendationStatusText));
-            OnPropertyChanged(nameof(HasRecommendationStatusText));
-            RecommendedPhrases = context.Suggestions;
-            _recommendationSessionId = RecommendedPhrases.Count == 0
-                ? Guid.Empty
-                : _recommendationTrackingService.LogRecommendationsShown(
-                    context.Snapshot,
-                    context.Suggestions,
-                    CurrentMode,
-                    SearchText);
-            _knowledgeCardSessionId = KnowledgeCards.Count == 0
-                ? Guid.Empty
-                : _recommendationTrackingService.LogKnowledgeCardsShown(
-                    context.Snapshot,
-                    KnowledgeCards,
-                    CurrentMode,
-                    SearchText);
-            RefreshResults();
-        }
-        finally
-        {
-            if (refreshVersion == _recommendationRefreshVersion)
-            {
-                IsRefreshingRecommendations = false;
-            }
-        }
-    }
-
-    private void TrackRecommendationAcceptance(SearchOverlayResultItem item, ComposeActionMode actionMode, bool resultSuccess)
-    {
-        if (item.Phrase is null || _recommendationSessionId == Guid.Empty)
-        {
-            return;
-        }
-
-        var suggestion = RecommendedPhrases.FirstOrDefault(entry => entry.Phrase.Id == item.Phrase.Id);
-        if (suggestion is null)
-        {
-            return;
-        }
-
-        _recommendationTrackingService.LogRecommendationAccepted(
-            suggestion,
-            _recommendationSessionId,
-            CurrentMode,
-            SearchText,
-            actionMode,
-            resultSuccess);
-    }
-
     private void Settings_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(AppSettings.DefaultSearchOverlayMode))
@@ -1385,13 +749,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             OnPropertyChanged(nameof(IsCompactSidebarMode));
             OnPropertyChanged(nameof(SidebarModeButtonText));
             OnPropertyChanged(nameof(SidebarModeButtonToolTip));
-            return;
-        }
-
-        if (e.PropertyName == nameof(AppSettings.RecommendationDisplayCount))
-        {
-            OnPropertyChanged(nameof(RecommendationDisplayCount));
-            OnPropertyChanged(nameof(RecommendationItems));
             return;
         }
 
@@ -1673,19 +1030,4 @@ public sealed class SearchOverlayViewModel : ObservableObject
         return Math.Max(0, 18 - days);
     }
 
-    private static string BuildPreviewText(string text, int maxLength)
-    {
-        var normalized = text.Trim().Replace("\r", " ").Replace("\n", " ");
-        while (normalized.Contains("  ", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
-        }
-
-        if (normalized.Length <= maxLength)
-        {
-            return normalized;
-        }
-
-        return $"{normalized[..maxLength]}...";
-    }
 }

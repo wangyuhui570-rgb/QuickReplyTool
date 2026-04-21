@@ -12,7 +12,7 @@ public partial class App : System.Windows.Application
 
     private MainViewModel? _mainViewModel;
     private TrayIconService? _trayIconService;
-    private ConversationLoggingService? _conversationLoggingService;
+    private Lazy<ConversationLoggingService>? _conversationLoggingService;
     private SingleInstanceService? _singleInstanceService;
     private ExceptionLogService? _exceptionLogService;
     private ScreenshotToolService? _screenshotToolService;
@@ -98,9 +98,9 @@ public partial class App : System.Windows.Application
         var usageReportExcelService = new UsageReportExcelService();
         var personalConfigService = new PersonalConfigService();
         var messageComposeService = new MessageComposeService(externalWorkbenchService, clipboardService, keyboardInputSimulator);
-        _conversationLoggingService = new ConversationLoggingService();
-        _updateCheckService = new UpdateCheckService(dataStore, _conversationLoggingService);
-        _issueReportService = new IssueReportService(dataStore, _conversationLoggingService);
+        _conversationLoggingService = new Lazy<ConversationLoggingService>(() => new ConversationLoggingService());
+        _updateCheckService = new UpdateCheckService(dataStore);
+        _issueReportService = new IssueReportService(dataStore, null);
         _selfUpdateService = new SelfUpdateService(dataStore);
         _appUpdateWorkflowCoordinator = new AppUpdateWorkflowCoordinator(
             _updateCheckService,
@@ -124,7 +124,7 @@ public partial class App : System.Windows.Application
             personalConfigService,
             externalWorkbenchService,
             windowDockService,
-            _conversationLoggingService,
+            GetConversationLoggingService,
             _exceptionLogService);
         _runtimeCoordinator = new DesktopRuntimeCoordinator(
             () => _mainViewModel?.CreateSettingsSnapshot() ?? startupSettings,
@@ -154,11 +154,7 @@ public partial class App : System.Windows.Application
                 await Dispatcher.InvokeAsync(() =>
                     ShowBackgroundNotification(title, message, isWarning));
             });
-        var manualSearchOnlyServices = new ManualSearchOnlyRecommendationServices();
-        var searchOverlayViewModel = new SearchOverlayViewModel(
-            _mainViewModel,
-            manualSearchOnlyServices,
-            manualSearchOnlyServices);
+        var searchOverlayViewModel = new SearchOverlayViewModel(_mainViewModel);
         var searchOverlayWindow = new SearchOverlayWindow(externalWorkbenchService, searchOverlayViewModel);
         StartupTrace.Mark("app.windows_constructed");
 
@@ -214,7 +210,10 @@ public partial class App : System.Windows.Application
             _screenshotToolService?.Dispose();
         }
         _mainViewModel?.ShutdownAsync().GetAwaiter().GetResult();
-        _conversationLoggingService?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        if (_conversationLoggingService?.IsValueCreated == true)
+        {
+            _conversationLoggingService.Value.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
         DispatcherUnhandledException -= App_OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_OnUnobservedTaskException;
@@ -511,5 +510,15 @@ public partial class App : System.Windows.Application
     {
         _exceptionLogService?.RecordException(e.Exception, "task_scheduler_unobserved_exception", isTerminating: false);
         e.SetObserved();
+    }
+
+    private ConversationLoggingService GetConversationLoggingService()
+    {
+        if (_conversationLoggingService is null)
+        {
+            throw new InvalidOperationException("Conversation logging service is not initialized.");
+        }
+
+        return _conversationLoggingService.Value;
     }
 }
