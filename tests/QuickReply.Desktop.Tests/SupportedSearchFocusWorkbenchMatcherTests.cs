@@ -10,6 +10,7 @@ public sealed class SupportedSearchFocusWorkbenchMatcherTests
     [InlineData("千牛工作台", "StandardFrame", "AliWorkbench", @"C:\Program Files\AliWorkbench\AliWorkbench.exe")]
     [InlineData("拼多多客服工作台", "Chrome_WidgetWin_1", "chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe")]
     [InlineData("京东工作台", "JdWorkbench", "JdWork", @"C:\Program Files\JD\JdWork.exe")]
+    [InlineData("会话详情", "Chrome_WidgetWin_1", "jingmai", @"C:\Program Files\JD\JingMai\jingmai.exe")]
     [InlineData("抖店 工作台", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
     public void IsSupported_ReturnsTrueForConfiguredWorkbenchTargets(string title, string className, string processName, string processPath)
     {

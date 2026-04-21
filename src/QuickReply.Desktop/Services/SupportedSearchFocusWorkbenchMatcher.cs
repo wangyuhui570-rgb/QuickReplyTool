@@ -9,6 +9,16 @@ internal static class SupportedSearchFocusWorkbenchMatcher
             return false;
         }
 
+        var platformHint = ConversationLoggingService.InferPlatformHint(
+            targetInfo.Title,
+            targetInfo.ProcessName,
+            targetInfo.ProcessPath,
+            targetInfo.WindowClassName);
+        if (platformHint is "wechat" or "wecom" or "qianniu" or "jd_workbench" or "pdd_workbench")
+        {
+            return true;
+        }
+
         var combined = string.Join(
             "\n",
             [
@@ -18,29 +28,8 @@ internal static class SupportedSearchFocusWorkbenchMatcher
                 targetInfo.ProcessPath
             ]);
 
-        return ContainsAny(combined,
-            "微信",
-            "wechat",
-            "wechatapp",
-            "weixin",
-            "企业微信",
-            "wecom",
-            "wxwork",
-            "千牛",
-            "qianniu",
-            "aliworkbench",
-            "阿里旺旺",
-            "旺旺",
-            "拼多多",
-            "pdd",
-            "pinduoduo",
-            "多多客服",
-            "京东",
-            "京东工作台",
-            "京东咚咚",
-            "京麦",
-            "jdwork",
-            "jingdong",
+        return ContainsAny(
+            combined,
             "douyin",
             "抖音工作台",
             "抖店",
