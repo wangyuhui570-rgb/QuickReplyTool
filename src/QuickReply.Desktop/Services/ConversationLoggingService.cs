@@ -27,7 +27,7 @@ public sealed class ConversationLoggingService :
     private const int MaxAutomationDepth = 7;
     private const int DefaultScreenshotRetentionDays = 7;
     private const int DefaultStructuredLogRetentionDays = 30;
-    private const string RecognitionMethodVersion = "automation_ocr_hybrid_v2";
+    private const string RecognitionMethodVersion = "automation_ocr_hybrid_v3";
     private const string RecommendationRuleVersion = "keyword-frequency-v2";
     private const string AiDraftRuleVersion = "grounded-ai-v1";
     private const int ReplyGroupWindowSeconds = 75;
@@ -2455,7 +2455,7 @@ public sealed class ConversationLoggingService :
         if (!NativeMethods.GetWindowRect(windowHandle, out var rect))
         {
             snapshot.CaptureStatus = "missing_rect";
-            snapshot.CapturedText = CaptureAutomationText(windowHandle);
+            snapshot.CapturedText = CaptureAutomationText(windowHandle, snapshot.PlatformHint);
             if (isBackgroundWindow)
             {
                 snapshot.CaptureStatus = AppendCaptureStatus(snapshot.CaptureStatus, "background_window");
@@ -2467,7 +2467,13 @@ public sealed class ConversationLoggingService :
         snapshot.Top = rect.Top;
         snapshot.Width = Math.Max(0, rect.Right - rect.Left);
         snapshot.Height = Math.Max(0, rect.Bottom - rect.Top);
-        snapshot.CapturedText = CaptureAutomationText(windowHandle);
+        snapshot.CapturedText = CaptureAutomationText(
+            windowHandle,
+            snapshot.PlatformHint,
+            snapshot.Left,
+            snapshot.Top,
+            snapshot.Width,
+            snapshot.Height);
         snapshot.ScreenshotPath = includeScreenshot ? TryCaptureScreenshot(snapshot) : string.Empty;
         snapshot.CaptureStatus = BuildCaptureStatus(snapshot);
         if (string.IsNullOrWhiteSpace(snapshot.CapturedText))
@@ -2670,7 +2676,13 @@ public sealed class ConversationLoggingService :
         }
     }
 
-    private static string CaptureAutomationText(IntPtr windowHandle)
+    private static string CaptureAutomationText(
+        IntPtr windowHandle,
+        string platformHint = "",
+        int windowLeft = 0,
+        int windowTop = 0,
+        int windowWidth = 0,
+        int windowHeight = 0)
     {
         try
         {
@@ -2680,15 +2692,15 @@ public sealed class ConversationLoggingService :
                 return string.Empty;
             }
 
-            var lines = new List<string>();
+            var entries = new List<AutomationTextEntry>();
             var queue = new Queue<(AutomationElement Element, int Depth)>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             queue.Enqueue((root, 0));
 
-            while (queue.Count > 0 && seen.Count < MaxAutomationNodes)
+            while (queue.Count > 0 && entries.Count < MaxAutomationNodes)
             {
                 var (element, depth) = queue.Dequeue();
-                AppendElementText(element, lines, seen);
+                AppendElementText(element, entries, seen);
 
                 if (depth >= MaxAutomationDepth)
                 {
@@ -2708,11 +2720,32 @@ public sealed class ConversationLoggingService :
                 foreach (AutomationElement child in children)
                 {
                     queue.Enqueue((child, depth + 1));
-                    if (queue.Count + seen.Count >= MaxAutomationNodes)
+                    if (queue.Count + entries.Count >= MaxAutomationNodes)
                     {
                         break;
                     }
                 }
+            }
+
+            var orderedEntries = ShouldUsePreferredAutomationOrdering(platformHint)
+                ? entries
+                    .Where(entry => ShouldIncludeAutomationEntry(entry, platformHint, windowLeft, windowTop, windowWidth, windowHeight))
+                    .OrderBy(entry => entry.Top)
+                    .ThenBy(entry => entry.Left)
+                    .ThenBy(entry => entry.Sequence)
+                : entries.OrderBy(entry => entry.Sequence);
+
+            var lines = new List<string>();
+            string? previousLine = null;
+            foreach (var entry in orderedEntries)
+            {
+                if (string.Equals(previousLine, entry.Text, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                lines.Add(entry.Text);
+                previousLine = entry.Text;
             }
 
             var text = string.Join(Environment.NewLine, lines);
@@ -2726,17 +2759,34 @@ public sealed class ConversationLoggingService :
         }
     }
 
-    private static void AppendElementText(AutomationElement element, ICollection<string> lines, ISet<string> seen)
+    private static void AppendElementText(AutomationElement element, ICollection<AutomationTextEntry> entries, ISet<string> seen)
     {
+        var bounds = TryGetAutomationBounds(element);
+        var controlTypeName = TryGetAutomationControlTypeName(element);
+        var isOffscreen = TryGetAutomationIsOffscreen(element);
+
         void AddValue(string? value)
         {
-            var normalizedValue = NormalizeCapturedValue(value);
-            if (string.IsNullOrWhiteSpace(normalizedValue) || !seen.Add(normalizedValue))
+            foreach (var normalizedValue in SplitAutomationTextValue(value))
             {
-                return;
-            }
+                var entry = new AutomationTextEntry
+                {
+                    Sequence = entries.Count,
+                    Text = normalizedValue,
+                    Left = bounds?.Left ?? double.MaxValue,
+                    Top = bounds?.Top ?? double.MaxValue,
+                    Width = bounds?.Width ?? 0d,
+                    Height = bounds?.Height ?? 0d,
+                    IsOffscreen = isOffscreen,
+                    ControlTypeName = controlTypeName
+                };
+                if (!seen.Add(BuildAutomationEntryDedupKey(entry)))
+                {
+                    continue;
+                }
 
-            lines.Add(normalizedValue);
+                entries.Add(entry);
+            }
         }
 
         try
@@ -2770,6 +2820,200 @@ public sealed class ConversationLoggingService :
         catch
         {
         }
+    }
+
+    private static IEnumerable<string> SplitAutomationTextValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            yield break;
+        }
+
+        foreach (var line in value
+                     .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                     .Select(NormalizeCapturedValue)
+                     .Where(line => !string.IsNullOrWhiteSpace(line)))
+        {
+            yield return line;
+        }
+    }
+
+    internal static IReadOnlyList<string> SplitAutomationTextValueForTesting(string value)
+    {
+        return SplitAutomationTextValue(value).ToArray();
+    }
+
+    internal static bool IsWithinPreferredAutomationRegionForTesting(
+        string platformHint,
+        double elementLeft,
+        double elementTop,
+        double elementWidth,
+        double elementHeight,
+        double windowLeft,
+        double windowTop,
+        double windowWidth,
+        double windowHeight)
+    {
+        return IsWithinPreferredAutomationRegion(
+            platformHint,
+            elementLeft,
+            elementTop,
+            elementWidth,
+            elementHeight,
+            windowLeft,
+            windowTop,
+            windowWidth,
+            windowHeight);
+    }
+
+    private static string BuildAutomationEntryDedupKey(AutomationTextEntry entry)
+    {
+        var top = double.IsFinite(entry.Top) ? Math.Round(entry.Top, 0, MidpointRounding.AwayFromZero) : -1d;
+        var left = double.IsFinite(entry.Left) ? Math.Round(entry.Left, 0, MidpointRounding.AwayFromZero) : -1d;
+        return $"{entry.ControlTypeName}\u001f{top}\u001f{left}\u001f{entry.Text}";
+    }
+
+    private static System.Windows.Rect? TryGetAutomationBounds(AutomationElement element)
+    {
+        try
+        {
+            var bounds = element.Current.BoundingRectangle;
+            return bounds.IsEmpty || bounds.Width <= 1 || bounds.Height <= 1
+                ? null
+                : bounds;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string TryGetAutomationControlTypeName(AutomationElement element)
+    {
+        try
+        {
+            return element.Current.ControlType?.ProgrammaticName ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool TryGetAutomationIsOffscreen(AutomationElement element)
+    {
+        try
+        {
+            return element.Current.IsOffscreen;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ShouldUsePreferredAutomationOrdering(string platformHint)
+    {
+        return platformHint is "jd_workbench";
+    }
+
+    private static bool ShouldIncludeAutomationEntry(
+        AutomationTextEntry entry,
+        string platformHint,
+        double windowLeft,
+        double windowTop,
+        double windowWidth,
+        double windowHeight)
+    {
+        if (entry.IsOffscreen)
+        {
+            return false;
+        }
+
+        if (!ShouldUsePreferredAutomationOrdering(platformHint))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.Text))
+        {
+            return false;
+        }
+
+        if (IsChromeAutomationControlType(entry.ControlTypeName))
+        {
+            return false;
+        }
+
+        return IsWithinPreferredAutomationRegion(
+            platformHint,
+            entry.Left,
+            entry.Top,
+            entry.Width,
+            entry.Height,
+            windowLeft,
+            windowTop,
+            windowWidth,
+            windowHeight);
+    }
+
+    private static bool IsChromeAutomationControlType(string controlTypeName)
+    {
+        return controlTypeName is
+            "ControlType.Button" or
+            "ControlType.Edit" or
+            "ControlType.ComboBox" or
+            "ControlType.MenuItem" or
+            "ControlType.Tab" or
+            "ControlType.TabItem" or
+            "ControlType.ToolBar" or
+            "ControlType.Header" or
+            "ControlType.ScrollBar" or
+            "ControlType.TitleBar" or
+            "ControlType.StatusBar";
+    }
+
+    private static bool IsWithinPreferredAutomationRegion(
+        string platformHint,
+        double elementLeft,
+        double elementTop,
+        double elementWidth,
+        double elementHeight,
+        double windowLeft,
+        double windowTop,
+        double windowWidth,
+        double windowHeight)
+    {
+        var region = ResolvePreferredAutomationRegion(platformHint);
+        if (region is null || windowWidth <= 0 || windowHeight <= 0)
+        {
+            return true;
+        }
+
+        if (!double.IsFinite(elementLeft) ||
+            !double.IsFinite(elementTop) ||
+            elementWidth <= 0 ||
+            elementHeight <= 0)
+        {
+            return false;
+        }
+
+        var centerX = ((elementLeft + (elementWidth / 2d)) - windowLeft) / windowWidth;
+        var centerY = ((elementTop + (elementHeight / 2d)) - windowTop) / windowHeight;
+
+        return centerX >= region.Value.X &&
+               centerX <= region.Value.X + region.Value.Width &&
+               centerY >= region.Value.Y &&
+               centerY <= region.Value.Y + region.Value.Height;
+    }
+
+    private static (double X, double Y, double Width, double Height)? ResolvePreferredAutomationRegion(string platformHint)
+    {
+        return platformHint switch
+        {
+            "jd_workbench" => (0.18d, 0.10d, 0.56d, 0.78d),
+            _ => null
+        };
     }
 
     private static string NormalizeCapturedValue(string? value)
@@ -4080,6 +4324,25 @@ public sealed class ConversationLoggingService :
         public double Score { get; init; }
 
         public string Reason { get; init; } = string.Empty;
+    }
+
+    private sealed class AutomationTextEntry
+    {
+        public int Sequence { get; init; }
+
+        public string Text { get; init; } = string.Empty;
+
+        public double Left { get; init; }
+
+        public double Top { get; init; }
+
+        public double Width { get; init; }
+
+        public double Height { get; init; }
+
+        public bool IsOffscreen { get; init; }
+
+        public string ControlTypeName { get; init; } = string.Empty;
     }
 
     private sealed class WindowCaptureSnapshot

@@ -128,6 +128,48 @@ public sealed class ConversationLoggingServiceTests
         Assert.Equal("内胎怎么选", filtered);
     }
 
+    [Fact]
+    public void SplitAutomationTextValueForTesting_PreservesLineBoundaries()
+    {
+        var lines = ConversationLoggingService.SplitAutomationTextValueForTesting(
+            "客户：订单什么时候发\r\n客服：今天发出\r\n\r\n客户：好的");
+
+        Assert.Equal(
+            ["客户：订单什么时候发", "客服：今天发出", "客户：好的"],
+            lines);
+    }
+
+    [Theory]
+    [InlineData("jd_workbench", 420, 220, 360, 80, 100, 100, 1200, 900, true)]
+    [InlineData("jd_workbench", 40, 220, 220, 80, 100, 100, 1200, 900, false)]
+    [InlineData("jd_workbench", 980, 220, 180, 80, 100, 100, 1200, 900, false)]
+    [InlineData("wecom", 40, 220, 220, 80, 100, 100, 1200, 900, true)]
+    public void IsWithinPreferredAutomationRegionForTesting_FiltersWorkbenchSidePanels(
+        string platformHint,
+        double elementLeft,
+        double elementTop,
+        double elementWidth,
+        double elementHeight,
+        double windowLeft,
+        double windowTop,
+        double windowWidth,
+        double windowHeight,
+        bool expected)
+    {
+        var actual = ConversationLoggingService.IsWithinPreferredAutomationRegionForTesting(
+            platformHint,
+            elementLeft,
+            elementTop,
+            elementWidth,
+            elementHeight,
+            windowLeft,
+            windowTop,
+            windowWidth,
+            windowHeight);
+
+        Assert.Equal(expected, actual);
+    }
+
     [Theory]
     [InlineData("淘宝工作台", "AliWorkbench", "", "", "qianniu")]
     [InlineData("京东客服", "jingmai", "", "", "jd_workbench")]
