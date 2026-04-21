@@ -419,94 +419,6 @@ public sealed class ConversationLoggingServiceTests
     }
 
     [Fact]
-    public async Task LogAiDraftEvents_PersistStructuredRecommendationColumns()
-    {
-        using var scope = new TestAppDataScope();
-        var logsRootPath = Path.Combine(scope.AppRootPath, "logs");
-        var databasePath = Path.Combine(logsRootPath, "conversation-logs.db");
-
-        await using var service = new ConversationLoggingService(logsRootPath);
-        var snapshot = new ConversationRecommendationSnapshot
-        {
-            PlatformHint = "wecom",
-            RecognizedCustomerText = "这款什么时候发货？",
-            WindowTitle = "企业微信"
-        };
-
-        var draft = new GeneratedReplyCandidate
-        {
-            DisplayRank = 1,
-            Text = "您好，这款今天可以安排发出。",
-            Reason = "参考了发货类历史短语",
-            ProviderType = "ollama",
-            ModelName = "qwen2.5:3b",
-            GroundingPhraseCount = 2,
-            GroundingKnowledgeCount = 1,
-            GroundingKnowledgeIdsJson = "[\"11111111-1111-1111-1111-111111111111\"]",
-            LatencyMs = 380,
-            CharacterCount = 15
-        };
-
-        var sessionId = service.LogAiDraftsShown(snapshot, [draft], SearchOverlayMode.Phrase, "发货");
-        service.LogAiDraftAction(draft, sessionId, SearchOverlayMode.Phrase, "发货", "sent", ComposeActionMode.Send, resultSuccess: true);
-        await service.LogAiDraftStatusAsync(snapshot, SearchOverlayMode.Phrase, "发货", AiDraftGenerationStatus.ProviderFailed(
-            "本地 Ollama 当前不可用。",
-            "ollama",
-            "qwen2.5:3b",
-            latencyMs: 800,
-            groundingPhraseCount: 2,
-            groundingKnowledgeCount: 1,
-            fallbackReason: "ollama_unavailable",
-            characterCount: 0));
-
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
-        await connection.OpenAsync();
-
-        for (var attempt = 0; attempt < 20; attempt++)
-        {
-            await using var countCommand = connection.CreateCommand();
-            countCommand.CommandText = "SELECT COUNT(1) FROM recommendation_events;";
-            var count = Convert.ToInt32(await countCommand.ExecuteScalarAsync());
-            if (count >= 3)
-            {
-                break;
-            }
-
-            await Task.Delay(50);
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT recommendation_kind,
-                   provider_type,
-                   model_name,
-                   latency_ms,
-                   grounding_phrase_count,
-                   grounding_knowledge_count,
-                   grounding_knowledge_ids_json,
-                   knowledge_hit,
-                   fallback_reason,
-                   generation_character_count
-            FROM recommendation_events
-            WHERE event_type = 'shown'
-            LIMIT 1;
-            """;
-
-        await using var reader = await command.ExecuteReaderAsync();
-        Assert.True(await reader.ReadAsync());
-        Assert.Equal("ai_draft", reader.GetString(0));
-        Assert.Equal("ollama", reader.GetString(1));
-        Assert.Equal("qwen2.5:3b", reader.GetString(2));
-        Assert.Equal(380L, reader.GetInt64(3));
-        Assert.Equal(2L, reader.GetInt64(4));
-        Assert.Equal(1L, reader.GetInt64(5));
-        Assert.Equal("[\"11111111-1111-1111-1111-111111111111\"]", reader.GetString(6));
-        Assert.Equal(1L, reader.GetInt64(7));
-        Assert.Equal(string.Empty, reader.GetString(8));
-        Assert.Equal(15L, reader.GetInt64(9));
-    }
-
-    [Fact]
     public async Task LogKnowledgeCardEvents_PersistKnowledgeCardFields()
     {
         using var scope = new TestAppDataScope();
@@ -697,23 +609,7 @@ public sealed class ConversationLoggingServiceTests
                 RecognizedCustomerText = "客户问发货"
             });
         await service.LogOperationEventAsync("maintenance_probe", "capture", success: true, skipped: false, durationMs: 10, message: "ok");
-        var sessionId = service.LogAiDraftsShown(
-            new ConversationRecommendationSnapshot
-            {
-                PlatformHint = "wecom",
-                RecognizedCustomerText = "客户问发货"
-            },
-            [
-                new GeneratedReplyCandidate
-                {
-                    DisplayRank = 1,
-                    Text = "今天可以发出",
-                    ProviderType = "ollama",
-                    ModelName = "qwen2.5:3b"
-                }
-            ],
-            SearchOverlayMode.Phrase,
-            "发货");
+        var sessionId = Guid.NewGuid();
         await service.SaveRecognitionCorrectionAsync(
             sessionId,
             new ConversationRecommendationSnapshot

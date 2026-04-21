@@ -10,7 +10,6 @@ namespace QuickReply.Desktop.Services;
 public sealed class SqliteAppDataStore
 {
     private const string AppearanceThemePresetsKey = "appearance_theme_presets_json";
-    private const string AiApiKeySettingKey = "ai_api_key";
     private const string SyncApiTokenSettingKey = "sync_api_token";
     private readonly string _rootPath;
     private readonly string _databasePath;
@@ -594,16 +593,6 @@ public sealed class SqliteAppDataStore
             ["allow_automatic_issue_report_upload"] = settings.AllowAutomaticIssueReportUpload ? "1" : "0",
             ["enable_update_checks"] = settings.EnableUpdateChecks ? "1" : "0",
             ["server_base_url"] = settings.ServerBaseUrl,
-            ["enable_ai_drafts"] = settings.EnableAiDrafts ? "1" : "0",
-            ["ollama_base_url"] = settings.OllamaBaseUrl,
-            ["ollama_model_name"] = settings.OllamaModelName,
-            ["ai_draft_count"] = settings.AiDraftCount.ToString(CultureInfo.InvariantCulture),
-            ["ai_request_timeout_ms"] = settings.AiRequestTimeoutMs.ToString(CultureInfo.InvariantCulture),
-            ["enable_ai_api_fallback"] = settings.EnableAiApiFallback ? "1" : "0",
-            ["ai_api_base_url"] = settings.AiApiBaseUrl,
-            ["ai_api_model_name"] = settings.AiApiModelName,
-            [AiApiKeySettingKey] = string.Empty,
-            ["allow_remote_ai_for_customer_text"] = settings.AllowRemoteAiForCustomerText ? "1" : "0",
             ["sync_client_id"] = settings.SyncClientId,
             [SyncApiTokenSettingKey] = string.Empty,
             ["last_knowledge_sync_at"] = settings.LastKnowledgeSyncAt.HasValue ? ToDbDateTime(settings.LastKnowledgeSyncAt.Value) : string.Empty,
@@ -678,7 +667,6 @@ public sealed class SqliteAppDataStore
         await transaction.CommitAsync();
         await _secretStore.SaveSecretsAsync(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [AiApiKeySettingKey] = settings.AiApiKey,
             [SyncApiTokenSettingKey] = settings.SyncApiToken
         }).ConfigureAwait(false);
     }
@@ -1471,7 +1459,6 @@ public sealed class SqliteAppDataStore
     {
         var settings = new AppSettings();
         settings.ScreenshotToolHotkeyMigrationVersion = 0;
-        var legacyAiApiKey = string.Empty;
         var legacySyncApiToken = string.Empty;
 
         await using var command = connection.CreateCommand();
@@ -1538,42 +1525,6 @@ public sealed class SqliteAppDataStore
                     break;
                 case "server_base_url":
                     settings.ServerBaseUrl = value;
-                    break;
-                case "enable_ai_drafts":
-                    settings.EnableAiDrafts = value is "1" or "true" or "True";
-                    break;
-                case "ollama_base_url":
-                    settings.OllamaBaseUrl = value;
-                    break;
-                case "ollama_model_name":
-                    settings.OllamaModelName = value;
-                    break;
-                case "ai_draft_count":
-                    if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var aiDraftCount))
-                    {
-                        settings.AiDraftCount = aiDraftCount;
-                    }
-                    break;
-                case "ai_request_timeout_ms":
-                    if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var aiRequestTimeoutMs))
-                    {
-                        settings.AiRequestTimeoutMs = aiRequestTimeoutMs;
-                    }
-                    break;
-                case "enable_ai_api_fallback":
-                    settings.EnableAiApiFallback = value is "1" or "true" or "True";
-                    break;
-                case "ai_api_base_url":
-                    settings.AiApiBaseUrl = value;
-                    break;
-                case "ai_api_model_name":
-                    settings.AiApiModelName = value;
-                    break;
-                case "ai_api_key":
-                    legacyAiApiKey = value;
-                    break;
-                case "allow_remote_ai_for_customer_text":
-                    settings.AllowRemoteAiForCustomerText = value is "1" or "true" or "True";
                     break;
                 case "sync_client_id":
                     settings.SyncClientId = value;
@@ -1848,36 +1799,30 @@ public sealed class SqliteAppDataStore
             }
         }
 
-        await ApplySensitiveSettingsAsync(settings, legacyAiApiKey, legacySyncApiToken, connection).ConfigureAwait(false);
+        await ApplySensitiveSettingsAsync(settings, legacySyncApiToken, connection).ConfigureAwait(false);
         settings.EnsureScreenshotHotkeyMigrationApplied();
         await NormalizeServiceEndpointSettingsAsync(settings, connection).ConfigureAwait(false);
+        RetiredFeatureSettingsPolicy.Apply(settings);
 
         return settings;
     }
 
     private async Task ApplySensitiveSettingsAsync(
         AppSettings settings,
-        string legacyAiApiKey,
         string legacySyncApiToken,
         SqliteConnection connection)
     {
         var storedSecrets = await _secretStore.LoadSecretsAsync().ConfigureAwait(false);
-        var effectiveAiApiKey = storedSecrets.TryGetValue(AiApiKeySettingKey, out var storedAiApiKey) && !string.IsNullOrWhiteSpace(storedAiApiKey)
-            ? storedAiApiKey
-            : legacyAiApiKey?.Trim() ?? string.Empty;
         var effectiveSyncApiToken = storedSecrets.TryGetValue(SyncApiTokenSettingKey, out var storedSyncApiToken) && !string.IsNullOrWhiteSpace(storedSyncApiToken)
             ? storedSyncApiToken
             : legacySyncApiToken?.Trim() ?? string.Empty;
 
-        settings.AiApiKey = effectiveAiApiKey;
         settings.SyncApiToken = effectiveSyncApiToken;
 
-        if (!string.IsNullOrWhiteSpace(legacyAiApiKey) ||
-            !string.IsNullOrWhiteSpace(legacySyncApiToken))
+        if (!string.IsNullOrWhiteSpace(legacySyncApiToken))
         {
             await _secretStore.SaveSecretsAsync(new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                [AiApiKeySettingKey] = effectiveAiApiKey,
                 [SyncApiTokenSettingKey] = effectiveSyncApiToken
             }).ConfigureAwait(false);
 
@@ -1892,9 +1837,8 @@ public sealed class SqliteAppDataStore
             """
             UPDATE app_settings
             SET value = ''
-            WHERE key IN ($aiApiKey, $syncApiToken);
+            WHERE key IN ($syncApiToken);
             """;
-        command.Parameters.AddWithValue("$aiApiKey", AiApiKeySettingKey);
         command.Parameters.AddWithValue("$syncApiToken", SyncApiTokenSettingKey);
         await command.ExecuteNonQueryAsync();
     }

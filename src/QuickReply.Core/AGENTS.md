@@ -7,7 +7,7 @@ This project is the cross-platform core layer for QuickReplyTool.
 - Put pure models, value objects, enums, and deterministic business logic here.
 - Code in this project must stay buildable on plain `net8.0`.
 - This is the preferred layer for contributors working on macOS or Linux.
-- Recommendation/query request DTOs, AI provider request/response contracts, keyword extraction, and prompt composition belong here once they no longer depend on desktop-only observable/UI types.
+- Recommendation/query request DTOs and other UI-agnostic helper logic belong here once they no longer depend on desktop-only observable/UI types.
 
 ## Keep out of this project
 

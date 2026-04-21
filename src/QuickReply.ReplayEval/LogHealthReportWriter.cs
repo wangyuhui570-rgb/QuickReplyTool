@@ -47,7 +47,6 @@ internal static class LogHealthReportWriter
         AppendCountSection(builder, "版本分布", report.AppVersionCounts);
         AppendHostHealthSection(builder, report.HostSendHealth);
         AppendOperationFunnelSection(builder, report.OperationFunnels);
-        AppendAiDraftSection(builder, report.AiDraftHealth);
 
         if (report.RecentExceptions.Count > 0)
         {
@@ -121,21 +120,4 @@ internal static class LogHealthReportWriter
         builder.AppendLine();
     }
 
-    private static void AppendAiDraftSection(StringBuilder builder, IReadOnlyList<LogHealthAiDraftEntry> entries)
-    {
-        if (entries.Count == 0)
-        {
-            return;
-        }
-
-        builder.AppendLine("## AI 草稿闭环");
-        builder.AppendLine();
-        foreach (var entry in entries)
-        {
-            builder.AppendLine(
-                $"- {entry.DisplayName}: 展示 {entry.ShownCount.ToString(CultureInfo.InvariantCulture)}，输入 {entry.InputCount.ToString(CultureInfo.InvariantCulture)}，发送 {entry.SentCount.ToString(CultureInfo.InvariantCulture)}，忽略 {entry.DismissedCount.ToString(CultureInfo.InvariantCulture)}，provider 失败 {entry.ProviderFailedCount.ToString(CultureInfo.InvariantCulture)}，上下文跳过 {entry.ContextSkippedCount.ToString(CultureInfo.InvariantCulture)}，平均耗时 {entry.AverageLatencyMs.ToString("0.0", CultureInfo.InvariantCulture)} ms");
-        }
-
-        builder.AppendLine();
-    }
 }

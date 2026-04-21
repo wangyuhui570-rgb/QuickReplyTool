@@ -29,7 +29,6 @@ public sealed class ConversationLoggingService :
     private const int DefaultStructuredLogRetentionDays = 30;
     private const string RecognitionMethodVersion = "automation_ocr_hybrid_v3";
     private const string RecommendationRuleVersion = "keyword-frequency-v2";
-    private const string AiDraftRuleVersion = "grounded-ai-v1";
     private const int ReplyGroupWindowSeconds = 75;
     private const int FrequentReplySuggestionThreshold = 3;
     private const int FrequentReplySuggestionMinimumGeneralLength = 6;
@@ -1038,69 +1037,6 @@ public sealed class ConversationLoggingService :
             searchKeyword,
             actionMode,
             resultSuccess));
-    }
-
-    public Guid LogAiDraftsShown(
-        ConversationRecommendationSnapshot snapshot,
-        IReadOnlyList<GeneratedReplyCandidate> drafts,
-        SearchOverlayMode mode,
-        string? searchKeyword)
-    {
-        if (snapshot is null || drafts is null || drafts.Count == 0)
-        {
-            return Guid.Empty;
-        }
-
-        var sessionId = Guid.NewGuid();
-        _ = PersistRecommendationEventsSafeAsync(() => PersistAiDraftsShownAsync(
-            sessionId,
-            snapshot,
-            drafts,
-            mode,
-            searchKeyword));
-        return sessionId;
-    }
-
-    public void LogAiDraftAction(
-        GeneratedReplyCandidate draft,
-        Guid sessionId,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        string eventType,
-        ComposeActionMode actionMode,
-        bool resultSuccess)
-    {
-        if (draft is null || sessionId == Guid.Empty || string.IsNullOrWhiteSpace(eventType))
-        {
-            return;
-        }
-
-        _ = PersistRecommendationEventsSafeAsync(() => PersistAiDraftActionAsync(
-            sessionId,
-            draft,
-            mode,
-            searchKeyword,
-            eventType,
-            actionMode,
-            resultSuccess));
-    }
-
-    public Task LogAiDraftStatusAsync(
-        ConversationRecommendationSnapshot snapshot,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        AiDraftGenerationStatus status)
-    {
-        if (snapshot is null || status is null || !status.ShouldSurfaceStatus)
-        {
-            return Task.CompletedTask;
-        }
-
-        return PersistRecommendationEventsSafeAsync(() => PersistAiDraftStatusAsync(
-            snapshot,
-            mode,
-            searchKeyword,
-            status));
     }
 
     public async Task SaveRecognitionCorrectionAsync(
@@ -3262,15 +3198,11 @@ public sealed class ConversationLoggingService :
         string recommendationKind,
         PhraseRecommendationSuggestion? suggestion = null,
         KnowledgeCardSuggestion? knowledgeCard = null,
-        GeneratedReplyCandidate? draft = null,
-        string? providerType = null,
-        string? modelName = null,
         long latencyMs = 0,
         int groundingPhraseCount = 0,
         int groundingKnowledgeCount = 0,
         string? groundingKnowledgeIdsJson = null,
-        string? fallbackReason = null,
-        int generationCharacterCount = 0)
+        string? fallbackReason = null)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -3299,15 +3231,12 @@ public sealed class ConversationLoggingService :
                 knowledge_card_candidate_kind,
                 actual_payload_text,
                 recommendation_kind,
-                provider_type,
-                model_name,
                 latency_ms,
                 grounding_phrase_count,
                 grounding_knowledge_count,
                 grounding_knowledge_ids_json,
                 knowledge_hit,
                 fallback_reason,
-                generation_character_count,
                 app_version,
                 recommendation_rule_version
             )
@@ -3336,15 +3265,12 @@ public sealed class ConversationLoggingService :
                 $knowledgeCardCandidateKind,
                 $actualPayloadText,
                 $recommendationKind,
-                $providerType,
-                $modelName,
                 $latencyMs,
                 $groundingPhraseCount,
                 $groundingKnowledgeCount,
                 $groundingKnowledgeIdsJson,
                 $knowledgeHit,
                 $fallbackReason,
-                $generationCharacterCount,
                 $appVersion,
                 $recommendationRuleVersion
             );
@@ -3359,33 +3285,31 @@ public sealed class ConversationLoggingService :
         command.Parameters.AddWithValue("$searchKeyword", NormalizeOptionalValue(searchKeyword));
         command.Parameters.AddWithValue("$actionMode", actionMode.ToString());
         command.Parameters.AddWithValue("$resultSuccess", resultSuccess ? 1 : 0);
-        command.Parameters.AddWithValue("$phraseId", phrase?.Id.ToString() ?? NormalizeOptionalValue(draft?.BackingPhraseId?.ToString()));
-        command.Parameters.AddWithValue("$phraseTitle", NormalizeOptionalValue(phrase?.Title ?? draft?.BackingPhraseTitle));
+        command.Parameters.AddWithValue("$phraseId", NormalizeOptionalValue(phrase?.Id.ToString()));
+        command.Parameters.AddWithValue("$phraseTitle", NormalizeOptionalValue(phrase?.Title));
         command.Parameters.AddWithValue("$phraseCategoryName", NormalizeOptionalValue(phrase?.CategoryName));
-        command.Parameters.AddWithValue("$displayRank", suggestion?.DisplayRank ?? draft?.DisplayRank ?? 0);
+        command.Parameters.AddWithValue("$displayRank", suggestion?.DisplayRank ?? 0);
         command.Parameters.AddWithValue("$matchedKeyword", NormalizeOptionalValue(suggestion?.MatchedKeyword));
         command.Parameters.AddWithValue("$matchCount", suggestion?.MatchCount ?? 0);
         command.Parameters.AddWithValue("$sampleCount", suggestion?.SampleCount ?? 0);
-        command.Parameters.AddWithValue("$confidence", suggestion?.Confidence ?? draft?.Confidence ?? 0d);
+        command.Parameters.AddWithValue("$confidence", suggestion?.Confidence ?? 0d);
         command.Parameters.AddWithValue("$recognizedCustomerText", NormalizeOptionalValue(snapshot.RecognizedCustomerText));
         command.Parameters.AddWithValue("$platformHint", NormalizeOptionalValue(snapshot.PlatformHint));
         command.Parameters.AddWithValue("$windowTitle", NormalizeOptionalValue(snapshot.WindowTitle));
         command.Parameters.AddWithValue("$knowledgeCardId", NormalizeOptionalValue(knowledgeCard?.Card.Id.ToString()));
         command.Parameters.AddWithValue("$knowledgeCardQuestion", NormalizeOptionalValue(knowledgeCard?.Card.Question));
         command.Parameters.AddWithValue("$knowledgeCardCandidateKind", NormalizeOptionalValue(knowledgeCard?.Card.CandidateKind));
-        command.Parameters.AddWithValue("$actualPayloadText", NormalizeOptionalValue(phrase?.Content ?? knowledgeCard?.Card.Answer ?? draft?.Text));
+        command.Parameters.AddWithValue("$actualPayloadText", NormalizeOptionalValue(phrase?.Content ?? knowledgeCard?.Card.Answer));
         command.Parameters.AddWithValue("$recommendationKind", NormalizeOptionalValue(recommendationKind));
-        command.Parameters.AddWithValue("$providerType", NormalizeOptionalValue(providerType ?? draft?.ProviderType));
-        command.Parameters.AddWithValue("$modelName", NormalizeOptionalValue(modelName ?? draft?.ModelName));
-        command.Parameters.AddWithValue("$latencyMs", Math.Max(0, latencyMs > 0 ? latencyMs : draft?.LatencyMs ?? 0));
-        command.Parameters.AddWithValue("$groundingPhraseCount", Math.Max(0, groundingPhraseCount > 0 ? groundingPhraseCount : draft?.GroundingPhraseCount ?? 0));
-        var effectiveGroundingKnowledgeCount = Math.Max(0, groundingKnowledgeCount > 0 ? groundingKnowledgeCount : draft?.GroundingKnowledgeCount ?? 0);
+        command.Parameters.AddWithValue("$latencyMs", Math.Max(0, latencyMs));
+        command.Parameters.AddWithValue("$groundingPhraseCount", Math.Max(0, groundingPhraseCount));
+        var effectiveGroundingKnowledgeCount = Math.Max(0, groundingKnowledgeCount);
         if (knowledgeCard is not null)
         {
             effectiveGroundingKnowledgeCount = Math.Max(effectiveGroundingKnowledgeCount, 1);
         }
 
-        var effectiveGroundingKnowledgeIdsJson = groundingKnowledgeIdsJson ?? draft?.GroundingKnowledgeIdsJson;
+        var effectiveGroundingKnowledgeIdsJson = groundingKnowledgeIdsJson;
         if (knowledgeCard is not null)
         {
             effectiveGroundingKnowledgeIdsJson = JsonSerializer.Serialize(new[] { knowledgeCard.Card.Id });
@@ -3394,99 +3318,10 @@ public sealed class ConversationLoggingService :
         command.Parameters.AddWithValue("$groundingKnowledgeCount", effectiveGroundingKnowledgeCount);
         command.Parameters.AddWithValue("$groundingKnowledgeIdsJson", NormalizeOptionalValue(effectiveGroundingKnowledgeIdsJson));
         command.Parameters.AddWithValue("$knowledgeHit", effectiveGroundingKnowledgeCount > 0 ? 1 : 0);
-        command.Parameters.AddWithValue("$fallbackReason", NormalizeOptionalValue(fallbackReason ?? draft?.FallbackReason));
-        command.Parameters.AddWithValue("$generationCharacterCount", Math.Max(0, generationCharacterCount > 0 ? generationCharacterCount : draft?.CharacterCount ?? 0));
+        command.Parameters.AddWithValue("$fallbackReason", NormalizeOptionalValue(fallbackReason));
         command.Parameters.AddWithValue("$appVersion", GetAppVersion());
-        command.Parameters.AddWithValue("$recommendationRuleVersion", string.Equals(recommendationKind, "ai_draft", StringComparison.OrdinalIgnoreCase)
-            ? AiDraftRuleVersion
-            : RecommendationRuleVersion);
+        command.Parameters.AddWithValue("$recommendationRuleVersion", RecommendationRuleVersion);
         await command.ExecuteNonQueryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-    }
-
-    private async Task PersistAiDraftsShownAsync(
-        Guid sessionId,
-        ConversationRecommendationSnapshot snapshot,
-        IReadOnlyList<GeneratedReplyCandidate> drafts,
-        SearchOverlayMode mode,
-        string? searchKeyword)
-    {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-
-        foreach (var draft in drafts)
-        {
-            await InsertRecommendationEventAsync(
-                connection,
-                sessionId,
-                "shown",
-                snapshot,
-                mode,
-                searchKeyword,
-                ComposeActionMode.Copy,
-                true,
-                recommendationKind: "ai_draft",
-                draft: draft).ConfigureAwait(false);
-        }
-    }
-
-    private async Task PersistAiDraftActionAsync(
-        Guid sessionId,
-        GeneratedReplyCandidate draft,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        string eventType,
-        ComposeActionMode actionMode,
-        bool resultSuccess)
-    {
-        var snapshot = new ConversationRecommendationSnapshot();
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-        await InsertRecommendationEventAsync(
-            connection,
-            sessionId,
-            eventType,
-            snapshot,
-            mode,
-            searchKeyword,
-            actionMode,
-            resultSuccess,
-            recommendationKind: "ai_draft",
-            draft: draft).ConfigureAwait(false);
-    }
-
-    private async Task PersistAiDraftStatusAsync(
-        ConversationRecommendationSnapshot snapshot,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        AiDraftGenerationStatus status)
-    {
-        var eventType = status.State switch
-        {
-            AiDraftGenerationState.ProviderFailed => "provider_failed",
-            AiDraftGenerationState.ContextSkipped => "context_skipped",
-            AiDraftGenerationState.Disabled => "disabled",
-            _ => "status"
-        };
-
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-        await InsertRecommendationEventAsync(
-            connection,
-            Guid.Empty,
-            eventType,
-            snapshot,
-            mode,
-            searchKeyword,
-            ComposeActionMode.Copy,
-            status.State != AiDraftGenerationState.ProviderFailed,
-            recommendationKind: "ai_draft",
-            providerType: status.ProviderType,
-            modelName: status.ModelName,
-            latencyMs: status.LatencyMs,
-            groundingPhraseCount: status.GroundingPhraseCount,
-            groundingKnowledgeCount: status.GroundingKnowledgeCount,
-            fallbackReason: status.FallbackReason,
-            generationCharacterCount: status.CharacterCount).ConfigureAwait(false);
     }
 
     private async Task InitializeSchemaAsync()
@@ -3581,15 +3416,12 @@ public sealed class ConversationLoggingService :
                 knowledge_card_candidate_kind TEXT NOT NULL DEFAULT '',
                 actual_payload_text TEXT NOT NULL DEFAULT '',
                 recommendation_kind TEXT NOT NULL DEFAULT '',
-                provider_type TEXT NOT NULL DEFAULT '',
-                model_name TEXT NOT NULL DEFAULT '',
                 latency_ms INTEGER NOT NULL DEFAULT 0,
                 grounding_phrase_count INTEGER NOT NULL DEFAULT 0,
                 grounding_knowledge_count INTEGER NOT NULL DEFAULT 0,
                 grounding_knowledge_ids_json TEXT NOT NULL DEFAULT '',
                 knowledge_hit INTEGER NOT NULL DEFAULT 0,
                 fallback_reason TEXT NOT NULL DEFAULT '',
-                generation_character_count INTEGER NOT NULL DEFAULT 0,
                 app_version TEXT NOT NULL DEFAULT '',
                 recommendation_rule_version TEXT NOT NULL DEFAULT ''
             );
@@ -3669,15 +3501,12 @@ public sealed class ConversationLoggingService :
         await EnsureRecommendationEventColumnAsync(connection, "knowledge_card_candidate_kind", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "actual_payload_text", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "recommendation_kind", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
-        await EnsureRecommendationEventColumnAsync(connection, "provider_type", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
-        await EnsureRecommendationEventColumnAsync(connection, "model_name", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "latency_ms", "INTEGER NOT NULL DEFAULT 0").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "grounding_phrase_count", "INTEGER NOT NULL DEFAULT 0").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "grounding_knowledge_count", "INTEGER NOT NULL DEFAULT 0").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "grounding_knowledge_ids_json", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "knowledge_hit", "INTEGER NOT NULL DEFAULT 0").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "fallback_reason", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
-        await EnsureRecommendationEventColumnAsync(connection, "generation_character_count", "INTEGER NOT NULL DEFAULT 0").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "app_version", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureRecommendationEventColumnAsync(connection, "recommendation_rule_version", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureRecognitionCorrectionColumnAsync(connection, "source_context_text", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);

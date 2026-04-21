@@ -16,8 +16,6 @@ public partial class App : System.Windows.Application
     private SingleInstanceService? _singleInstanceService;
     private ExceptionLogService? _exceptionLogService;
     private ScreenshotToolService? _screenshotToolService;
-    private KnowledgeSyncService? _knowledgeSyncService;
-    private PublishedKnowledgeCatalogService? _publishedKnowledgeCatalog;
     private UpdateCheckService? _updateCheckService;
     private IssueReportService? _issueReportService;
     private SelfUpdateService? _selfUpdateService;
@@ -48,6 +46,7 @@ public partial class App : System.Windows.Application
         try
         {
             startupSettings = await dataStore.LoadSettingsOnlyAsync();
+            RetiredFeatureSettingsPolicy.Apply(startupSettings);
             StartupTrace.Mark("app.settings_loaded");
 
             if (startupSettings.ScreenshotHotkeyMigrationTouched)
@@ -100,9 +99,6 @@ public partial class App : System.Windows.Application
         var personalConfigService = new PersonalConfigService();
         var messageComposeService = new MessageComposeService(externalWorkbenchService, clipboardService, keyboardInputSimulator);
         _conversationLoggingService = new ConversationLoggingService();
-        _publishedKnowledgeCatalog = new PublishedKnowledgeCatalogService(dataStore);
-        await _publishedKnowledgeCatalog.ReloadAsync();
-        _knowledgeSyncService = new KnowledgeSyncService(dataStore, _conversationLoggingService, _publishedKnowledgeCatalog);
         _updateCheckService = new UpdateCheckService(dataStore, _conversationLoggingService);
         _issueReportService = new IssueReportService(dataStore, _conversationLoggingService);
         _selfUpdateService = new SelfUpdateService(dataStore);
@@ -132,15 +128,8 @@ public partial class App : System.Windows.Application
             _exceptionLogService);
         _runtimeCoordinator = new DesktopRuntimeCoordinator(
             () => _mainViewModel?.CreateSettingsSnapshot() ?? startupSettings,
-            (settingsSnapshot, force, cancellationToken) =>
-            {
-                if (_knowledgeSyncService is null)
-                {
-                    return Task.FromResult(new KnowledgeSyncRunResult(false, false, "云同步服务尚未初始化。", 0, 0, 0, 0, 0, 0, 0));
-                }
-
-                return _knowledgeSyncService.RunScheduledSyncAsync(settingsSnapshot, force, cancellationToken);
-            },
+            (settingsSnapshot, force, cancellationToken) => Task.FromResult(
+                new KnowledgeSyncRunResult(true, true, "云同步已停用。", 0, 0, 0, 0, 0, 0, 0)),
             (settingsSnapshot, force, cancellationToken) =>
             {
                 if (_updateCheckService is null)
@@ -165,21 +154,11 @@ public partial class App : System.Windows.Application
                 await Dispatcher.InvokeAsync(() =>
                     ShowBackgroundNotification(title, message, isWarning));
             });
-        var candidateRetriever = new HistoricalCandidateRetriever(_conversationLoggingService, _mainViewModel, _publishedKnowledgeCatalog);
-        var replyGenerator = new AiGroundedReplyGenerator(
-            _mainViewModel.Settings,
-            new OllamaAiDraftProvider(),
-            new OpenAiCompatibleAiDraftProvider());
-        var recommendationOrchestrator = new RecommendationOrchestrator(
-            externalWorkbenchService,
-            _conversationLoggingService,
-            _conversationLoggingService,
-            candidateRetriever,
-            replyGenerator);
+        var manualSearchOnlyServices = new ManualSearchOnlyRecommendationServices();
         var searchOverlayViewModel = new SearchOverlayViewModel(
             _mainViewModel,
-            recommendationOrchestrator,
-            _conversationLoggingService);
+            manualSearchOnlyServices,
+            manualSearchOnlyServices);
         var searchOverlayWindow = new SearchOverlayWindow(externalWorkbenchService, searchOverlayViewModel);
         StartupTrace.Mark("app.windows_constructed");
 

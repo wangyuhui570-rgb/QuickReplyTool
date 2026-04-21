@@ -140,8 +140,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
 
     private readonly MainViewModel _viewModel;
     private readonly FolderSelectionDialogService _folderSelectionDialogService = new();
-    private readonly OllamaModelCatalogService _ollamaModelCatalogService = new();
-    private readonly AiAuthClientService _aiAuthClientService = new();
     private readonly ObservableCollection<AppearanceThemePreset> _customAppearanceThemes = [];
     private string _selectedFileLibraryFolderPath = string.Empty;
     private string _selectedPhraseImageFolderPath = string.Empty;
@@ -162,9 +160,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private string _cloudUpdateCheckSummary = "正在读取...";
     private string _cloudKnowledgeVersionSummary = "正在读取...";
     private string _cloudActionSummary = "正在读取...";
-    private string _aiAuthStatusSummary = "正在读取...";
-    private string _aiAuthEndpointSummary = "正在读取...";
-    private string _aiAuthProbeSummary = "正在读取...";
     private string _exceptionSummary = "正在读取...";
     private string _exceptionEmptyMessage = "正在读取...";
     private string _validationSummary = string.Empty;
@@ -182,17 +177,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private bool _selectedAllowRawConversationCloudSync;
     private bool _selectedAllowAutomaticIssueReportUpload;
     private bool _selectedEnableUpdateChecks;
-    private bool _selectedEnableAiDrafts;
     private string _selectedServerBaseUrl = QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl;
-    private string _selectedOllamaBaseUrl = OllamaAiDraftProvider.DefaultBaseUrl;
-    private string _selectedOllamaModelName = string.Empty;
-    private int _selectedAiDraftCount = 3;
-    private int _selectedAiRequestTimeoutMs = 8000;
-    private bool _selectedEnableAiApiFallback;
-    private string _selectedAiApiBaseUrl = string.Empty;
-    private string _selectedAiApiModelName = string.Empty;
-    private string _selectedAiApiKey = string.Empty;
-    private bool _selectedAllowRemoteAiForCustomerText;
     private string _selectedSyncClientId = string.Empty;
     private string _selectedSyncApiToken = string.Empty;
     private bool _selectedRunAsAdministrator;
@@ -236,13 +221,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private int _selectedSearchInputOpacityPercent = 100;
     private bool _isRefreshingStats;
     private bool _isRunningCloudAction;
-    private bool _isRefreshingAiAuthStatus;
-    private bool _isRunningAiAuthAction;
-    private bool _aiAuthLoggedIn;
-    private bool _isRefreshingOllamaModels;
     private bool _isNavigatingToSection;
     private string _newThemeName = string.Empty;
-    private string _ollamaModelStatus = "点击“刷新模型列表”读取本机 Ollama 模型。";
     private WrapPanel? _customThemePanel;
 
     public SettingsWindow(
@@ -259,7 +239,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         ConfigureAppearanceSection();
         ConfigureSidebarAppearancePreviewSection();
         ConfigureSearchOverlayAppearanceSection();
-        ConfigureAiDraftSection();
         Loaded += SettingsWindow_OnLoaded;
     }
 
@@ -272,9 +251,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public ObservableCollection<PhraseUsageDisplayItem> LeastUsedPhraseItems { get; } = [];
 
     public ObservableCollection<ExceptionDisplayItem> RecentExceptionItems { get; } = [];
-
-    public ObservableCollection<string> AvailableOllamaModels { get; } = [];
-
     public bool WasConfirmed { get; private set; }
 
     public string NewThemeName
@@ -401,134 +377,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         }
     }
 
-    public bool SelectedEnableAiDrafts
-    {
-        get => _selectedEnableAiDrafts;
-        set
-        {
-            if (SetField(ref _selectedEnableAiDrafts, value))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
     public string SelectedServerBaseUrl
     {
         get => _selectedServerBaseUrl;
         set
         {
             if (SetField(ref _selectedServerBaseUrl, NormalizeServerBaseUrl(value)))
-            {
-                RefreshValidationState();
-                MarkAiAuthStatusDirty();
-            }
-        }
-    }
-
-    public string SelectedOllamaBaseUrl
-    {
-        get => _selectedOllamaBaseUrl;
-        set
-        {
-            if (SetField(ref _selectedOllamaBaseUrl, value?.Trim() ?? string.Empty))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public string SelectedOllamaModelName
-    {
-        get => _selectedOllamaModelName;
-        set
-        {
-            if (SetField(ref _selectedOllamaModelName, value?.Trim() ?? string.Empty))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public int SelectedAiDraftCount
-    {
-        get => _selectedAiDraftCount;
-        set
-        {
-            if (SetField(ref _selectedAiDraftCount, Math.Clamp(value, 1, 3)))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public int SelectedAiRequestTimeoutMs
-    {
-        get => _selectedAiRequestTimeoutMs;
-        set
-        {
-            var normalizedValue = Math.Clamp(value <= 0 ? 8000 : value, 1000, 60000);
-            if (SetField(ref _selectedAiRequestTimeoutMs, normalizedValue))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public bool SelectedEnableAiApiFallback
-    {
-        get => _selectedEnableAiApiFallback;
-        set
-        {
-            if (SetField(ref _selectedEnableAiApiFallback, value))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public string SelectedAiApiBaseUrl
-    {
-        get => _selectedAiApiBaseUrl;
-        set
-        {
-            if (SetField(ref _selectedAiApiBaseUrl, value?.Trim() ?? string.Empty))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public string SelectedAiApiModelName
-    {
-        get => _selectedAiApiModelName;
-        set
-        {
-            if (SetField(ref _selectedAiApiModelName, value?.Trim() ?? string.Empty))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public string SelectedAiApiKey
-    {
-        get => _selectedAiApiKey;
-        set
-        {
-            if (SetField(ref _selectedAiApiKey, value?.Trim() ?? string.Empty))
-            {
-                RefreshValidationState();
-            }
-        }
-    }
-
-    public bool SelectedAllowRemoteAiForCustomerText
-    {
-        get => _selectedAllowRemoteAiForCustomerText;
-        set
-        {
-            if (SetField(ref _selectedAllowRemoteAiForCustomerText, value))
             {
                 RefreshValidationState();
             }
@@ -544,13 +398,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public string SelectedSyncApiToken
     {
         get => _selectedSyncApiToken;
-        set
-        {
-            if (SetField(ref _selectedSyncApiToken, value?.Trim() ?? string.Empty))
-            {
-                MarkAiAuthStatusDirty();
-            }
-        }
+        set => SetField(ref _selectedSyncApiToken, value?.Trim() ?? string.Empty);
     }
 
     public PhraseImageSendMode SelectedPhraseImageSendMode
@@ -960,24 +808,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         private set => SetField(ref _cloudActionSummary, value);
     }
 
-    public string AiAuthStatusSummary
-    {
-        get => _aiAuthStatusSummary;
-        private set => SetField(ref _aiAuthStatusSummary, value);
-    }
-
-    public string AiAuthEndpointSummary
-    {
-        get => _aiAuthEndpointSummary;
-        private set => SetField(ref _aiAuthEndpointSummary, value);
-    }
-
-    public string AiAuthProbeSummary
-    {
-        get => _aiAuthProbeSummary;
-        private set => SetField(ref _aiAuthProbeSummary, value);
-    }
-
     public string ValidationSummary
     {
         get => _validationSummary;
@@ -1043,60 +873,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
 
     public bool CanRunUpdateActions => !IsRunningCloudAction && SettingsInputValidator.CanRunUpdateActions(SelectedServerBaseUrl);
 
-    public bool IsRefreshingAiAuthStatus
-    {
-        get => _isRefreshingAiAuthStatus;
-        private set
-        {
-            if (SetField(ref _isRefreshingAiAuthStatus, value))
-            {
-                OnPropertyChanged(nameof(CanRefreshAiAuthStatus));
-                OnPropertyChanged(nameof(CanRunAiAuthAction));
-                OnPropertyChanged(nameof(CanLogoutAiAuth));
-            }
-        }
-    }
-
-    public bool IsRunningAiAuthAction
-    {
-        get => _isRunningAiAuthAction;
-        private set
-        {
-            if (SetField(ref _isRunningAiAuthAction, value))
-            {
-                OnPropertyChanged(nameof(CanRefreshAiAuthStatus));
-                OnPropertyChanged(nameof(CanRunAiAuthAction));
-                OnPropertyChanged(nameof(CanLogoutAiAuth));
-            }
-        }
-    }
-
-    public bool CanRefreshAiAuthStatus => !IsRefreshingAiAuthStatus && !IsRunningAiAuthAction;
-
-    public bool CanRunAiAuthAction => !IsRefreshingAiAuthStatus && !IsRunningAiAuthAction;
-
-    public bool CanLogoutAiAuth => CanRunAiAuthAction && _aiAuthLoggedIn;
-
-    public bool IsRefreshingOllamaModels
-    {
-        get => _isRefreshingOllamaModels;
-        private set
-        {
-            if (SetField(ref _isRefreshingOllamaModels, value))
-            {
-                OnPropertyChanged(nameof(CanRefreshOllamaModels));
-            }
-        }
-    }
-
-    public bool CanRefreshOllamaModels => !IsRefreshingOllamaModels;
-
-    public string OllamaModelStatus
-    {
-        get => _ollamaModelStatus;
-        private set => SetField(ref _ollamaModelStatus, value);
-    }
-
     public string SelectedSectionKey
     {
         get => _selectedSectionKey;
@@ -1114,10 +890,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public int[] SearchInputBoxHeightOptions { get; } = [26, 30, 34, 38, 42, 46, 50, 56, 64];
 
     public int[] RecommendationDisplayCountOptions { get; } = [1, 2, 3, 4, 5];
-
-    public int[] AiDraftCountOptions { get; } = [1, 2, 3];
-
-    public int[] AiRequestTimeoutOptions { get; } = [3000, 5000, 8000, 12000, 20000];
 
     public int[] SidebarWidthOptions { get; } = [180, 220, 260, 300, 340, 380, 420, 480, 540, 600];
 
@@ -1469,244 +1241,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         AddColorPresetRow(grid, "输入框常用色", () => SelectedSearchInputColorHex, hex => SelectedSearchInputColorHex = hex);
     }
 
-    private void ConfigureAiDraftSection()
-    {
-        if (StabilitySection.Child is not Grid grid)
-        {
-            return;
-        }
-
-        if (grid.Children.OfType<FrameworkElement>().Any(element => Equals(element.Tag, "ai-draft-intro")))
-        {
-            return;
-        }
-
-        var introRow = grid.RowDefinitions.Count;
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var introText = new TextBlock
-        {
-            Tag = "ai-draft-intro",
-            Margin = new Thickness(0, 14, 0, 0),
-            Foreground = CreateBrush("#64748B"),
-            Text = "AI 草稿只在你打开搜索浮层时生成一次，默认优先走本机 Ollama，不会把截图原图或附件发给模型。",
-            TextWrapping = TextWrapping.Wrap
-        };
-        Grid.SetRow(introText, introRow);
-        Grid.SetColumnSpan(introText, 2);
-        grid.Children.Add(introText);
-
-        AddAiDraftCheckboxRow(
-            grid,
-            "AI 草稿",
-            nameof(SelectedEnableAiDrafts),
-            "打开后，搜索浮层会在推荐短语上方额外生成 1-3 条 AI 草稿。它们只作为人工确认前的候选，不会后台自动发送。",
-            "ai-draft-enabled");
-        AddAiDraftTextRow(
-            grid,
-            "Ollama 地址",
-            nameof(SelectedOllamaBaseUrl),
-            "默认是 http://127.0.0.1:11434。只有本地 Ollama 不在默认地址时才需要改。",
-            "ai-draft-ollama-base-url");
-        AddOllamaModelRow(grid);
-        InsertComboRow(grid, grid.RowDefinitions.Count, "生成条数", AiDraftCountOptions, nameof(SelectedAiDraftCount), "ai-draft-count");
-        InsertComboRow(grid, grid.RowDefinitions.Count, "请求超时", AiRequestTimeoutOptions, nameof(SelectedAiRequestTimeoutMs), "ai-draft-timeout");
-        AddAiFallbackRow(grid);
-    }
-
-    private void AddAiDraftCheckboxRow(Grid grid, string labelText, string bindingPath, string helpText, string tag)
-    {
-        var row = grid.RowDefinitions.Count;
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var label = new TextBlock { Text = labelText, Tag = tag };
-        label.SetResourceReference(StyleProperty, "FieldLabelStyle");
-        Grid.SetRow(label, row);
-        grid.Children.Add(label);
-
-        var panel = new StackPanel { Margin = new Thickness(0, 6, 0, 0), Tag = tag };
-        var checkBox = new System.Windows.Controls.CheckBox();
-        checkBox.SetBinding(ToggleButton.IsCheckedProperty, new System.Windows.Data.Binding(bindingPath)
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.TwoWay
-        });
-        panel.Children.Add(checkBox);
-        panel.Children.Add(new TextBlock
-        {
-            Margin = new Thickness(0, 6, 0, 0),
-            Foreground = CreateBrush("#64748B"),
-            Text = helpText,
-            TextWrapping = TextWrapping.Wrap
-        });
-
-        Grid.SetRow(panel, row);
-        Grid.SetColumn(panel, 1);
-        grid.Children.Add(panel);
-    }
-
-    private void AddAiDraftTextRow(Grid grid, string labelText, string bindingPath, string helpText, string tag)
-    {
-        var row = grid.RowDefinitions.Count;
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var label = new TextBlock { Text = labelText, Tag = tag };
-        label.SetResourceReference(StyleProperty, "FieldLabelStyle");
-        Grid.SetRow(label, row);
-        grid.Children.Add(label);
-
-        var panel = new StackPanel { Margin = new Thickness(0, 6, 0, 0), Tag = tag };
-        var textBox = new System.Windows.Controls.TextBox();
-        textBox.SetResourceReference(StyleProperty, "InputTextBoxStyle");
-        textBox.SetBinding(System.Windows.Controls.TextBox.TextProperty, new System.Windows.Data.Binding(bindingPath)
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.TwoWay,
-            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
-        });
-        panel.Children.Add(textBox);
-        panel.Children.Add(new TextBlock
-        {
-            Margin = new Thickness(0, 6, 0, 0),
-            Foreground = CreateBrush("#64748B"),
-            Text = helpText,
-            TextWrapping = TextWrapping.Wrap
-        });
-
-        Grid.SetRow(panel, row);
-        Grid.SetColumn(panel, 1);
-        grid.Children.Add(panel);
-    }
-
-    private void AddOllamaModelRow(Grid grid)
-    {
-        var row = grid.RowDefinitions.Count;
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var label = new TextBlock { Text = "本地模型", Tag = "ai-draft-ollama-model" };
-        label.SetResourceReference(StyleProperty, "FieldLabelStyle");
-        Grid.SetRow(label, row);
-        grid.Children.Add(label);
-
-        var host = new StackPanel { Margin = new Thickness(0, 6, 0, 0), Tag = "ai-draft-ollama-model" };
-        var topPanel = new DockPanel { LastChildFill = true };
-
-        var refreshButton = new System.Windows.Controls.Button
-        {
-            Width = 116,
-            Margin = new Thickness(10, 0, 0, 0),
-            Content = "刷新模型列表"
-        };
-        refreshButton.SetResourceReference(StyleProperty, "SubtleButtonStyle");
-        refreshButton.SetBinding(IsEnabledProperty, new System.Windows.Data.Binding(nameof(CanRefreshOllamaModels))
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.OneWay
-        });
-        refreshButton.Click += RefreshOllamaModelsButton_OnClick;
-        DockPanel.SetDock(refreshButton, Dock.Right);
-
-        var comboBox = new System.Windows.Controls.ComboBox
-        {
-            IsEditable = true,
-            IsTextSearchEnabled = false,
-            ItemsSource = AvailableOllamaModels
-        };
-        comboBox.SetResourceReference(StyleProperty, "InputComboBoxStyle");
-        comboBox.SetBinding(System.Windows.Controls.ComboBox.TextProperty, new System.Windows.Data.Binding(nameof(SelectedOllamaModelName))
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.TwoWay,
-            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
-        });
-
-        topPanel.Children.Add(refreshButton);
-        topPanel.Children.Add(comboBox);
-        host.Children.Add(topPanel);
-        host.Children.Add(new TextBlock
-        {
-            Margin = new Thickness(0, 6, 0, 0),
-            Foreground = CreateBrush("#64748B"),
-            Text = "先尝试从本机 Ollama 读取可用模型；如果列表为空，也可以手动输入模型名，比如 qwen2.5:3b。",
-            TextWrapping = TextWrapping.Wrap
-        });
-        var statusText = new TextBlock { Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap };
-        statusText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(OllamaModelStatus))
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.OneWay
-        });
-        statusText.SetBinding(TextBlock.ForegroundProperty, new System.Windows.Data.Binding(nameof(OllamaModelStatus))
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.OneWay,
-            Converter = new CurrentColorBrushConverter(() =>
-                OllamaModelStatus.Contains("失败", StringComparison.Ordinal) ? "#C9342C" : "#64748B")
-        });
-        host.Children.Add(statusText);
-
-        Grid.SetRow(host, row);
-        Grid.SetColumn(host, 1);
-        grid.Children.Add(host);
-    }
-
-    private void AddAiFallbackRow(Grid grid)
-    {
-        var row = grid.RowDefinitions.Count;
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var label = new TextBlock { Text = "高级 fallback", Tag = "ai-draft-api-fallback" };
-        label.SetResourceReference(StyleProperty, "FieldLabelStyle");
-        Grid.SetRow(label, row);
-        grid.Children.Add(label);
-
-        var expander = new Expander
-        {
-            Tag = "ai-draft-api-fallback",
-            Margin = new Thickness(0, 6, 0, 0),
-            Header = "OpenAI 兼容 API fallback（默认关闭）",
-            IsExpanded = false
-        };
-
-        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-
-        var enableFallback = new System.Windows.Controls.CheckBox { Content = "本地 Ollama 失败时允许继续尝试 API fallback" };
-        enableFallback.SetBinding(ToggleButton.IsCheckedProperty, new System.Windows.Data.Binding(nameof(SelectedEnableAiApiFallback))
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.TwoWay
-        });
-        panel.Children.Add(enableFallback);
-
-        panel.Children.Add(CreateAdvancedTextField(nameof(SelectedAiApiBaseUrl), "API Base URL"));
-        panel.Children.Add(CreateAdvancedTextField(nameof(SelectedAiApiModelName), "模型名"));
-        panel.Children.Add(CreateAdvancedTextField(nameof(SelectedAiApiKey), "API Key"));
-
-        var allowRemote = new System.Windows.Controls.CheckBox
-        {
-            Margin = new Thickness(0, 8, 0, 0),
-            Content = "允许把识别后的客户文本发给远端 AI（仍不发送截图原图和附件）"
-        };
-        allowRemote.SetBinding(ToggleButton.IsCheckedProperty, new System.Windows.Data.Binding(nameof(SelectedAllowRemoteAiForCustomerText))
-        {
-            Source = this,
-            Mode = System.Windows.Data.BindingMode.TwoWay
-        });
-        panel.Children.Add(allowRemote);
-        panel.Children.Add(new TextBlock
-        {
-            Margin = new Thickness(0, 6, 0, 0),
-            Foreground = CreateBrush("#64748B"),
-            Text = "默认建议只用本地 Ollama。只有你明确接受文本出机，且本地模型不可用时，才开启这个 fallback。",
-            TextWrapping = TextWrapping.Wrap
-        });
-
-        expander.Content = panel;
-        Grid.SetRow(expander, row);
-        Grid.SetColumn(expander, 1);
-        grid.Children.Add(expander);
-    }
-
     private FrameworkElement CreateAdvancedTextField(string bindingPath, string labelText)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
@@ -1884,10 +1418,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         UpdateNavigationVisualState();
         await LoadCustomThemesAsync();
         await RefreshDashboardAsync();
-        if (SelectedEnableAiDrafts)
-        {
-            await RefreshOllamaModelsAsync(selectFirstModelWhenEmpty: false);
-        }
     }
 
     private async Task LoadCustomThemesAsync()
@@ -2265,7 +1795,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
             RefreshCloudStatusSummary();
             await RefreshLogStatsCoreAsync();
             await RefreshUsageStatsCoreAsync();
-            await RefreshAiAuthStatusAsync(showFailureMessage: false);
         }
         finally
         {
@@ -2292,9 +1821,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         CloudUpdateCheckSummary = "正在读取...";
         CloudKnowledgeVersionSummary = "正在读取...";
         CloudActionSummary = "正在读取...";
-        AiAuthStatusSummary = "正在读取...";
-        AiAuthEndpointSummary = "正在读取...";
-        AiAuthProbeSummary = "正在读取...";
         MostUsedPhraseItems.Clear();
         LeastUsedPhraseItems.Clear();
         RecentExceptionItems.Clear();
@@ -2317,75 +1843,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
             ? "最近没有记录到云端知识版本"
             : $"最近已确认知识版本：{settings.LastKnownCloudKnowledgeVersion}";
         CloudActionSummary = $"当前服务地址：{SettingsInputValidator.ResolveOperationalServerBaseUrl(serverBaseUrl)}";
-    }
-
-    private void MarkAiAuthStatusDirty()
-    {
-        AiAuthStatusSummary = "服务器或 Token 已变更，请点击“刷新 AI 状态”重新探测。";
-        AiAuthEndpointSummary = $"AI 认证服务优先地址：{AiAuthClientService.ResolveEndpointBaseUrl(SelectedServerBaseUrl)}";
-        AiAuthProbeSummary = $"刷新时会先探测 {SettingsInputValidator.ResolveOperationalServerBaseUrl(SelectedServerBaseUrl)}，若该地址未部署 AI 认证接口或不可达，再回退到本机 {LocalCloudServiceBootstrapper.DefaultLocalServiceBaseUrl}。";
-        _aiAuthLoggedIn = false;
-        OnPropertyChanged(nameof(CanLogoutAiAuth));
-    }
-
-    private async Task RefreshAiAuthStatusAsync(bool showFailureMessage)
-    {
-        if (IsRefreshingAiAuthStatus || IsRunningAiAuthAction)
-        {
-            return;
-        }
-
-        IsRefreshingAiAuthStatus = true;
-        AiAuthStatusSummary = "正在检测 AI 认证状态...";
-        AiAuthEndpointSummary = $"AI 认证服务优先地址：{AiAuthClientService.ResolveEndpointBaseUrl(SelectedServerBaseUrl)}";
-        AiAuthProbeSummary = "正在探测当前服务器与本机 AI 服务...";
-
-        try
-        {
-            var result = await _aiAuthClientService.GetStatusAsync(SelectedServerBaseUrl, SelectedSyncApiToken).ConfigureAwait(true);
-            ApplyAiAuthStatusResult(result);
-        }
-        catch (Exception ex)
-        {
-            _aiAuthLoggedIn = false;
-            AiAuthStatusSummary = $"AI 认证探测失败：{ex.Message}";
-            AiAuthProbeSummary = "请确认 QuickReply.CloudService 已启动，或当前服务器确实部署了 AI 认证接口。";
-            OnPropertyChanged(nameof(CanLogoutAiAuth));
-
-            if (showFailureMessage)
-            {
-                System.Windows.MessageBox.Show(this, ex.Message, "AI 认证", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-        finally
-        {
-            IsRefreshingAiAuthStatus = false;
-        }
-    }
-
-    private void ApplyAiAuthStatusResult(AiAuthStatusEndpointResult result)
-    {
-        _aiAuthLoggedIn = result.LoggedIn;
-        AiAuthStatusSummary = result.LoggedIn
-            ? $"AI 认证：已登录（{result.LoginModeDisplayName}）"
-            : $"AI 认证：未登录（{result.LoginModeDisplayName}）";
-        if (!string.IsNullOrWhiteSpace(result.Message))
-        {
-            AiAuthStatusSummary = $"{AiAuthStatusSummary}；{result.Message}";
-        }
-
-        AiAuthEndpointSummary = result.EndpointSummary;
-        AiAuthProbeSummary = result.ProbeSummary;
-        OnPropertyChanged(nameof(CanLogoutAiAuth));
-    }
-
-    private void ApplyAiAuthActionResult(AiAuthActionEndpointResult result)
-    {
-        _aiAuthLoggedIn = result.LoggedIn;
-        AiAuthStatusSummary = result.Message;
-        AiAuthEndpointSummary = result.EndpointSummary;
-        AiAuthProbeSummary = result.ProbeSummary;
-        OnPropertyChanged(nameof(CanLogoutAiAuth));
     }
 
     private async Task RefreshLogStatsCoreAsync()
@@ -2541,90 +1998,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         finally
         {
             IsRunningCloudAction = false;
-        }
-    }
-
-    private async void RefreshAiAuthStatusButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        await RefreshAiAuthStatusAsync(showFailureMessage: true);
-    }
-
-    private async void SignInWithChatGptButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (!CanRunAiAuthAction)
-        {
-            return;
-        }
-
-        IsRunningAiAuthAction = true;
-        AiAuthStatusSummary = "正在通过 Codex CLI 启动 ChatGPT 登录...";
-
-        try
-        {
-            var result = await _aiAuthClientService.LoginAsync(SelectedServerBaseUrl, SelectedSyncApiToken, useDeviceAuth: true).ConfigureAwait(true);
-            ApplyAiAuthActionResult(result);
-            System.Windows.MessageBox.Show(
-                this,
-                result.Message,
-                "AI 认证",
-                MessageBoxButton.OK,
-                result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
-        }
-        catch (Exception ex)
-        {
-            AiAuthStatusSummary = $"启动 ChatGPT 登录失败：{ex.Message}";
-            AiAuthProbeSummary = "请确认本机 Codex CLI 可用，且本机 AI 服务或当前服务器可访问。";
-            System.Windows.MessageBox.Show(this, ex.Message, "AI 认证", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        finally
-        {
-            IsRunningAiAuthAction = false;
-        }
-    }
-
-    private async void SignOutAiAuthButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (!CanRunAiAuthAction)
-        {
-            return;
-        }
-
-        var confirm = System.Windows.MessageBox.Show(
-            this,
-            "这会通过 Codex CLI 退出当前 ChatGPT / Codex 登录态。确定继续吗？",
-            "退出 AI 认证",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question,
-            MessageBoxResult.No);
-
-        if (confirm != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        IsRunningAiAuthAction = true;
-        AiAuthStatusSummary = "正在退出当前 AI 认证...";
-
-        try
-        {
-            var result = await _aiAuthClientService.LogoutAsync(SelectedServerBaseUrl, SelectedSyncApiToken).ConfigureAwait(true);
-            ApplyAiAuthActionResult(result);
-            System.Windows.MessageBox.Show(
-                this,
-                result.Message,
-                "AI 认证",
-                MessageBoxButton.OK,
-                result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
-        }
-        catch (Exception ex)
-        {
-            AiAuthStatusSummary = $"退出 AI 认证失败：{ex.Message}";
-            AiAuthProbeSummary = "请确认本机 AI 服务或当前服务器可访问。";
-            System.Windows.MessageBox.Show(this, ex.Message, "AI 认证", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        finally
-        {
-            IsRunningAiAuthAction = false;
         }
     }
 
@@ -3084,48 +2457,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         SettingsWindowSelectionMapper.ApplySettingsToSelections(_viewModel.Settings, this);
         RefreshValidationState();
         OnPropertyChanged(string.Empty);
-    }
-
-    private async void RefreshOllamaModelsButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        await RefreshOllamaModelsAsync(selectFirstModelWhenEmpty: true);
-    }
-
-    private async Task RefreshOllamaModelsAsync(bool selectFirstModelWhenEmpty)
-    {
-        if (IsRefreshingOllamaModels)
-        {
-            return;
-        }
-
-        IsRefreshingOllamaModels = true;
-        OllamaModelStatus = "正在读取本机 Ollama 模型列表...";
-        try
-        {
-            var result = await _ollamaModelCatalogService.ListModelsAsync(SelectedOllamaBaseUrl, CancellationToken.None);
-            AvailableOllamaModels.Clear();
-            foreach (var model in result.Models)
-            {
-                AvailableOllamaModels.Add(model);
-            }
-
-            if (selectFirstModelWhenEmpty &&
-                string.IsNullOrWhiteSpace(SelectedOllamaModelName) &&
-                AvailableOllamaModels.Count > 0)
-            {
-                SelectedOllamaModelName = AvailableOllamaModels[0];
-            }
-
-            OllamaModelStatus = result.Message;
-        }
-        catch (Exception ex)
-        {
-            OllamaModelStatus = $"读取 Ollama 模型失败：{ex.Message}";
-        }
-        finally
-        {
-            IsRefreshingOllamaModels = false;
-        }
     }
 
     private async void RefreshLogStatsButton_OnClick(object sender, RoutedEventArgs e)
@@ -3759,6 +3090,3 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         }
     }
 }
-
-
-

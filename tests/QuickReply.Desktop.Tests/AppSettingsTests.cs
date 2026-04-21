@@ -85,18 +85,12 @@ public sealed class AppSettingsTests
     }
 
     [Fact]
-    public void UsesExpectedAiDefaults()
+    public void UsesExpectedLocalDefaults()
     {
         var settings = new AppSettings();
 
-        Assert.False(settings.EnableAiDrafts);
         Assert.False(settings.AllowRawConversationCloudSync);
         Assert.False(settings.AllowAutomaticIssueReportUpload);
-        Assert.Equal("http://127.0.0.1:11434", settings.OllamaBaseUrl);
-        Assert.Equal(3, settings.AiDraftCount);
-        Assert.Equal(8000, settings.AiRequestTimeoutMs);
-        Assert.False(settings.EnableAiApiFallback);
-        Assert.False(settings.AllowRemoteAiForCustomerText);
         Assert.Equal(30, settings.LogTextRetentionDays);
     }
 }

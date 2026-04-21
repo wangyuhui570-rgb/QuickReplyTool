@@ -8,12 +8,11 @@ internal static class SearchOverlayPanelStatusBuilder
         ConversationRecommendationSnapshot snapshot,
         IReadOnlyList<PhraseRecommendationSuggestion> suggestions,
         IReadOnlyList<KnowledgeCardSuggestion> knowledgeCards,
-        AiDraftGenerationStatus aiDraftStatus,
         bool isRefreshing)
     {
         if (isRefreshing)
         {
-            return "正在识别当前聊天上下文，并整理推荐短语与 AI 草稿...";
+            return "正在识别当前聊天上下文，并整理推荐短语...";
         }
 
         var recognizedCustomerText = snapshot.RecognizedCustomerText?.Trim() ?? string.Empty;
@@ -33,10 +32,6 @@ internal static class SearchOverlayPanelStatusBuilder
             {
                 parts.Add(BuildMatchSummary(suggestions, knowledgeCards));
             }
-            else if (aiDraftStatus.State == AiDraftGenerationState.ContextSkipped)
-            {
-                parts.Add("当前上下文仍偏弱，AI 草稿已保守跳过");
-            }
             else
             {
                 parts.Add("暂未命中高频短语或已发布知识");
@@ -54,10 +49,10 @@ internal static class SearchOverlayPanelStatusBuilder
         var captureStatus = snapshot.CaptureStatus?.Trim() ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(captureStatus))
         {
-            return $"当前未抓到稳定聊天文本（{BuildCaptureStatusLabel(captureStatus)}），推荐与 AI 会保持保守。";
+            return $"当前未抓到稳定聊天文本（{BuildCaptureStatusLabel(captureStatus)}），推荐会保持保守。";
         }
 
-        return "打开浮层后会尝试识别当前聊天上下文，并在上方整理推荐短语与 AI 草稿。";
+        return "打开浮层后会尝试识别当前聊天上下文，并在上方整理推荐短语。";
     }
 
     public static string BuildResultsSectionTitle(SearchOverlayMode mode)
@@ -98,7 +93,7 @@ internal static class SearchOverlayPanelStatusBuilder
 
         if (hasRecommendationPanelContent)
         {
-            return "当前搜索没有直接命中，但上方仍有推荐短语、知识卡或 AI 草稿可供参考。";
+            return "当前搜索没有直接命中，但上方仍有推荐短语或知识卡可供参考。";
         }
 
         return mode switch
@@ -146,7 +141,7 @@ internal static class SearchOverlayPanelStatusBuilder
 
         if (hasRecommendationPanelContent)
         {
-            return "虽然当前搜索没有直接命中，但你仍然可以使用上方的推荐短语、知识卡线索或 AI 草稿。";
+            return "虽然当前搜索没有直接命中，但你仍然可以使用上方的推荐短语或知识卡线索。";
         }
 
         return mode switch

@@ -21,42 +21,6 @@ public static class SettingsInputValidator
             errors.Add("服务器地址需要是完整地址；公网环境仅允许 https://，本机联调可使用 http://localhost 或 http://127.0.0.1。");
         }
 
-        if (settings.EnableAiDrafts)
-        {
-            if (!TryBuildHttpBaseUri(settings.OllamaBaseUrl, out _))
-            {
-                errors.Add("启用 AI 草稿后，Ollama 地址需要是以 http:// 或 https:// 开头的完整地址。");
-            }
-
-            var hasRemoteFallbackConfiguration = settings.EnableAiApiFallback &&
-                                                 settings.AllowRemoteAiForCustomerText &&
-                                                 TryBuildRemoteServiceBaseUri(settings.AiApiBaseUrl, out _) &&
-                                                 !string.IsNullOrWhiteSpace(settings.AiApiModelName) &&
-                                                 !string.IsNullOrWhiteSpace(settings.AiApiKey);
-            if (string.IsNullOrWhiteSpace(settings.OllamaModelName) && !hasRemoteFallbackConfiguration)
-            {
-                errors.Add("启用 AI 草稿后，请先选择一个本地 Ollama 模型；如果改用 API fallback，也需要同时完成远端模型和权限配置。");
-            }
-
-            if (settings.EnableAiApiFallback)
-            {
-                if (!TryBuildRemoteServiceBaseUri(settings.AiApiBaseUrl, out _))
-                {
-                    errors.Add("启用 AI API fallback 后，远端 AI 地址需要是完整地址；公网环境仅允许 https://，本机联调可使用 http://localhost 或 http://127.0.0.1。");
-                }
-
-                if (string.IsNullOrWhiteSpace(settings.AiApiModelName))
-                {
-                    errors.Add("启用 AI API fallback 后，需要填写远端模型名。");
-                }
-
-                if (string.IsNullOrWhiteSpace(settings.AiApiKey))
-                {
-                    errors.Add("启用 AI API fallback 后，需要填写远端密钥。");
-                }
-            }
-        }
-
         return errors;
     }
 
@@ -82,15 +46,15 @@ public static class SettingsInputValidator
 
         if (!string.Equals(configuredServerBaseUrl, effectiveServerBaseUrl, StringComparison.OrdinalIgnoreCase))
         {
-            return $"当前自定义服务地址不可用，已自动回退到内置服务地址：{effectiveServerBaseUrl}。云同步、问题反馈、知识审核和 AI 认证都会优先走这个地址。";
+            return $"当前自定义服务地址不可用，已自动回退到内置服务地址：{effectiveServerBaseUrl}。云同步、问题反馈和知识审核都会优先走这个地址。";
         }
 
         return string.Equals(
             effectiveServerBaseUrl,
             QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl,
             StringComparison.OrdinalIgnoreCase)
-            ? $"当前使用内置服务地址：{effectiveServerBaseUrl}。云同步、问题反馈、知识审核和 AI 认证都会优先走这个地址。"
-            : $"当前使用自定义服务地址：{effectiveServerBaseUrl}。云同步、问题反馈、知识审核和 AI 认证都会优先走这个地址。";
+            ? $"当前使用内置服务地址：{effectiveServerBaseUrl}。云同步、问题反馈和知识审核都会优先走这个地址。"
+            : $"当前使用自定义服务地址：{effectiveServerBaseUrl}。云同步、问题反馈和知识审核都会优先走这个地址。";
     }
 
     public static string ResolveConfiguredServerBaseUrl(string? serverBaseUrl)

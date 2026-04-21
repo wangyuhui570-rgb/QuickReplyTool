@@ -26,14 +26,6 @@ internal interface ICandidateRetriever
         RecommendationRequest request);
 }
 
-internal interface IReplyGenerator
-{
-    Task<IReadOnlyList<GeneratedReplyCandidate>> GenerateCandidatesAsync(
-        ConversationRecommendationSnapshot snapshot,
-        CandidateRetrievalResult retrievalResult,
-        RecommendationRequest request);
-}
-
 internal interface IRecommendationQueryService
 {
     Task<IReadOnlyList<PhraseRecommendationCandidate>> GetPhraseRecommendationsAsync(
@@ -80,34 +72,6 @@ internal sealed class InMemoryPublishedKnowledgeCardCatalog : IPublishedKnowledg
 
     public IReadOnlyList<PublishedKnowledgeCard> GetAllPublishedKnowledgeCards() => _cards;
 }
-
-internal sealed class RetrievalBackedReplyGenerator : IReplyGenerator
-{
-    public Task<IReadOnlyList<GeneratedReplyCandidate>> GenerateCandidatesAsync(
-        ConversationRecommendationSnapshot snapshot,
-        CandidateRetrievalResult retrievalResult,
-        RecommendationRequest request)
-    {
-        var generated = retrievalResult.Suggestions
-            .Where(item => !string.IsNullOrWhiteSpace(item.Phrase.Content))
-            .GroupBy(item => item.Phrase.Content, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .Take(Math.Max(1, request.GeneratedReplyCount))
-            .Select(item => new GeneratedReplyCandidate
-            {
-                Text = item.Phrase.Content,
-                Source = "retrieval_fallback",
-                Reason = item.ReasonText,
-                Confidence = item.Confidence,
-                BackingPhraseId = item.Phrase.Id,
-                BackingPhraseTitle = item.Phrase.Title
-            })
-            .ToList();
-
-        return Task.FromResult<IReadOnlyList<GeneratedReplyCandidate>>(generated);
-    }
-}
-
 internal sealed class HistoricalCandidateRetriever : ICandidateRetriever
 {
     private readonly IRecommendationQueryService _recommendationQueryService;

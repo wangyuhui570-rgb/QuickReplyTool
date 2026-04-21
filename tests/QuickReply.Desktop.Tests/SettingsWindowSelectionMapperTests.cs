@@ -23,16 +23,6 @@ public sealed class SettingsWindowSelectionMapperTests
             AllowAutomaticIssueReportUpload = true,
             EnableUpdateChecks = false,
             ServerBaseUrl = "https://example.com",
-            EnableAiDrafts = true,
-            OllamaBaseUrl = "http://127.0.0.1:11434",
-            OllamaModelName = "qwen2.5:7b",
-            AiDraftCount = 3,
-            AiRequestTimeoutMs = 18000,
-            EnableAiApiFallback = true,
-            AiApiBaseUrl = "https://api.example.com",
-            AiApiModelName = "gpt-5.4",
-            AiApiKey = "secret-key",
-            AllowRemoteAiForCustomerText = true,
             SyncClientId = "client-123",
             SyncApiToken = "token-456",
             PhraseImageSendMode = PhraseImageSendMode.ImageThenTextThenSend,
@@ -88,7 +78,6 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(settings.ServerBaseUrl, selections.SelectedServerBaseUrl);
         Assert.Equal(settings.AllowRawConversationCloudSync, selections.SelectedAllowRawConversationCloudSync);
         Assert.Equal(settings.AllowAutomaticIssueReportUpload, selections.SelectedAllowAutomaticIssueReportUpload);
-        Assert.Equal(settings.AiApiKey, selections.SelectedAiApiKey);
         Assert.Equal(settings.PhraseImageSendMode, selections.SelectedPhraseImageSendMode);
         Assert.Equal(settings.SearchOverlayWidthPercent, selections.SelectedSearchOverlayWidthPercent);
         Assert.Equal(settings.SidebarWidth, selections.SelectedSidebarWidth);
@@ -116,16 +105,6 @@ public sealed class SettingsWindowSelectionMapperTests
             SelectedAllowAutomaticIssueReportUpload = true,
             SelectedEnableUpdateChecks = true,
             SelectedServerBaseUrl = "https://sync.example.com",
-            SelectedEnableAiDrafts = true,
-            SelectedOllamaBaseUrl = "http://localhost:11434",
-            SelectedOllamaModelName = "phi4",
-            SelectedAiDraftCount = 2,
-            SelectedAiRequestTimeoutMs = 12000,
-            SelectedEnableAiApiFallback = true,
-            SelectedAiApiBaseUrl = "https://api.example.com",
-            SelectedAiApiModelName = "gpt-5.4",
-            SelectedAiApiKey = "api-key",
-            SelectedAllowRemoteAiForCustomerText = true,
             SelectedSyncClientId = "client-a",
             SelectedSyncApiToken = "token-b",
             SelectedPhraseImageSendMode = PhraseImageSendMode.ImageImmediateThenTextSend,
@@ -178,7 +157,6 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(selections.SelectedIssueReportDirectory, settings.IssueReportDirectory);
         Assert.Equal(selections.SelectedAllowRawConversationCloudSync, settings.AllowRawConversationCloudSync);
         Assert.Equal(selections.SelectedAllowAutomaticIssueReportUpload, settings.AllowAutomaticIssueReportUpload);
-        Assert.Equal(selections.SelectedEnableAiApiFallback, settings.EnableAiApiFallback);
         Assert.Equal(selections.SelectedSyncApiToken, settings.SyncApiToken);
         Assert.Equal(selections.SelectedDefaultSearchOverlayMode, settings.DefaultSearchOverlayMode);
         Assert.Equal(selections.SelectedSendHotkeyMode, settings.SendHotkeyMode);
@@ -204,16 +182,6 @@ public sealed class SettingsWindowSelectionMapperTests
         public bool SelectedAllowAutomaticIssueReportUpload { get; set; }
         public bool SelectedEnableUpdateChecks { get; set; }
         public string SelectedServerBaseUrl { get; set; } = string.Empty;
-        public bool SelectedEnableAiDrafts { get; set; }
-        public string SelectedOllamaBaseUrl { get; set; } = string.Empty;
-        public string SelectedOllamaModelName { get; set; } = string.Empty;
-        public int SelectedAiDraftCount { get; set; }
-        public int SelectedAiRequestTimeoutMs { get; set; }
-        public bool SelectedEnableAiApiFallback { get; set; }
-        public string SelectedAiApiBaseUrl { get; set; } = string.Empty;
-        public string SelectedAiApiModelName { get; set; } = string.Empty;
-        public string SelectedAiApiKey { get; set; } = string.Empty;
-        public bool SelectedAllowRemoteAiForCustomerText { get; set; }
         public string SelectedSyncClientId { get; set; } = string.Empty;
         public string SelectedSyncApiToken { get; set; } = string.Empty;
         public PhraseImageSendMode SelectedPhraseImageSendMode { get; set; }

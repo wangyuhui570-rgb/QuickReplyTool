@@ -160,34 +160,15 @@
                                                         <Button Width="108" Click="UseDefaultIssueReportDirectoryButton_OnClick" Content="恢复默认目录" Style="{StaticResource SubtleButtonStyle}" />
                                                     </StackPanel>
                                                 </StackPanel>
-                                                <TextBlock Grid.Row="8" Style="{StaticResource FieldLabelStyle}" Text="云同步" />
-                                                <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,6,0,0">
-                                                    <CheckBox IsChecked="{Binding SelectedEnableCloudSync}" Content="启用每天知识库和问题数据上传" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。只有启用后，程序启动时才会按服务器配置执行知识库增量同步和会话问题上传。" TextWrapping="Wrap" />
-                                                    <CheckBox Margin="0,10,0,0" IsChecked="{Binding SelectedAllowRawConversationCloudSync}" Content="允许上传原始会话文本用于云端分析" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。关闭时只上传脱敏后的会话与推荐遥测；只有明确打开后，才会额外上传更完整的会话原文。" TextWrapping="Wrap" />
-                                                    <CheckBox Margin="0,10,0,0" IsChecked="{Binding SelectedAllowAutomaticIssueReportUpload}" Content="允许自动把问题包上传到服务器" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。关闭时仍会生成本地问题包，但不会自动上传；只有明确打开后才会上报服务器。" TextWrapping="Wrap" />
-                                                </StackPanel>
                                                 <TextBlock Grid.Row="9" Style="{StaticResource FieldLabelStyle}" Text="更新检查" />
                                                 <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,6,0,0">
                                                     <CheckBox IsChecked="{Binding SelectedEnableUpdateChecks}" Content="启动时检查是否有新版本" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。启动后会优先使用内置更新地址检查新版本；云同步、知识审核和 AI 认证也会默认使用内置服务地址，不需要你先手动绑定服务器。" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。开启后，程序启动时会按当前更新地址检查新版本。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="10" Style="{StaticResource FieldLabelStyle}" Text="服务地址（默认已内置）" />
                                                 <StackPanel Grid.Row="10" Grid.Column="1" Margin="0,6,0,0">
                                                     <TextBox Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedServerBaseUrl, UpdateSourceTrigger=PropertyChanged}" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认已绑定内置服务地址。一般不需要修改；只有你要切到私有服务端或本机联调时，才手动改这里。" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="11" Style="{StaticResource FieldLabelStyle}" Text="客户端标识" />
-                                                <StackPanel Grid.Row="11" Grid.Column="1" Margin="0,6,0,0">
-                                                    <TextBox Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedSyncClientId, UpdateSourceTrigger=PropertyChanged}" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="用于区分不同客户机器或门店。建议保持唯一，服务端也可以用它聚合问题和推荐效果。" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="12" Style="{StaticResource FieldLabelStyle}" Text="API Token" />
-                                                <StackPanel Grid.Row="12" Grid.Column="1" Margin="0,6,0,0">
-                                                    <TextBox Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedSyncApiToken, UpdateSourceTrigger=PropertyChanged}" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="服务端用来校验上传和更新检查请求。先用文本框保存，后面如果需要再改成单独的密钥管理。" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认已绑定内置更新地址。一般不需要修改；只有你要切到私有更新服务时，才手动改这里。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -195,14 +176,9 @@
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="搜索与推荐" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把搜索入口的默认模式、推荐条数和搜索框外观集中起来，调搜索体验时不用来回找。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="搜索" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把搜索入口的默认模式和搜索框外观集中起来，调搜索体验时不用来回找。" TextWrapping="Wrap" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="默认进入模式" />
                                                 <ComboBox Grid.Row="1" Grid.Column="1" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedDefaultSearchOverlayMode}" SelectedValuePath="Tag"><ComboBoxItem Tag="{x:Static models:SearchOverlayMode.Phrase}" Content="短语" /><ComboBoxItem Tag="{x:Static models:SearchOverlayMode.File}" Content="文件" /><ComboBoxItem Tag="{x:Static models:SearchOverlayMode.Mixed}" Content="混合搜索" /></ComboBox>
-                                                <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="推荐显示条数" />
-                                                <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,4,0,0">
-                                                    <ComboBox Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding RecommendationDisplayCountOptions}" SelectedItem="{Binding SelectedRecommendationDisplayCount}" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认只显示前 3 条推荐；只有样本足够时才会展示推荐回复。" TextWrapping="Wrap" />
-                                                </StackPanel>
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="搜索栏宽度占比" />
                                                 <ComboBox Grid.Row="3" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding SearchOverlayWidthPercentOptions}" SelectedItem="{Binding SelectedSearchOverlayWidthPercent}" />
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="搜索栏高度占比" />
@@ -513,59 +489,25 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10">
-                                                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="云同步与更新" />
-                                                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="这里可以查看最近一次同步和更新检查时间，也能手动跑一次，方便你联调服务器。" TextWrapping="Wrap" />
+                                                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="更新检查" />
+                                                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="这里只保留版本检查和本地工具相关设置。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="最近状态" />
                                                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0">
-                                                    <TextBlock Foreground="{StaticResource TextBrush}" Text="{Binding CloudKnowledgeSyncSummary}" TextWrapping="Wrap" />
-                                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding CloudConversationSyncSummary}" TextWrapping="Wrap" />
                                                     <TextBlock Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding CloudUpdateCheckSummary}" TextWrapping="Wrap" />
-                                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding CloudKnowledgeVersionSummary}" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="当前目标" />
                                                 <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding CloudActionSummary}" TextWrapping="Wrap" />
-                                                <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="手动同步" />
-                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,6,0,0">
-                                                    <Button Width="136" HorizontalAlignment="Left" Click="RunCloudSyncNowButton_OnClick" Content="立即同步一次" IsEnabled="{Binding CanRunCloudSyncActions}" Style="{StaticResource SubtleButtonStyle}" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会按当前已填写的服务器地址、客户端标识和 Token 立刻上传一次知识库增量与问题日志。" TextWrapping="Wrap" />
-                                                </StackPanel>
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="手动检查" />
                                                 <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,6,0,0">
                                                     <Button Width="136" HorizontalAlignment="Left" Click="CheckForUpdatesNowButton_OnClick" Content="立即检查更新" IsEnabled="{Binding CanRunUpdateActions}" Style="{StaticResource PrimaryButtonStyle}" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会主动向服务器拉取更新清单。如果有新版本或新的知识分析结果，会立即弹出提示。" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="5" Style="{StaticResource FieldLabelStyle}" Text="知识审核" />
-                                                <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,6,0,0">
-                                                    <Button Width="136" HorizontalAlignment="Left" Click="OpenKnowledgeReviewWindowButton_OnClick" Content="审核知识候选" Style="{StaticResource SubtleButtonStyle}" />
-                                                    <TextBlock Margin="0,8,0,0"
-                                                               Foreground="{StaticResource MutedBrush}"
-                                                               Text="打开最小审核页，默认先走内置服务地址拉取待审核知识候选；如果该地址没有审核接口，再自动回退到本机 http://127.0.0.1:5128。"
-                                                               TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="6" Style="{StaticResource FieldLabelStyle}" Text="AI 认证" />
-                                                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,0">
-                                                    <TextBlock Foreground="{StaticResource TextBrush}" Text="{Binding AiAuthStatusSummary}" TextWrapping="Wrap" />
-                                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding AiAuthEndpointSummary}" TextWrapping="Wrap" />
-                                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding AiAuthProbeSummary}" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="7" Style="{StaticResource FieldLabelStyle}" Text="认证操作" />
-                                                <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,6,0,0">
-                                                    <WrapPanel>
-                                                        <Button Width="136" Margin="0,0,10,10" Click="RefreshAiAuthStatusButton_OnClick" Content="刷新 AI 状态" IsEnabled="{Binding CanRefreshAiAuthStatus}" Style="{StaticResource SubtleButtonStyle}" />
-                                                        <Button Width="146" Margin="0,0,10,10" Click="SignInWithChatGptButton_OnClick" Content="使用 ChatGPT 登录" IsEnabled="{Binding CanRunAiAuthAction}" Style="{StaticResource PrimaryButtonStyle}" />
-                                                        <Button Width="108" Margin="0,0,0,10" Click="SignOutAiAuthButton_OnClick" Content="退出登录" IsEnabled="{Binding CanLogoutAiAuth}" Style="{StaticResource SubtleButtonStyle}" />
-                                                    </WrapPanel>
-                                                    <TextBlock Margin="0,8,0,0"
-                                                               Foreground="{StaticResource MutedBrush}"
-                                                               Text="默认优先走内置服务地址，并复用本机已登录的 Codex CLI / ChatGPT 身份；如果当前服务没有部署 AI 认证接口，会自动回退到本机服务。"
-                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会主动向服务器拉取更新清单。如果有新版本，会立即弹出提示。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="8"
                                                            Grid.Column="1"
                                                            Margin="0,8,0,0"
-                                                           Foreground="{Binding CloudActionAvailabilityBrush}"
-                                                           Text="{Binding CloudActionAvailabilitySummary}"
+                                                           Foreground="{StaticResource MutedBrush}"
+                                                           Text="当前版本已经简化为本地快捷回复与资料发送工具。"
                                                            TextWrapping="Wrap" />
                                             </Grid>
                                         </Border>
@@ -639,7 +581,7 @@
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
-                                        <Border Style="{StaticResource SectionCardStyle}"><StackPanel><TextBlock Style="{StaticResource SectionTitleStyle}" Text="诊断建议" /><TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="1. 平时主要看截图占用和本次启动记录数，确认日志有没有持续落库。" TextWrapping="Wrap" /><TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="2. 如果只是做推荐训练，长期最有价值的是文本日志；截图更多是排查和抽样核对用。" TextWrapping="Wrap" /><TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="3. 当你觉得占用变大时，先点一次“立即清理旧截图”，通常不需要手动删数据库。" TextWrapping="Wrap" /></StackPanel></Border>
+                                        <Border Style="{StaticResource SectionCardStyle}"><StackPanel><TextBlock Style="{StaticResource SectionTitleStyle}" Text="诊断建议" /><TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="1. 平时主要看截图占用和本次启动记录数，确认日志有没有持续落库。" TextWrapping="Wrap" /><TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="2. 文本日志更适合回看发送行为；截图更多是排查和抽样核对用。" TextWrapping="Wrap" /><TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="3. 当你觉得占用变大时，先点一次“立即清理旧截图”，通常不需要手动删数据库。" TextWrapping="Wrap" /></StackPanel></Border>
                                         <Border x:Name="DataSection" Style="{StaticResource SectionCardStyle}">
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>

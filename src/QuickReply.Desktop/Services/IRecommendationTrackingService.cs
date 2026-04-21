@@ -32,27 +32,6 @@ public interface IRecommendationTrackingService
         ComposeActionMode actionMode,
         bool resultSuccess);
 
-    Guid LogAiDraftsShown(
-        ConversationRecommendationSnapshot snapshot,
-        IReadOnlyList<GeneratedReplyCandidate> drafts,
-        SearchOverlayMode mode,
-        string? searchKeyword);
-
-    void LogAiDraftAction(
-        GeneratedReplyCandidate draft,
-        Guid sessionId,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        string eventType,
-        ComposeActionMode actionMode,
-        bool resultSuccess);
-
-    Task LogAiDraftStatusAsync(
-        ConversationRecommendationSnapshot snapshot,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        AiDraftGenerationStatus status);
-
     Task SaveRecognitionCorrectionAsync(
         Guid sessionId,
         ConversationRecommendationSnapshot snapshot,

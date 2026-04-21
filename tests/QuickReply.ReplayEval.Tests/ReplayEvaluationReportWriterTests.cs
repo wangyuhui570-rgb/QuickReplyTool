@@ -16,9 +16,7 @@ public sealed class ReplayEvaluationReportWriterTests
                 PlatformHint = "wechat",
                 PhraseStillExists = true,
                 ActualRank = 1,
-                CandidateCount = 3,
-                HasGeneratedCandidates = true,
-                GeneratedHit = true
+                CandidateCount = 3
             },
             new ReplayEvaluationRow
             {
@@ -28,8 +26,6 @@ public sealed class ReplayEvaluationReportWriterTests
                 PhraseStillExists = true,
                 ActualRank = 4,
                 CandidateCount = 4,
-                HasGeneratedCandidates = false,
-                GeneratedHit = false,
                 CorrectedApplied = true
             },
             new ReplayEvaluationRow
@@ -46,8 +42,7 @@ public sealed class ReplayEvaluationReportWriterTests
             rows,
             new ReplayEvalOptions
             {
-                MinimumSampleCount = 6,
-                GeneratedReplyCount = 2
+                MinimumSampleCount = 6
             },
             new DateTimeOffset(2026, 4, 14, 9, 30, 0, TimeSpan.FromHours(8)));
 
@@ -59,7 +54,6 @@ public sealed class ReplayEvaluationReportWriterTests
         Assert.Contains("成功发送样本：1", summary, StringComparison.Ordinal);
         Assert.Contains("失败发送样本：1", summary, StringComparison.Ordinal);
         Assert.Contains("纠错回灌样本：1", summary, StringComparison.Ordinal);
-        Assert.Contains("非 fallback 生成候选命中率：1/1 (100.0%)", summary, StringComparison.Ordinal);
         Assert.Contains("平台 wechat：样本 2，Recall@3 1/2 (50.0%)", summary, StringComparison.Ordinal);
         Assert.Contains("平台 unknown：样本 1，Recall@3 0/0 (0.0%)", summary, StringComparison.Ordinal);
         Assert.Contains("来源 successful_send：样本 1，纳入评估 1，无候选 0，miss 0，Recall@3 1/1 (100.0%)", summary, StringComparison.Ordinal);

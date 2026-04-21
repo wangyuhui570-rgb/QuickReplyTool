@@ -12,7 +12,6 @@ internal static class KnowledgeCloudApplicationExtensions
     public static WebApplication MapKnowledgeCloudEndpoints(this WebApplication app)
     {
         app.MapOperationalEndpoints();
-        app.MapAiAuthEndpoints();
         app.MapKnowledgeEndpoints();
         return app;
     }

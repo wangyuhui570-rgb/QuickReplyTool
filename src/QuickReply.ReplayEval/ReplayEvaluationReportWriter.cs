@@ -37,7 +37,6 @@ internal static class ReplayEvaluationReportWriter
     {
         var effectiveNow = now ?? DateTimeOffset.Now;
         var eligibleRows = rows.Where(row => row.PhraseStillExists).ToList();
-        var generatedRows = eligibleRows.Where(row => row.HasGeneratedCandidates).ToList();
         var totalRows = rows.Count;
         var correctedCount = rows.Count(row => row.CorrectedApplied);
         var deletedPhraseCount = rows.Count(row => !row.PhraseStillExists);
@@ -48,7 +47,6 @@ internal static class ReplayEvaluationReportWriter
         var hitAt1 = eligibleRows.Count(row => row.ActualRank == 1);
         var hitAt3 = eligibleRows.Count(row => row.ActualRank is <= 3);
         var hitAt5 = eligibleRows.Count(row => row.ActualRank is <= 5);
-        var generatedHitCount = generatedRows.Count(row => row.GeneratedHit);
 
         var lines = new List<string>
         {
@@ -64,9 +62,7 @@ internal static class ReplayEvaluationReportWriter
             $"Recall@1：{FormatRate(hitAt1, eligibleRows.Count)}",
             $"Recall@3：{FormatRate(hitAt3, eligibleRows.Count)}",
             $"Recall@5：{FormatRate(hitAt5, eligibleRows.Count)}",
-            $"非 fallback 生成候选命中率：{FormatRate(generatedHitCount, generatedRows.Count)}",
             $"最小样本阈值：{options.MinimumSampleCount}",
-            $"生成候选数量：{options.GeneratedReplyCount}",
             "说明：本次回放会按样本发生时间截断历史日志，排除样本自身，并用日志重建历史短语快照目录。结果比之前更接近真实回测，但仍不是完整线上环境快照。"
         };
 

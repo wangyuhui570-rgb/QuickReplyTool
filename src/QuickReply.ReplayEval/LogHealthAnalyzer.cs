@@ -50,7 +50,6 @@ internal sealed class LogHealthAnalyzer
         report.RecommendationEventCount = await ExecuteCountAsync(connection, "recommendation_events").ConfigureAwait(false);
         report.RecognitionCorrectionCount = await ExecuteCountAsync(connection, "recognition_corrections").ConfigureAwait(false);
         report.OperationFunnels = await LoadOperationFunnelsAsync(connection).ConfigureAwait(false);
-        report.AiDraftHealth = await LoadAiDraftHealthAsync(connection).ConfigureAwait(false);
         report.LowConfidenceConversationLogs = await ExecuteScalarAsync(
             connection,
             "SELECT COUNT(*) FROM conversation_logs WHERE lower(ifnull(recognition_status, '')) = 'low_confidence';").ConfigureAwait(false);
@@ -130,14 +129,6 @@ internal sealed class LogHealthAnalyzer
                 "warning",
                 $"operation_funnel_{operation.OperationName}",
                 $"{operation.OperationName} 失败率达到 {operation.FailureRate:P1}，主要掉在 {operation.TopFailureStage}。"));
-        }
-
-        foreach (var aiDraft in report.AiDraftHealth.Where(entry => entry.ProviderFailedCount >= 3 && entry.ProviderFailedRate >= 0.50))
-        {
-            report.Issues.Add(new LogHealthIssue(
-                "warning",
-                $"ai_draft_provider_{aiDraft.ProviderType}",
-                $"AI 草稿 provider {aiDraft.DisplayName} 失败率达到 {aiDraft.ProviderFailedRate:P1}，平均耗时 {aiDraft.AverageLatencyMs.ToString("0.0", CultureInfo.InvariantCulture)} ms。"));
         }
     }
 
@@ -334,50 +325,6 @@ internal sealed class LogHealthAnalyzer
                 reader.IsDBNull(5) ? 0 : reader.GetDouble(5),
                 topFailure.Stage,
                 topFailure.Message));
-        }
-
-        return entries;
-    }
-
-    private static async Task<IReadOnlyList<LogHealthAiDraftEntry>> LoadAiDraftHealthAsync(SqliteConnection connection)
-    {
-        var columns = await LoadTableColumnsAsync(connection, "recommendation_events").ConfigureAwait(false);
-        if (!columns.Contains("recommendation_kind"))
-        {
-            return [];
-        }
-
-        var entries = new List<LogHealthAiDraftEntry>();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT ifnull(provider_type, '') AS provider_type,
-                   ifnull(model_name, '') AS model_name,
-                   SUM(CASE WHEN ifnull(event_type, '') = 'shown' THEN 1 ELSE 0 END) AS shown_count,
-                   SUM(CASE WHEN ifnull(event_type, '') = 'input' THEN 1 ELSE 0 END) AS input_count,
-                   SUM(CASE WHEN ifnull(event_type, '') = 'sent' THEN 1 ELSE 0 END) AS sent_count,
-                   SUM(CASE WHEN ifnull(event_type, '') = 'dismissed' THEN 1 ELSE 0 END) AS dismissed_count,
-                   SUM(CASE WHEN ifnull(event_type, '') = 'provider_failed' THEN 1 ELSE 0 END) AS provider_failed_count,
-                   SUM(CASE WHEN ifnull(event_type, '') = 'context_skipped' THEN 1 ELSE 0 END) AS context_skipped_count,
-                   AVG(CASE WHEN ifnull(latency_ms, 0) > 0 THEN CAST(latency_ms AS REAL) END) AS average_latency_ms
-            FROM recommendation_events
-            WHERE ifnull(recommendation_kind, '') = 'ai_draft'
-            GROUP BY ifnull(provider_type, ''), ifnull(model_name, '')
-            ORDER BY shown_count DESC, provider_type ASC, model_name ASC;
-            """;
-
-        await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-        while (await reader.ReadAsync().ConfigureAwait(false))
-        {
-            entries.Add(new LogHealthAiDraftEntry(
-                reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
-                reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
-                reader.GetInt64(2),
-                reader.GetInt64(3),
-                reader.GetInt64(4),
-                reader.GetInt64(5),
-                reader.GetInt64(6),
-                reader.GetInt64(7),
-                reader.IsDBNull(8) ? 0d : reader.GetDouble(8)));
         }
 
         return entries;
@@ -731,8 +678,6 @@ internal sealed class LogHealthReport
 
     public IReadOnlyList<LogHealthOperationEntry> OperationFunnels { get; set; } = [];
 
-    public IReadOnlyList<LogHealthAiDraftEntry> AiDraftHealth { get; set; } = [];
-
     public IReadOnlyList<RecentExceptionEntry> RecentExceptions { get; set; } = [];
 
     public List<LogHealthIssue> Issues { get; } = [];
@@ -773,24 +718,6 @@ internal sealed record LogHealthOperationEntry(
     public double FailureRate => AttemptCount == 0 ? 0 : (double)FailureCount / AttemptCount;
 
     public double SuccessRate => AttemptCount == 0 ? 0 : (double)SuccessCount / AttemptCount;
-}
-
-internal sealed record LogHealthAiDraftEntry(
-    string ProviderType,
-    string ModelName,
-    long ShownCount,
-    long InputCount,
-    long SentCount,
-    long DismissedCount,
-    long ProviderFailedCount,
-    long ContextSkippedCount,
-    double AverageLatencyMs)
-{
-    public string DisplayName => string.IsNullOrWhiteSpace(ModelName)
-        ? (string.IsNullOrWhiteSpace(ProviderType) ? "unknown" : ProviderType)
-        : $"{ProviderType}/{ModelName}";
-
-    public double ProviderFailedRate => (ShownCount + ProviderFailedCount) == 0 ? 0 : (double)ProviderFailedCount / (ShownCount + ProviderFailedCount);
 }
 
 internal sealed record RecentExceptionEntry(

@@ -60,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-app-update-release.ps
 说明：
 
 - zip 内部会包含 `app\QuickReplyTool.exe` 和完整运行文件
-- zip 内部现在也会包含 `app\LocalCloudService\QuickReply.CloudService.exe`，用于正式安装环境里的本机审核/AI 认证 fallback
+- zip 内部现在也会包含 `app\LocalCloudService\QuickReply.CloudService.exe`，用于正式安装环境里的本机审核和知识同步 fallback
 - `app-update-info.json` 用于包内自描述
 - `release-manifest.snippet.json` 用于给服务端登记 OTA 元数据
 

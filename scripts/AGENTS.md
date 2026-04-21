@@ -48,7 +48,7 @@ This directory contains operational PowerShell scripts. Inherit the repository r
 - `build-portable.ps1` depends on `dotnet publish`.
 - `build-patch-package.ps1` depends on `dotnet publish` and archive creation.
 - `invoke-rollback-drill.ps1` validates a rollback package scaffold in dry-run mode without touching user data.
-- `publish-local-cloud-service.ps1` publishes the bundled `QuickReply.CloudService` runtime that installed/portable/OTA builds now carry for local review and AI-auth fallback.
+- `publish-local-cloud-service.ps1` publishes the bundled `QuickReply.CloudService` runtime that installed/portable/OTA builds now carry for local review and published-knowledge sync fallback.
 - `publish-app-update-release.ps1` is the current one-step OTA staging script: build package, stage zip, write public download URL into manifest, and prepare publish-ready files.
 - `release-safety-common.ps1` holds shared helpers for smoke signing, verification, rollback metadata, and dry-run validation.
 - `new-release-evidence.ps1` scaffolds release-evidence folders, checklists, and packaging verification templates.

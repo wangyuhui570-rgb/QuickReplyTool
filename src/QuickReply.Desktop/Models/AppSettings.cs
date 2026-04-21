@@ -20,16 +20,6 @@ public sealed class AppSettings : ObservableObject
     private bool _allowAutomaticIssueReportUpload;
     private bool _enableUpdateChecks;
     private string _serverBaseUrl = QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl;
-    private bool _enableAiDrafts;
-    private string _ollamaBaseUrl = OllamaAiDraftProvider.DefaultBaseUrl;
-    private string _ollamaModelName = string.Empty;
-    private int _aiDraftCount = 3;
-    private int _aiRequestTimeoutMs = 8000;
-    private bool _enableAiApiFallback;
-    private string _aiApiBaseUrl = string.Empty;
-    private string _aiApiModelName = string.Empty;
-    private string _aiApiKey = string.Empty;
-    private bool _allowRemoteAiForCustomerText;
     private string _syncClientId = Guid.NewGuid().ToString("N");
     private string _syncApiToken = string.Empty;
     private DateTimeOffset? _lastKnowledgeSyncAt;
@@ -184,66 +174,6 @@ public sealed class AppSettings : ObservableObject
     {
         get => _syncApiToken;
         set => SetProperty(ref _syncApiToken, value?.Trim() ?? string.Empty);
-    }
-
-    public bool EnableAiDrafts
-    {
-        get => _enableAiDrafts;
-        set => SetProperty(ref _enableAiDrafts, value);
-    }
-
-    public string OllamaBaseUrl
-    {
-        get => _ollamaBaseUrl;
-        set => SetProperty(ref _ollamaBaseUrl, NormalizeServerBaseUrl(value));
-    }
-
-    public string OllamaModelName
-    {
-        get => _ollamaModelName;
-        set => SetProperty(ref _ollamaModelName, value?.Trim() ?? string.Empty);
-    }
-
-    public int AiDraftCount
-    {
-        get => _aiDraftCount;
-        set => SetProperty(ref _aiDraftCount, Math.Clamp(value, 1, 3));
-    }
-
-    public int AiRequestTimeoutMs
-    {
-        get => _aiRequestTimeoutMs;
-        set => SetProperty(ref _aiRequestTimeoutMs, ClampDelay(value, 1000, 60000, 8000));
-    }
-
-    public bool EnableAiApiFallback
-    {
-        get => _enableAiApiFallback;
-        set => SetProperty(ref _enableAiApiFallback, value);
-    }
-
-    public string AiApiBaseUrl
-    {
-        get => _aiApiBaseUrl;
-        set => SetProperty(ref _aiApiBaseUrl, NormalizeServerBaseUrl(value));
-    }
-
-    public string AiApiModelName
-    {
-        get => _aiApiModelName;
-        set => SetProperty(ref _aiApiModelName, value?.Trim() ?? string.Empty);
-    }
-
-    public string AiApiKey
-    {
-        get => _aiApiKey;
-        set => SetProperty(ref _aiApiKey, value?.Trim() ?? string.Empty);
-    }
-
-    public bool AllowRemoteAiForCustomerText
-    {
-        get => _allowRemoteAiForCustomerText;
-        set => SetProperty(ref _allowRemoteAiForCustomerText, value);
     }
 
     public DateTimeOffset? LastKnowledgeSyncAt

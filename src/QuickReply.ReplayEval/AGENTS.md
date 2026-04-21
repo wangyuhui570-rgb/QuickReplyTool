@@ -18,7 +18,7 @@ This project is an offline evaluation tool layered on top of desktop-side code.
 - Preserve the console/offline nature of the project.
 - Prefer adding evaluation-specific logic here and keeping reusable business logic in the desktop project when both need it.
 - Avoid UI, tray, or interactive workflow assumptions in this project.
-- Current scope also includes log-health inspection for send flow, recommendation flow, AI draft/provider telemetry, and operation-event funnels; keep those summaries source-driven and deterministic.
+- Current scope also includes log-health inspection for send flow, recommendation flow, and operation-event funnels; keep those summaries source-driven and deterministic.
 
 ## Validation
 

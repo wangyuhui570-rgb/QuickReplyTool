@@ -1,6 +1,6 @@
 ﻿# QuickReplyTool
 
-一个面向 Windows 客服场景的快捷回复桌面工具。当前版本为 `1.3`，在 `1.2` 的系统级输入基础上，补齐了可配置的“发送功能”。
+一个面向 Windows 客服场景的本地快捷回复桌面工具。当前版本聚焦短语管理、文件资料发送、搜索浮层和本地设置，整体保持轻量、直接的本地工作流。
 
 ## 项目结构说明
 
@@ -23,57 +23,32 @@ src/
     MainWindow.xaml
 ```
 
-## 数据库结构说明
+## 数据存储
 
-SQLite 数据库文件默认位于：
+SQLite 数据库默认位于 `%AppData%\\QuickReplyTool\\quick-reply.db`。
 
-`%AppData%\QuickReplyTool\quick-reply.db`
+当前主要使用这些本地数据：
 
-当前版本包含以下核心表：
+- `categories`
+- `phrases`
+- `app_settings`
 
-### `categories`
-
-- `id` `TEXT PRIMARY KEY`
-- `name` `TEXT NOT NULL`
-- `sort_order` `INTEGER NOT NULL`
-- `created_at` `TEXT NOT NULL`
-- `updated_at` `TEXT NOT NULL`
-
-### `phrases`
-
-- `id` `TEXT PRIMARY KEY`
-- `category_id` `TEXT NOT NULL`
-- `title` `TEXT NOT NULL`
-- `tags` `TEXT NOT NULL`
-- `content` `TEXT NOT NULL`
-- `sort_order` `INTEGER NOT NULL`
-- `created_at` `TEXT NOT NULL`
-- `updated_at` `TEXT NOT NULL`
-
-### `app_settings`
-
-- `key` `TEXT PRIMARY KEY`
-- `value` `TEXT NOT NULL`
-
-说明：
-
-- `categories` 和 `phrases` 继续负责业务数据。
-- `app_settings` 用于保存发送方式、发送延迟、窗口置顶等本地配置。
+其中 `categories` 和 `phrases` 保存短语内容，`app_settings` 保存发送方式、窗口行为、界面尺寸和本地路径等配置。
 
 ## 关键模块说明
 
-- [SqliteAppDataStore.cs](C:/Users/Mayn/Desktop/回复效率工具/src/QuickReply.Desktop/Services/SqliteAppDataStore.cs)
-  统一封装 SQLite 建库、建表、测试数据初始化，以及分类、短语、配置的持久化。
-- [MessageComposeService.cs](C:/Users/Mayn/Desktop/回复效率工具/src/QuickReply.Desktop/Services/MessageComposeService.cs)
-  把“输入”和“发送”抽象成统一服务接口，负责剪贴板写入、切回目标窗口、粘贴、发送、恢复剪贴板。
-- [ClipboardService.cs](C:/Users/Mayn/Desktop/回复效率工具/src/QuickReply.Desktop/Services/ClipboardService.cs)
-  统一封装剪贴板读写、备份、恢复和重试策略。
-- [KeyboardInputSimulator.cs](C:/Users/Mayn/Desktop/回复效率工具/src/QuickReply.Desktop/Services/KeyboardInputSimulator.cs)
-  统一封装 `Ctrl+V / Enter / Ctrl+Enter / Alt+S` 的按键模拟。
-- [MainViewModel.cs](C:/Users/Mayn/Desktop/回复效率工具/src/QuickReply.Desktop/ViewModels/MainViewModel.cs)
-  保留原有界面结构，在现有交互上接入 SQLite 配置持久化和统一消息投递服务。
-- [MainWindow.xaml](C:/Users/Mayn/Desktop/回复效率工具/src/QuickReply.Desktop/MainWindow.xaml)
-  在原三栏界面上增加发送方式和发送延迟设置。
+- `src/QuickReply.Desktop/Services/SqliteAppDataStore.cs`
+  统一封装 SQLite 建库、建表和本地配置持久化。
+- `src/QuickReply.Desktop/Services/MessageComposeService.cs`
+  负责剪贴板写入、切回目标窗口、粘贴、发送和恢复剪贴板。
+- `src/QuickReply.Desktop/Services/ClipboardService.cs`
+  封装剪贴板读写、备份、恢复和重试策略。
+- `src/QuickReply.Desktop/Services/KeyboardInputSimulator.cs`
+  封装 `Ctrl+V / Enter / Ctrl+Enter / Alt+S` 的按键模拟。
+- `src/QuickReply.Desktop/ViewModels/MainViewModel.cs`
+  承担主界面状态与命令协调。
+- `src/QuickReply.Desktop/MainWindow.xaml`
+  主界面布局和交互入口。
 
 ## Windows 输入和发送方案说明
 
@@ -184,19 +159,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-patch-package.ps1 `
 - 安装包会覆盖安装到同一个目录
 - 用户数据继续保留在 `%AppData%\QuickReplyTool`
 
-## 云同步与更新对接文档
+## 更新与发布文档
 
-如果你要把“知识收集 + 推荐分析 + 更新提示”接到自己的服务器，直接看这份文档：
-
-- [cloud-sync-update-server.md](C:/Users/24173/Desktop/回复效率工具/回复效率工具/docs/cloud-sync-update-server.md)
-
-文档里已经整理了：
-
-- 当前客户端已实现的行为
-- 服务端要接的 3 个接口
-- 上传数据的结构和用途
-- 数据够不够的初版判断方法
-- 版本发布和更新提示流程
+如果要接更新清单或发布安装包、补丁包，可以查看 `docs/` 下的发布文档。
 
 ## 如何初始化开发环境
 

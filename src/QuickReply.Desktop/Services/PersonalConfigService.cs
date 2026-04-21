@@ -61,7 +61,6 @@ public sealed class PersonalConfigService
 
         var clone = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings)) ?? new AppSettings();
         clone.SyncApiToken = string.Empty;
-        clone.AiApiKey = string.Empty;
         return clone;
     }
 

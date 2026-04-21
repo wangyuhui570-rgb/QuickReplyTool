@@ -39,11 +39,6 @@ internal static class ManagementApiAccess
         });
     }
 
-    public static bool CanUseInteractiveAiAuth(HttpContext httpContext, KnowledgeCloudOptions options)
-    {
-        return IsLoopbackAllowed(httpContext, options);
-    }
-
     private static bool IsLoopbackAllowed(HttpContext httpContext, KnowledgeCloudOptions options)
     {
         if (!options.AllowLoopbackWithoutAuth)

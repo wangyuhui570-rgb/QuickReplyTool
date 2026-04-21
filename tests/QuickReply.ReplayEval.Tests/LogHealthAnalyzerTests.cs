@@ -120,28 +120,6 @@ public sealed class LogHealthAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_LoadsAiDraftHealth()
-    {
-        using var scope = new TempLogRootScope();
-        await using var connection = await scope.OpenConnectionAsync();
-
-        await scope.CreateSchemaAsync(connection);
-        await scope.InsertConversationRowsAsync(connection, totalRows: 8, failedRows: 0, suspiciousCaptureRows: 0, lowConfidenceRows: 0, searchOverlayRows: 4);
-        await scope.InsertAiDraftEventsAsync(connection);
-
-        var analyzer = new LogHealthAnalyzer();
-        var report = await analyzer.AnalyzeAsync(scope.LogRootPath);
-
-        var entry = Assert.Single(report.AiDraftHealth);
-        Assert.Equal("ollama", entry.ProviderType);
-        Assert.Equal("qwen2.5:3b", entry.ModelName);
-        Assert.Equal(1, entry.ShownCount);
-        Assert.Equal(1, entry.SentCount);
-        Assert.Equal(1, entry.ProviderFailedCount);
-        Assert.True(entry.AverageLatencyMs > 0);
-    }
-
-    [Fact]
     public void BuildSummary_IncludesKeyMetricsAndIssues()
     {
         var report = new LogHealthReport
@@ -165,10 +143,6 @@ public sealed class LogHealthAnalyzerTests
             OperationFunnels =
             [
                 new LogHealthOperationEntry("cloud_sync", 4, 2, 2, 0, 128.5, "conversation_upload", "服务器返回 503")
-            ],
-            AiDraftHealth =
-            [
-                new LogHealthAiDraftEntry("ollama", "qwen2.5:3b", 2, 1, 1, 1, 1, 0, 420)
             ]
         };
         report.Issues.Add(new LogHealthIssue("error", "capture_regression", "疑似没有抓到真正的聊天正文。"));
@@ -183,7 +157,6 @@ public sealed class LogHealthAnalyzerTests
         Assert.Contains("剪贴板失败: 4", summary, StringComparison.Ordinal);
         Assert.Contains("pdd_workbench: 18 次，失败 6 (33.3%)", summary, StringComparison.Ordinal);
         Assert.Contains("cloud_sync: 4 次，成功 2 (50.0%)，失败 2，跳过 0，平均耗时 128.5 ms，主要掉点 conversation_upload", summary, StringComparison.Ordinal);
-        Assert.Contains("ollama/qwen2.5:3b: 展示 2，输入 1，发送 1，忽略 1，provider 失败 1", summary, StringComparison.Ordinal);
     }
 
     private sealed class TempLogRootScope : IDisposable
@@ -234,8 +207,6 @@ public sealed class LogHealthAnalyzerTests
                     id TEXT NOT NULL,
                     recommendation_kind TEXT NOT NULL DEFAULT '',
                     event_type TEXT NOT NULL DEFAULT '',
-                    provider_type TEXT NOT NULL DEFAULT '',
-                    model_name TEXT NOT NULL DEFAULT '',
                     latency_ms INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE recognition_corrections (
@@ -330,41 +301,6 @@ public sealed class LogHealthAnalyzerTests
                 await using var command = connection.CreateCommand();
                 command.CommandText = "INSERT INTO recommendation_events (id) VALUES ($id);";
                 command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("N"));
-                await command.ExecuteNonQueryAsync();
-            }
-        }
-
-        public async Task InsertAiDraftEventsAsync(SqliteConnection connection)
-        {
-            var events = new[]
-            {
-                new { EventType = "shown", LatencyMs = 420 },
-                new { EventType = "sent", LatencyMs = 420 },
-                new { EventType = "provider_failed", LatencyMs = 860 }
-            };
-
-            foreach (var item in events)
-            {
-                await using var command = connection.CreateCommand();
-                command.CommandText = """
-                    INSERT INTO recommendation_events (
-                        id,
-                        recommendation_kind,
-                        event_type,
-                        provider_type,
-                        model_name,
-                        latency_ms)
-                    VALUES (
-                        $id,
-                        'ai_draft',
-                        $eventType,
-                        'ollama',
-                        'qwen2.5:3b',
-                        $latencyMs);
-                    """;
-                command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("N"));
-                command.Parameters.AddWithValue("$eventType", item.EventType);
-                command.Parameters.AddWithValue("$latencyMs", item.LatencyMs);
                 await command.ExecuteNonQueryAsync();
             }
         }

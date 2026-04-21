@@ -14,7 +14,7 @@ public sealed class KnowledgeCloudApiTests
     [Fact]
     public async Task GetReadyz_ReturnsRuntimeReadiness()
     {
-        await using var factory = new CloudServiceFactory(enableAiSynthesis: false);
+        await using var factory = new CloudServiceFactory();
 
         var client = factory.CreateClient();
         var response = await client.GetFromJsonAsync<CloudServiceRuntimeInfoResponse>("/readyz");
@@ -23,8 +23,6 @@ public sealed class KnowledgeCloudApiTests
         Assert.True(response!.Ok);
         Assert.True(response.DatabaseReady);
         Assert.Equal("QuickReply.CloudService", response.Service);
-        Assert.False(response.AiSynthesisEnabled);
-        Assert.True(response.AiReady);
     }
 
     [Fact]
@@ -32,9 +30,7 @@ public sealed class KnowledgeCloudApiTests
     {
         await using var factory = new CloudServiceFactory(
             allowLoopbackWithoutAuth: false,
-            managementApiToken: "secret-token",
-            enableAiSynthesis: false,
-            aiProvider: "openai_api");
+            managementApiToken: "secret-token");
 
         var client = factory.CreateClient();
         using var response = await client.GetAsync("/version");
@@ -44,8 +40,6 @@ public sealed class KnowledgeCloudApiTests
         var root = payload.RootElement;
 
         Assert.Equal("QuickReply.CloudService", root.GetProperty("service").GetString());
-        Assert.Equal("openai_api", root.GetProperty("aiProvider").GetString());
-        Assert.False(root.GetProperty("aiSynthesisEnabled").GetBoolean());
         Assert.True(root.GetProperty("managementApiTokenConfigured").GetBoolean());
         Assert.False(root.GetProperty("loopbackBypassEnabled").GetBoolean());
     }
@@ -55,8 +49,7 @@ public sealed class KnowledgeCloudApiTests
     {
         await using var factory = new CloudServiceFactory(
             allowLoopbackWithoutAuth: false,
-            managementApiToken: "secret-token",
-            enableAiSynthesis: false);
+            managementApiToken: "secret-token");
 
         var client = factory.CreateClient();
         var unauthorizedResponse = await client.GetAsync("/info");
@@ -399,34 +392,6 @@ public sealed class KnowledgeCloudApiTests
     }
 
     [Fact]
-    public async Task SynthesizeDrafts_TransitionsCandidateToReviewed()
-    {
-        await using var factory = new CloudServiceFactory();
-        var logsZipPath = factory.CreateImportableLogsZip();
-        var client = factory.CreateClient();
-
-        var importResponse = await client.PostAsJsonAsync(
-            "/api/quickreply/knowledge/jobs/import-logs",
-            new ImportKnowledgeCandidatesRequest
-            {
-                InputPath = logsZipPath
-            });
-        importResponse.EnsureSuccessStatusCode();
-
-        var synthesizeResponse = await client.PostAsync("/api/quickreply/knowledge/jobs/synthesize-drafts?limit=20", content: null);
-        synthesizeResponse.EnsureSuccessStatusCode();
-
-        var result = await synthesizeResponse.Content.ReadFromJsonAsync<KnowledgeImportRunResponse>();
-        Assert.NotNull(result);
-        Assert.Equal(1, result!.CandidateCount);
-
-        var queue = await client.GetFromJsonAsync<KnowledgeReviewQueueResponse>("/api/quickreply/knowledge/review/queue");
-        var item = Assert.Single(queue!.Items);
-        Assert.Equal("reviewed", item.Status);
-        Assert.Contains("开发票", item.QuestionNormalized, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task GetReviewSources_ReturnsCandidateSourceExcerpts()
     {
         await using var factory = new CloudServiceFactory();
@@ -457,23 +422,14 @@ public sealed class KnowledgeCloudApiTests
         private readonly string _databaseDirectory = Path.Combine(Path.GetTempPath(), "QuickReplyCloudTests", Guid.NewGuid().ToString("N"));
         private readonly bool _allowLoopbackWithoutAuth;
         private readonly string _managementApiToken;
-        private readonly bool _enableAiSynthesis;
-        private readonly string _aiProvider;
-        private readonly string _ollamaModelName;
         private string DatabasePath => Path.Combine(_databaseDirectory, "quickreply-cloud.db");
 
         public CloudServiceFactory(
             bool allowLoopbackWithoutAuth = true,
-            string managementApiToken = "",
-            bool enableAiSynthesis = true,
-            string aiProvider = "auto",
-            string ollamaModelName = "")
+            string managementApiToken = "")
         {
             _allowLoopbackWithoutAuth = allowLoopbackWithoutAuth;
             _managementApiToken = managementApiToken;
-            _enableAiSynthesis = enableAiSynthesis;
-            _aiProvider = aiProvider;
-            _ollamaModelName = ollamaModelName;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -481,9 +437,6 @@ public sealed class KnowledgeCloudApiTests
             builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:DatabasePath", DatabasePath);
             builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:AllowLoopbackWithoutAuth", _allowLoopbackWithoutAuth.ToString());
             builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:ManagementApiToken", _managementApiToken);
-            builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:EnableAiSynthesis", _enableAiSynthesis.ToString());
-            builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:AiProvider", _aiProvider);
-            builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:OllamaModelName", _ollamaModelName);
         }
 
         public async Task SeedCandidateAsync(KnowledgeCandidateRecord candidate)

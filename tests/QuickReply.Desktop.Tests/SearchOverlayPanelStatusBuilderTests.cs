@@ -12,10 +12,9 @@ public sealed class SearchOverlayPanelStatusBuilderTests
             new ConversationRecommendationSnapshot(),
             [],
             [],
-            AiDraftGenerationStatus.Disabled(string.Empty),
             isRefreshing: true);
 
-        Assert.Equal("正在识别当前聊天上下文，并整理推荐短语与 AI 草稿...", text);
+        Assert.Equal("正在识别当前聊天上下文，并整理推荐短语...", text);
     }
 
     [Fact]
@@ -29,7 +28,6 @@ public sealed class SearchOverlayPanelStatusBuilderTests
             },
             [],
             [],
-            AiDraftGenerationStatus.ContextSkipped("暂时跳过"),
             isRefreshing: false);
 
         Assert.Contains("已抓到窗口文本", text, StringComparison.Ordinal);
@@ -72,7 +70,6 @@ public sealed class SearchOverlayPanelStatusBuilderTests
                     }
                 }
             ],
-            AiDraftGenerationStatus.Generated("生成完成", "codex_cli", "gpt-5.4", 120, 1, 1, string.Empty, 30, 1),
             isRefreshing: false);
 
         Assert.Contains("已识别客户消息", text, StringComparison.Ordinal);
@@ -94,7 +91,6 @@ public sealed class SearchOverlayPanelStatusBuilderTests
             },
             [],
             [],
-            AiDraftGenerationStatus.ContextSkipped("暂时跳过"),
             isRefreshing: false);
 
         Assert.Contains("自动 OCR 混合识别", text, StringComparison.Ordinal);
@@ -110,7 +106,7 @@ public sealed class SearchOverlayPanelStatusBuilderTests
             resultCount: 0,
             hasRecommendationPanelContent: true);
 
-        Assert.Equal("当前搜索没有直接命中，但上方仍有推荐短语、知识卡或 AI 草稿可供参考。", text);
+        Assert.Equal("当前搜索没有直接命中，但上方仍有推荐短语或知识卡可供参考。", text);
     }
 
     [Fact]

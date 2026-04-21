@@ -13,8 +13,6 @@ public sealed class AppSettingsSnapshotServiceTests
             SearchFocusHotkeyMode = SearchFocusHotkeyMode.DoubleCtrl,
             SearchTextSendShortcutMode = SearchTextSendShortcutMode.CtrlShiftEnter,
             ServerBaseUrl = "https://sync.example.com",
-            EnableAiDrafts = true,
-            AiApiKey = "secret",
             SyncApiToken = "token",
             LastPublishedKnowledgeRevision = 42,
             PhraseImageSendMode = PhraseImageSendMode.ImageThenTextThenSend,
@@ -34,7 +32,6 @@ public sealed class AppSettingsSnapshotServiceTests
         Assert.Equal(source.ServerBaseUrl, clone.ServerBaseUrl);
         Assert.Equal(source.LastPublishedKnowledgeRevision, clone.LastPublishedKnowledgeRevision);
         Assert.Equal(source.SearchInputColorHex, clone.SearchInputColorHex);
-        Assert.Equal(source.AiApiKey, applied.AiApiKey);
         Assert.Equal(source.SyncApiToken, applied.SyncApiToken);
         Assert.Equal(source.SidebarWidth, applied.SidebarWidth);
 

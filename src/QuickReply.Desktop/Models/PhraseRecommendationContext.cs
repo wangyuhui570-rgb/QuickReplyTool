@@ -11,8 +11,4 @@ public sealed class PhraseRecommendationContext
     public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCards { get; init; } = [];
 
     public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups { get; init; } = [];
-
-    public IReadOnlyList<GeneratedReplyCandidate> GeneratedReplies { get; init; } = [];
-
-    public AiDraftGenerationStatus AiDraftStatus { get; init; } = AiDraftGenerationStatus.Disabled(string.Empty);
 }

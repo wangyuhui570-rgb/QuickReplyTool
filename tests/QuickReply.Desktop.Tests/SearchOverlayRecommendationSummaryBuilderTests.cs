@@ -123,45 +123,4 @@ public sealed class SearchOverlayRecommendationSummaryBuilderTests
         Assert.Equal("参考依据：历史高频 1 条｜知识 2 条（问答卡 1 / 资料卡 1）", text);
     }
 
-    [Fact]
-    public void BuildAiDraftStatusMessage_AppendsProviderAndGroundingSummary()
-    {
-        var text = SearchOverlayRecommendationSummaryBuilder.BuildAiDraftStatusMessage(
-            AiDraftGenerationStatus.ProviderFailed(
-                "生成失败",
-                "ollama",
-                "qwen2.5:3b",
-                latencyMs: 200,
-                groundingPhraseCount: 2,
-                groundingKnowledgeCount: 1,
-                fallbackReason: "timeout"));
-
-        Assert.Contains("生成失败", text, StringComparison.Ordinal);
-        Assert.Contains("provider Ollama/qwen2.5:3b", text, StringComparison.Ordinal);
-        Assert.Contains("参考短语 2 条", text, StringComparison.Ordinal);
-        Assert.Contains("知识 1 条", text, StringComparison.Ordinal);
-        Assert.Contains("fallback timeout", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void BuildAiDraftStatusMessage_ShowsGeneratedSummary()
-    {
-        var text = SearchOverlayRecommendationSummaryBuilder.BuildAiDraftStatusMessage(
-            AiDraftGenerationStatus.Generated(
-                "生成完成",
-                "codex_cli",
-                "gpt-5.4",
-                latencyMs: 320,
-                groundingPhraseCount: 3,
-                groundingKnowledgeCount: 2,
-                fallbackReason: string.Empty,
-                characterCount: 120,
-                generatedCount: 2));
-
-        Assert.Contains("生成完成", text, StringComparison.Ordinal);
-        Assert.Contains("已生成 2 条 AI 草稿", text, StringComparison.Ordinal);
-        Assert.Contains("provider ChatGPT/Codex/gpt-5.4", text, StringComparison.Ordinal);
-        Assert.Contains("参考短语 3 条", text, StringComparison.Ordinal);
-        Assert.Contains("知识 2 条", text, StringComparison.Ordinal);
-    }
 }

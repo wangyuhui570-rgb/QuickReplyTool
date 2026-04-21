@@ -12,8 +12,6 @@ This directory contains Chinese-first product, ops, and release documentation.
 
 - Update the relevant document when implementation changes any of these areas:
   - cloud sync
-  - cloud AI knowledge workflow
-  - AI auth / Codex CLI login flow
   - local cloud-service fallback or operator review flow
   - update checks
   - ota release workflow
@@ -21,8 +19,7 @@ This directory contains Chinese-first product, ops, and release documentation.
   - patch release workflow
   - installer or portable packaging behavior
 - Keep examples and endpoint descriptions aligned with the current code under `src/QuickReply.Desktop` and `scripts/`.
-- If a change affects knowledge candidate generation, review, or published-knowledge sync, update both `cloud-sync-update-server.md` and `cloud-ai-knowledge-workflow.md`.
-- If a change affects Codex CLI auth, OpenAI/Ollama provider priority, or AI synthesis fallback order, update `cloud-ai-knowledge-workflow.md` and any operator-facing setup guidance in `cloud-sync-update-server.md`.
+- If a change affects knowledge review or published-knowledge sync, update `cloud-sync-update-server.md`.
 
 ## Accuracy rules
 

@@ -382,6 +382,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         StartupTrace.Mark("main_vm.initialize.start");
         _data = await _dataStore.LoadAsync();
         StartupTrace.Mark("main_vm.initialize.data_loaded");
+        RetiredFeatureSettingsPolicy.Apply(_data.Settings);
         _phraseImageStore.UpdateRootPath(_data.Settings.PhraseImageFolderPath);
         await MigrateLegacyPhraseImageLayoutAsync();
         StartupTrace.Mark("main_vm.initialize.image_layout_ready");
@@ -3234,4 +3235,3 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         SaveNowCommand.NotifyCanExecuteChanged();
     }
 }
-

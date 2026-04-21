@@ -29,16 +29,6 @@ internal static class AppSettingsSnapshotService
         target.AllowAutomaticIssueReportUpload = source.AllowAutomaticIssueReportUpload;
         target.EnableUpdateChecks = source.EnableUpdateChecks;
         target.ServerBaseUrl = source.ServerBaseUrl;
-        target.EnableAiDrafts = source.EnableAiDrafts;
-        target.OllamaBaseUrl = source.OllamaBaseUrl;
-        target.OllamaModelName = source.OllamaModelName;
-        target.AiDraftCount = source.AiDraftCount;
-        target.AiRequestTimeoutMs = source.AiRequestTimeoutMs;
-        target.EnableAiApiFallback = source.EnableAiApiFallback;
-        target.AiApiBaseUrl = source.AiApiBaseUrl;
-        target.AiApiModelName = source.AiApiModelName;
-        target.AiApiKey = source.AiApiKey;
-        target.AllowRemoteAiForCustomerText = source.AllowRemoteAiForCustomerText;
         target.SyncClientId = source.SyncClientId;
         target.SyncApiToken = source.SyncApiToken;
         target.LastKnowledgeSyncAt = source.LastKnowledgeSyncAt;
@@ -89,5 +79,6 @@ internal static class AppSettingsSnapshotService
         target.SearchOverlayOpacityPercent = source.SearchOverlayOpacityPercent;
         target.SearchInputColorHex = source.SearchInputColorHex;
         target.SearchInputOpacityPercent = source.SearchInputOpacityPercent;
+        RetiredFeatureSettingsPolicy.Apply(target);
     }
 }

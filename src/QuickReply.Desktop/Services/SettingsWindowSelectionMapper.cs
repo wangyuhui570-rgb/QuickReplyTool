@@ -18,16 +18,6 @@ internal interface ISettingsWindowSelections
     bool SelectedAllowAutomaticIssueReportUpload { get; set; }
     bool SelectedEnableUpdateChecks { get; set; }
     string SelectedServerBaseUrl { get; set; }
-    bool SelectedEnableAiDrafts { get; set; }
-    string SelectedOllamaBaseUrl { get; set; }
-    string SelectedOllamaModelName { get; set; }
-    int SelectedAiDraftCount { get; set; }
-    int SelectedAiRequestTimeoutMs { get; set; }
-    bool SelectedEnableAiApiFallback { get; set; }
-    string SelectedAiApiBaseUrl { get; set; }
-    string SelectedAiApiModelName { get; set; }
-    string SelectedAiApiKey { get; set; }
-    bool SelectedAllowRemoteAiForCustomerText { get; set; }
     string SelectedSyncClientId { get; set; }
     string SelectedSyncApiToken { get; set; }
     PhraseImageSendMode SelectedPhraseImageSendMode { get; set; }
@@ -85,21 +75,11 @@ internal static class SettingsWindowSelectionMapper
         target.SelectedScreenshotToolHotkey = source.ScreenshotToolHotkey;
         target.SelectedScreenshotToolSaveDirectory = source.ScreenshotToolSaveDirectory;
         target.SelectedIssueReportDirectory = source.IssueReportDirectory;
-        target.SelectedEnableCloudSync = source.EnableCloudSync;
-        target.SelectedAllowRawConversationCloudSync = source.AllowRawConversationCloudSync;
-        target.SelectedAllowAutomaticIssueReportUpload = source.AllowAutomaticIssueReportUpload;
+        target.SelectedEnableCloudSync = false;
+        target.SelectedAllowRawConversationCloudSync = false;
+        target.SelectedAllowAutomaticIssueReportUpload = false;
         target.SelectedEnableUpdateChecks = source.EnableUpdateChecks;
         target.SelectedServerBaseUrl = source.ServerBaseUrl;
-        target.SelectedEnableAiDrafts = source.EnableAiDrafts;
-        target.SelectedOllamaBaseUrl = source.OllamaBaseUrl;
-        target.SelectedOllamaModelName = source.OllamaModelName;
-        target.SelectedAiDraftCount = source.AiDraftCount;
-        target.SelectedAiRequestTimeoutMs = source.AiRequestTimeoutMs;
-        target.SelectedEnableAiApiFallback = source.EnableAiApiFallback;
-        target.SelectedAiApiBaseUrl = source.AiApiBaseUrl;
-        target.SelectedAiApiModelName = source.AiApiModelName;
-        target.SelectedAiApiKey = source.AiApiKey;
-        target.SelectedAllowRemoteAiForCustomerText = source.AllowRemoteAiForCustomerText;
         target.SelectedSyncClientId = source.SyncClientId;
         target.SelectedSyncApiToken = source.SyncApiToken;
         target.SelectedPhraseImageSendMode = source.PhraseImageSendMode;
@@ -155,21 +135,11 @@ internal static class SettingsWindowSelectionMapper
         target.ScreenshotToolHotkey = source.SelectedScreenshotToolHotkey;
         target.ScreenshotToolSaveDirectory = source.SelectedScreenshotToolSaveDirectory;
         target.IssueReportDirectory = source.SelectedIssueReportDirectory;
-        target.EnableCloudSync = source.SelectedEnableCloudSync;
-        target.AllowRawConversationCloudSync = source.SelectedAllowRawConversationCloudSync;
-        target.AllowAutomaticIssueReportUpload = source.SelectedAllowAutomaticIssueReportUpload;
+        target.EnableCloudSync = false;
+        target.AllowRawConversationCloudSync = false;
+        target.AllowAutomaticIssueReportUpload = false;
         target.EnableUpdateChecks = source.SelectedEnableUpdateChecks;
         target.ServerBaseUrl = source.SelectedServerBaseUrl;
-        target.EnableAiDrafts = source.SelectedEnableAiDrafts;
-        target.OllamaBaseUrl = source.SelectedOllamaBaseUrl;
-        target.OllamaModelName = source.SelectedOllamaModelName;
-        target.AiDraftCount = source.SelectedAiDraftCount;
-        target.AiRequestTimeoutMs = source.SelectedAiRequestTimeoutMs;
-        target.EnableAiApiFallback = source.SelectedEnableAiApiFallback;
-        target.AiApiBaseUrl = source.SelectedAiApiBaseUrl;
-        target.AiApiModelName = source.SelectedAiApiModelName;
-        target.AiApiKey = source.SelectedAiApiKey;
-        target.AllowRemoteAiForCustomerText = source.SelectedAllowRemoteAiForCustomerText;
         target.SyncClientId = source.SelectedSyncClientId;
         target.SyncApiToken = source.SelectedSyncApiToken;
         target.PhraseImageSendMode = source.SelectedPhraseImageSendMode;

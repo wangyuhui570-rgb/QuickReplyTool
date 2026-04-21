@@ -36,7 +36,6 @@ public sealed class IssueReportServiceTests
             ServerBaseUrl = "https://issues.example.com/",
             SyncClientId = "client-001",
             SyncApiToken = "sensitive-token-6789",
-            AiApiKey = "openai-secret-1234",
             AllowAutomaticIssueReportUpload = true,
             IssueReportDirectory = scope.FeedbackRootPath
         });
@@ -62,9 +61,7 @@ public sealed class IssueReportServiceTests
         Assert.True(File.Exists(result.PackagePath));
         Assert.Single(handler.Requests);
         Assert.DoesNotContain("sensitive-token-6789", packageJson, StringComparison.Ordinal);
-        Assert.DoesNotContain("openai-secret-1234", packageJson, StringComparison.Ordinal);
         Assert.Contains("6789", packageJson, StringComparison.Ordinal);
-        Assert.Contains("1234", packageJson, StringComparison.Ordinal);
         Assert.Contains("***", packageJson, StringComparison.Ordinal);
         Assert.DoesNotContain(scope.FeedbackRootPath, handler.Requests[0].Body, StringComparison.Ordinal);
     }

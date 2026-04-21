@@ -18,17 +18,12 @@ public sealed class SearchOverlayViewModel : ObservableObject
     private IReadOnlyList<SearchOverlayResultItem> _results = Array.Empty<SearchOverlayResultItem>();
     private IReadOnlyList<PhraseRecommendationSuggestion> _recommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
     private IReadOnlyList<KnowledgeCardSuggestion> _knowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
-    private IReadOnlyList<GeneratedReplyCandidate> _generatedReplies = Array.Empty<GeneratedReplyCandidate>();
     private IReadOnlyList<HistoricalReplyGroupSuggestion> _similarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
     private ConversationRecommendationSnapshot _recommendationSnapshot = new();
-    private AiDraftGenerationStatus _lastAiDraftStatus = AiDraftGenerationStatus.Disabled(string.Empty);
     private Guid _recommendationSessionId;
     private Guid _knowledgeCardSessionId;
-    private Guid _aiDraftSessionId;
-    private bool _aiDraftInteracted;
     private bool _isEditingRecognition;
     private string _recognitionCorrectionText = string.Empty;
-    private string _aiDraftStatusMessage = string.Empty;
     private string _actionStatusMessage = string.Empty;
     private string _searchText = string.Empty;
     private string _statusMessage = "输入关键词后，可按数字 1-9 或 Enter 发送结果；Ctrl+S 仅保存原文，Ctrl+Shift+S 发送并保存。";
@@ -113,25 +108,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             }
         }
     }
-
-    public IReadOnlyList<GeneratedReplyCandidate> GeneratedReplies
-    {
-        get => _generatedReplies;
-        private set
-        {
-            if (SetProperty(ref _generatedReplies, value))
-            {
-                OnPropertyChanged(nameof(AiDraftItems));
-                OnPropertyChanged(nameof(HasGeneratedReplies));
-                NotifyRecommendationPanelStateChanged();
-                OnPropertyChanged(nameof(ResultsSectionSummary));
-                OnPropertyChanged(nameof(HasResultsSectionSummary));
-                OnPropertyChanged(nameof(EmptyStateHintText));
-            }
-        }
-    }
-
-    public IReadOnlyList<GeneratedReplyCandidate> AiDraftItems => GeneratedReplies;
 
     public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups
     {
@@ -222,8 +198,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public bool HasRecommendations => RecommendedPhrases.Count > 0;
 
-    public bool HasGeneratedReplies => GeneratedReplies.Count > 0;
-
     public bool HasKnowledgeCardMatches => KnowledgeCards.Count > 0;
 
     public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCardItems => KnowledgeCards.Take(RecommendationDisplayCount).ToArray();
@@ -243,9 +217,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         HasRecommendationContext ||
         HasRecommendations ||
         HasKnowledgeCardMatches ||
-        HasGeneratedReplies ||
-        HasSimilarReplyGroups ||
-        !string.IsNullOrWhiteSpace(AiDraftStatusMessage);
+        HasSimilarReplyGroups;
 
     public bool HasManualSearchText => SearchOverlayLayoutModeResolver.HasManualSearchText(SearchText);
 
@@ -343,30 +315,14 @@ public sealed class SearchOverlayViewModel : ObservableObject
     public bool HasRecommendationHintText => !string.IsNullOrWhiteSpace(RecommendationHintText);
 
     public string RecommendationStatusText => _isSettingsPreviewMode
-        ? "当前为搜索浮层预览，推荐短语与 AI 草稿不会在预览模式下实时刷新。"
+        ? "当前为搜索浮层预览，推荐短语不会在预览模式下实时刷新。"
         : SearchOverlayPanelStatusBuilder.BuildRecommendationStatusText(
             _recommendationSnapshot,
             RecommendedPhrases,
             KnowledgeCards,
-            _lastAiDraftStatus,
             IsRefreshingRecommendations);
 
     public bool HasRecommendationStatusText => !string.IsNullOrWhiteSpace(RecommendationStatusText);
-
-    public string AiDraftStatusMessage
-    {
-        get => _aiDraftStatusMessage;
-        private set
-        {
-            if (SetProperty(ref _aiDraftStatusMessage, value))
-            {
-                OnPropertyChanged(nameof(HasAiDraftStatusMessage));
-                NotifyRecommendationPanelStateChanged();
-            }
-        }
-    }
-
-    public bool HasAiDraftStatusMessage => !string.IsNullOrWhiteSpace(AiDraftStatusMessage);
 
     public string GroundingSummaryText => SearchOverlayRecommendationSummaryBuilder.BuildGroundingSummaryText(
         RecommendedPhrases,
@@ -520,16 +476,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
     {
         Interlocked.Increment(ref _recommendationRefreshVersion);
         _isSettingsPreviewMode = false;
-        DismissPendingAiDrafts();
         _recommendationSnapshot = new ConversationRecommendationSnapshot();
         _recommendationSessionId = Guid.Empty;
         _knowledgeCardSessionId = Guid.Empty;
-        _aiDraftSessionId = Guid.Empty;
-        _aiDraftInteracted = false;
         SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
-        GeneratedReplies = Array.Empty<GeneratedReplyCandidate>();
-        _lastAiDraftStatus = AiDraftGenerationStatus.Disabled(string.Empty);
-        AiDraftStatusMessage = string.Empty;
         ClearActionStatus();
         KnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
         IsEditingRecognition = false;
@@ -557,22 +507,16 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public Task RefreshRecommendationsForOpenAsync()
     {
-        return RefreshRecommendationsAsync();
+        return Task.CompletedTask;
     }
 
     public void BeginSettingsPreview(SearchOverlayMode mode)
     {
         _isSettingsPreviewMode = true;
-        DismissPendingAiDrafts();
         _recommendationSnapshot = new ConversationRecommendationSnapshot();
         _recommendationSessionId = Guid.Empty;
         _knowledgeCardSessionId = Guid.Empty;
-        _aiDraftSessionId = Guid.Empty;
-        _aiDraftInteracted = false;
         SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
-        GeneratedReplies = Array.Empty<GeneratedReplyCandidate>();
-        _lastAiDraftStatus = AiDraftGenerationStatus.Disabled(string.Empty);
-        AiDraftStatusMessage = string.Empty;
         ClearActionStatus();
         KnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
         IsEditingRecognition = false;
@@ -620,16 +564,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
 
         _isSettingsPreviewMode = false;
-        DismissPendingAiDrafts();
         _recommendationSnapshot = new ConversationRecommendationSnapshot();
         _recommendationSessionId = Guid.Empty;
         _knowledgeCardSessionId = Guid.Empty;
-        _aiDraftSessionId = Guid.Empty;
-        _aiDraftInteracted = false;
         SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
-        GeneratedReplies = Array.Empty<GeneratedReplyCandidate>();
-        _lastAiDraftStatus = AiDraftGenerationStatus.Disabled(string.Empty);
-        AiDraftStatusMessage = string.Empty;
         ClearActionStatus();
         KnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
         IsEditingRecognition = false;
@@ -683,7 +621,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             _ => "短语模式，可按数字 1-9 或 Enter 直接发送；Ctrl+S 保存原文，Ctrl+Shift+S 发送并保存。"
         };
         RefreshResults();
-        _ = RefreshRecommendationsAsync();
     }
 
     public Task ToggleSidebarWorkModeAsync()
@@ -744,46 +681,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
             ComposeActionMode.Input,
             result.Success);
 
-        ShowActionStatus(result);
-        return result;
-    }
-
-    public async Task<ReplyActionResult> SendGeneratedReplyAsync(GeneratedReplyCandidate draft)
-    {
-        _aiDraftInteracted = true;
-        var result = await _mainViewModel.SendPlainTextAsync(
-            draft.Text,
-            "search_overlay_ai_draft_send",
-            SearchText,
-            _recommendationSnapshot);
-        _recommendationTrackingService.LogAiDraftAction(
-            draft,
-            _aiDraftSessionId,
-            CurrentMode,
-            SearchText,
-            "sent",
-            ComposeActionMode.Send,
-            result.Success);
-        ShowActionStatus(result);
-        return result;
-    }
-
-    public async Task<ReplyActionResult> InputGeneratedReplyAsync(GeneratedReplyCandidate draft)
-    {
-        _aiDraftInteracted = true;
-        var result = await _mainViewModel.InputPlainTextAsync(
-            draft.Text,
-            "search_overlay_ai_draft_input",
-            SearchText,
-            _recommendationSnapshot);
-        _recommendationTrackingService.LogAiDraftAction(
-            draft,
-            _aiDraftSessionId,
-            CurrentMode,
-            SearchText,
-            "input",
-            ComposeActionMode.Input,
-            result.Success);
         ShowActionStatus(result);
         return result;
     }
@@ -1391,12 +1288,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
                 _recommendationSnapshot = new ConversationRecommendationSnapshot();
                 _recommendationSessionId = Guid.Empty;
                 _knowledgeCardSessionId = Guid.Empty;
-                _aiDraftSessionId = Guid.Empty;
-                _aiDraftInteracted = false;
                 SimilarReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
-                GeneratedReplies = Array.Empty<GeneratedReplyCandidate>();
-                _lastAiDraftStatus = AiDraftGenerationStatus.Disabled(string.Empty);
-                AiDraftStatusMessage = string.Empty;
                 IsEditingRecognition = false;
                 RecognitionCorrectionText = string.Empty;
                 NotifyRecommendationContextChanged();
@@ -1421,10 +1313,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
             SimilarReplyGroups = context.Suggestions.Count == 0
                 ? Array.Empty<HistoricalReplyGroupSuggestion>()
                 : context.SimilarReplyGroups;
-            GeneratedReplies = context.GeneratedReplies;
             KnowledgeCards = context.KnowledgeCards;
-            _lastAiDraftStatus = context.AiDraftStatus;
-            AiDraftStatusMessage = SearchOverlayRecommendationSummaryBuilder.BuildAiDraftStatusMessage(context.AiDraftStatus);
             IsEditingRecognition = false;
             RecognitionCorrectionText = _recommendationSnapshot.RecognizedCustomerText;
             NotifyRecommendationContextChanged();
@@ -1445,22 +1334,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
                     KnowledgeCards,
                     CurrentMode,
                     SearchText);
-            _aiDraftSessionId = GeneratedReplies.Count == 0
-                ? Guid.Empty
-                : _recommendationTrackingService.LogAiDraftsShown(
-                    context.Snapshot,
-                    GeneratedReplies,
-                    CurrentMode,
-                    SearchText);
-            _aiDraftInteracted = false;
-            if (GeneratedReplies.Count == 0 && context.AiDraftStatus.ShouldSurfaceStatus)
-            {
-                _ = _recommendationTrackingService.LogAiDraftStatusAsync(
-                    context.Snapshot,
-                    CurrentMode,
-                    SearchText,
-                    context.AiDraftStatus);
-            }
             RefreshResults();
         }
         finally
@@ -1470,28 +1343,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
                 IsRefreshingRecommendations = false;
             }
         }
-    }
-
-    public void DismissPendingAiDrafts()
-    {
-        if (_aiDraftSessionId == Guid.Empty || _aiDraftInteracted || GeneratedReplies.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var draft in GeneratedReplies)
-        {
-            _recommendationTrackingService.LogAiDraftAction(
-                draft,
-                _aiDraftSessionId,
-                CurrentMode,
-                SearchText,
-                "dismissed",
-                ComposeActionMode.Copy,
-                resultSuccess: true);
-        }
-
-        _aiDraftInteracted = true;
     }
 
     private void TrackRecommendationAcceptance(SearchOverlayResultItem item, ComposeActionMode actionMode, bool resultSuccess)
@@ -1541,7 +1392,6 @@ public sealed class SearchOverlayViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(RecommendationDisplayCount));
             OnPropertyChanged(nameof(RecommendationItems));
-            _ = RefreshRecommendationsAsync();
             return;
         }
 
@@ -1564,23 +1414,14 @@ public sealed class SearchOverlayViewModel : ObservableObject
             return [];
         }
 
-        var recommendationMap = RecommendedPhrases.ToDictionary(item => item.Phrase.Id, item => item);
-        IReadOnlyList<ReplyPhrase> phrases = _mainViewModel.SearchPhrases(keyword, Math.Max(maxResults * 2, 12));
+        IReadOnlyList<ReplyPhrase> phrases = _mainViewModel.SearchPhrases(keyword, maxResults);
 
         return phrases
-            .OrderByDescending(phrase => recommendationMap.ContainsKey(phrase.Id))
-            .ThenByDescending(phrase => recommendationMap.TryGetValue(phrase.Id, out var suggestion) ? suggestion.Confidence : 0d)
-            .ThenByDescending(phrase => _mainViewModel.GetPhraseSendCount(phrase.Id))
-            .ThenByDescending(phrase => _mainViewModel.GetPhraseLastSentAt(phrase.Id) ?? DateTimeOffset.MinValue)
-            .Take(maxResults)
             .Select((phrase, index) => new SearchOverlayResultItem
             {
                 Number = index + 1,
                 Mode = SearchOverlayMode.Phrase,
-                Phrase = phrase,
-                IsRecommended = recommendationMap.ContainsKey(phrase.Id),
-                RecommendationBadgeText = recommendationMap.TryGetValue(phrase.Id, out var suggestion) ? "推荐" : string.Empty,
-                RecommendationDetailText = recommendationMap.TryGetValue(phrase.Id, out suggestion) ? suggestion.ReasonText : string.Empty
+                Phrase = phrase
             })
             .ToArray();
     }
@@ -1639,9 +1480,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
                     Mode = SearchOverlayMode.Phrase,
                     PreviewLabelText = "安装时效",
                     PreviewContent = "您好，这边先给您发安装教程，您按步骤操作即可。",
-                    PreviewHasLabel = true,
-                    IsRecommended = true,
-                    RecommendationBadgeText = "推荐"
+                    PreviewHasLabel = true
                 },
                 new SearchOverlayResultItem
                 {
@@ -1669,9 +1508,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
                     Mode = SearchOverlayMode.Phrase,
                     PreviewLabelText = "发货时效",
                     PreviewContent = "您好，这边会在 24 小时内为您安排发出，请您留意物流更新。",
-                    PreviewHasLabel = true,
-                    IsRecommended = true,
-                    RecommendationBadgeText = "推荐"
+                    PreviewHasLabel = true
                 },
                 new SearchOverlayResultItem
                 {
@@ -1702,22 +1539,17 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
         var candidateCount = Math.Max(maxResults * 2, 12);
         var normalizedKeyword = keyword.Trim();
-        var recommendationMap = RecommendedPhrases.ToDictionary(item => item.Phrase.Id, item => item);
 
         var phraseCandidates = _mainViewModel
             .SearchPhrases(normalizedKeyword, candidateCount)
             .Select((phrase, index) => new
             {
-                Score = ComputePhraseMixedScore(phrase, normalizedKeyword, index) +
-                        (recommendationMap.TryGetValue(phrase.Id, out var suggestion) ? suggestion.Confidence * 60d : 0d),
+                Score = ComputePhraseMixedScore(phrase, normalizedKeyword, index),
                 Item = new SearchOverlayResultItem
                 {
                     Number = 0,
                     Mode = SearchOverlayMode.Phrase,
-                    Phrase = phrase,
-                    IsRecommended = recommendationMap.ContainsKey(phrase.Id),
-                    RecommendationBadgeText = recommendationMap.TryGetValue(phrase.Id, out suggestion) ? "推荐" : string.Empty,
-                    RecommendationDetailText = recommendationMap.TryGetValue(phrase.Id, out suggestion) ? suggestion.ReasonText : string.Empty
+                    Phrase = phrase
                 }
             });
 

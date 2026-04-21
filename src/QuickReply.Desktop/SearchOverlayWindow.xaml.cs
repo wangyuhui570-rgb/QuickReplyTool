@@ -165,9 +165,6 @@ public partial class SearchOverlayWindow : Window
         _ = TrackActivationDiagnosticsAsync(_overlaySessionId);
         _placementTimer.Start();
         RefreshSearchInputHints();
-        _ = Dispatcher.InvokeAsync(
-            async () => await _viewModel.RefreshRecommendationsForOpenAsync(),
-            DispatcherPriority.Background);
     }
 
     public void ShowSettingsPreview(Window anchorWindow, SearchOverlayMode mode, AppSettings previewSettings)
@@ -546,72 +543,6 @@ public partial class SearchOverlayWindow : Window
         try
         {
             var result = await _viewModel.InputKnowledgeCardAsync(knowledgeCard);
-            if (result.Success)
-            {
-                return;
-            }
-
-            RestoreOverlayAfterSendFailure(restoreState, result);
-        }
-        finally
-        {
-            _isSending = false;
-        }
-    }
-
-    private async void AiDraftSendButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.Button button ||
-            button.DataContext is not GeneratedReplyCandidate draft)
-        {
-            return;
-        }
-
-        if (_isSending)
-        {
-            return;
-        }
-
-        var restoreState = CaptureOverlayRestoreState();
-        _isSending = true;
-        HideOverlay("ai_draft_send", animate: false);
-
-        try
-        {
-            var result = await _viewModel.SendGeneratedReplyAsync(draft);
-            if (result.Success)
-            {
-                return;
-            }
-
-            RestoreOverlayAfterSendFailure(restoreState, result);
-        }
-        finally
-        {
-            _isSending = false;
-        }
-    }
-
-    private async void AiDraftInputButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.Button button ||
-            button.DataContext is not GeneratedReplyCandidate draft)
-        {
-            return;
-        }
-
-        if (_isSending)
-        {
-            return;
-        }
-
-        var restoreState = CaptureOverlayRestoreState();
-        _isSending = true;
-        HideOverlay("ai_draft_input", animate: false);
-
-        try
-        {
-            var result = await _viewModel.InputGeneratedReplyAsync(draft);
             if (result.Success)
             {
                 return;
@@ -1279,7 +1210,6 @@ public partial class SearchOverlayWindow : Window
         HideModeToast(immediate: true);
         _activationRequestVersion++;
         _activationRecoveryAttempts = 0;
-        _viewModel.DismissPendingAiDrafts();
 
         var hidePayload = BuildOverlayStatePayload();
         hidePayload["reason"] = reason;
@@ -2809,4 +2739,3 @@ public partial class SearchOverlayWindow : Window
         ThemeResourceService.ApplySearchOverlayTheme(Resources, _previewSettings ?? _viewModel.Settings);
     }
 }
-

@@ -9,7 +9,6 @@ public sealed class ReplayEvalOptionsTests
 
         Assert.Equal(300, options.SampleLimit);
         Assert.Equal(8, options.MinimumSampleCount);
-        Assert.Equal(3, options.GeneratedReplyCount);
         Assert.Null(options.PlatformHint);
         Assert.Null(options.SampleSource);
         Assert.Null(options.OutputDirectory);
@@ -22,7 +21,6 @@ public sealed class ReplayEvalOptionsTests
         [
             "--limit", "0",
             "--min-samples", "-5",
-            "--generated", "0",
             "--platform", "wechat",
             "--source", "failed",
             "--out", "artifacts\\replay"
@@ -30,7 +28,6 @@ public sealed class ReplayEvalOptionsTests
 
         Assert.Equal(1, options.SampleLimit);
         Assert.Equal(0, options.MinimumSampleCount);
-        Assert.Equal(1, options.GeneratedReplyCount);
         Assert.Equal("wechat", options.PlatformHint);
         Assert.Equal(ReplaySampleSources.FailedSend, options.SampleSource);
         Assert.Equal("artifacts\\replay", options.OutputDirectory);

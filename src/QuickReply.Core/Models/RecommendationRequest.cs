@@ -9,6 +9,4 @@ public sealed class RecommendationRequest
     public int DisplayCount { get; init; } = 5;
 
     public int MinimumSampleCount { get; init; } = 8;
-
-    public int GeneratedReplyCount { get; init; } = 3;
 }

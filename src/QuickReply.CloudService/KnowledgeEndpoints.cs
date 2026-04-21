@@ -75,15 +75,6 @@ internal static class KnowledgeEndpoints
             return Results.Ok(result);
         });
 
-        managementKnowledgeGroup.MapPost("/jobs/synthesize-drafts", async (
-            int? limit,
-            KnowledgeCandidateSynthesisService synthesisService,
-            CancellationToken cancellationToken) =>
-        {
-            var result = await synthesisService.SynthesizeDraftCandidatesAsync(limit ?? 50, cancellationToken).ConfigureAwait(false);
-            return Results.Ok(result);
-        });
-
         managementKnowledgeGroup.MapPost("/review/{id:guid}/approve", async (
             Guid id,
             ApproveKnowledgeCandidateRequest request,

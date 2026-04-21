@@ -72,40 +72,6 @@ internal static class SearchOverlayRecommendationSummaryBuilder
         return $"参考依据：{string.Join("｜", parts.Where(item => !string.IsNullOrWhiteSpace(item)))}";
     }
 
-    public static string BuildAiDraftStatusMessage(AiDraftGenerationStatus status)
-    {
-        if (!status.ShouldSurfaceStatus && !status.HasDrafts)
-        {
-            return string.Empty;
-        }
-
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(status.Message))
-        {
-            parts.Add(status.Message.Trim());
-        }
-
-        if (status.HasDrafts)
-        {
-            parts.Add($"已生成 {status.GeneratedCount} 条 AI 草稿");
-        }
-
-        if (!string.IsNullOrWhiteSpace(status.ProviderType))
-        {
-            var providerLabel = BuildProviderLabel(status.ProviderType, status.ModelName);
-            parts.Add($"provider {providerLabel}");
-        }
-
-        parts.Add($"参考短语 {status.GroundingPhraseCount} 条");
-        parts.Add($"知识 {status.GroundingKnowledgeCount} 条");
-        if (!string.IsNullOrWhiteSpace(status.FallbackReason))
-        {
-            parts.Add($"fallback {status.FallbackReason}");
-        }
-
-        return string.Join("｜", parts.Where(item => !string.IsNullOrWhiteSpace(item)));
-    }
-
     private static string BuildKnowledgeTypeSummary(IReadOnlyList<KnowledgeCardSuggestion> knowledgeCards)
     {
         if (knowledgeCards.Count == 0)
@@ -134,18 +100,5 @@ internal static class SearchOverlayRecommendationSummaryBuilder
         }
 
         return string.Empty;
-    }
-
-    private static string BuildProviderLabel(string providerType, string modelName)
-    {
-        var normalized = providerType?.Trim().ToLowerInvariant() ?? string.Empty;
-        return normalized switch
-        {
-            "codex_cli" => string.IsNullOrWhiteSpace(modelName) ? "ChatGPT/Codex" : $"ChatGPT/Codex/{modelName}",
-            "ollama" => string.IsNullOrWhiteSpace(modelName) ? "Ollama" : $"Ollama/{modelName}",
-            "openai_api" => string.IsNullOrWhiteSpace(modelName) ? "OpenAI API" : $"OpenAI API/{modelName}",
-            "grounding_fallback" => "保守降级/rule_based",
-            _ => string.IsNullOrWhiteSpace(modelName) ? (providerType ?? string.Empty) : $"{providerType}/{modelName}"
-        };
     }
 }

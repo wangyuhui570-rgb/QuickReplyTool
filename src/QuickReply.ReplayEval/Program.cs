@@ -36,7 +36,6 @@ static async Task<int> RunReplayEvaluationAsync(ReplayEvalOptions options)
     Directory.CreateDirectory(outputDirectory);
 
     await using var queryService = new ReplayRecommendationQueryService(logDatabasePath);
-    var replyGenerator = new RetrievalBackedReplyGenerator();
     var replayStore = new ReplaySampleStore(logDatabasePath);
 
     var corrections = await replayStore.LoadCorrectionsAsync().ConfigureAwait(false);
@@ -63,8 +62,6 @@ static async Task<int> RunReplayEvaluationAsync(ReplayEvalOptions options)
         var phraseStillExists = phraseCatalog.GetAllPhrases().Any(phrase => phrase.Id == sample.ActualPhraseId);
 
         CandidateRetrievalResult retrievalResult = new();
-        IReadOnlyList<GeneratedReplyCandidate> generatedReplies = [];
-
         if (phraseStillExists)
         {
             var candidateRetriever = new HistoricalCandidateRetriever(
@@ -75,7 +72,6 @@ static async Task<int> RunReplayEvaluationAsync(ReplayEvalOptions options)
             {
                 DisplayCount = 5,
                 MinimumSampleCount = options.MinimumSampleCount,
-                GeneratedReplyCount = options.GeneratedReplyCount,
                 QueryScope = new RecommendationQueryScope
                 {
                     MaxOccurredAt = sample.OccurredAt,
@@ -86,23 +82,12 @@ static async Task<int> RunReplayEvaluationAsync(ReplayEvalOptions options)
             retrievalResult = await candidateRetriever
                 .RetrieveCandidatesAsync(snapshot, scopedRequest)
                 .ConfigureAwait(false);
-            generatedReplies = await replyGenerator
-                .GenerateCandidatesAsync(snapshot, retrievalResult, scopedRequest)
-                .ConfigureAwait(false);
         }
 
         var actualRank = retrievalResult.Suggestions
             .Select((suggestion, index) => new { suggestion.Phrase.Id, Rank = index + 1 })
             .FirstOrDefault(entry => entry.Id == sample.ActualPhraseId)
             ?.Rank;
-        var nonFallbackGeneratedReplies = generatedReplies
-            .Where(candidate => !string.Equals(candidate.Source, "retrieval_fallback", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var generatedHit = nonFallbackGeneratedReplies.Any(candidate =>
-            candidate.BackingPhraseId == sample.ActualPhraseId ||
-            (!string.IsNullOrWhiteSpace(sample.ActualPayloadText) &&
-             string.Equals(candidate.Text, sample.ActualPayloadText, StringComparison.Ordinal)));
-
         evaluationRows.Add(new ReplayEvaluationRow
         {
             SampleId = sample.Id,
@@ -118,8 +103,6 @@ static async Task<int> RunReplayEvaluationAsync(ReplayEvalOptions options)
             ProductId = snapshot.RecognizedProductId,
             ProductName = snapshot.RecognizedProductName,
             ActualRank = actualRank,
-            GeneratedHit = generatedHit,
-            HasGeneratedCandidates = nonFallbackGeneratedReplies.Count > 0,
             CandidateCount = retrievalResult.Suggestions.Count,
             TopSuggestions = retrievalResult.Suggestions
                 .Take(5)
@@ -808,10 +791,6 @@ internal sealed class ReplayEvaluationRow
 
     public int? ActualRank { get; init; }
 
-    public bool GeneratedHit { get; init; }
-
-    public bool HasGeneratedCandidates { get; init; }
-
     public int CandidateCount { get; init; }
 
     public IReadOnlyList<ReplaySuggestionRow> TopSuggestions { get; init; } = [];
@@ -834,8 +813,6 @@ internal sealed class ReplayEvalOptions
 
     public int MinimumSampleCount { get; init; } = 8;
 
-    public int GeneratedReplyCount { get; init; } = 3;
-
     public string? PlatformHint { get; init; }
 
     public string? SampleSource { get; init; }
@@ -850,7 +827,6 @@ internal sealed class ReplayEvalOptions
     {
         var sampleLimit = 300;
         var minimumSampleCount = 8;
-        var generatedReplyCount = 3;
         string? platformHint = null;
         string? sampleSource = null;
         string? outputDirectory = null;
@@ -872,10 +848,6 @@ internal sealed class ReplayEvalOptions
                     break;
                 case "--min-samples" when int.TryParse(nextValue, out var parsedMinSamples):
                     minimumSampleCount = parsedMinSamples;
-                    index++;
-                    break;
-                case "--generated" when int.TryParse(nextValue, out var parsedGenerated):
-                    generatedReplyCount = parsedGenerated;
                     index++;
                     break;
                 case "--platform" when !string.IsNullOrWhiteSpace(nextValue):
@@ -901,7 +873,6 @@ internal sealed class ReplayEvalOptions
         {
             SampleLimit = Math.Max(1, sampleLimit),
             MinimumSampleCount = Math.Max(0, minimumSampleCount),
-            GeneratedReplyCount = Math.Max(1, generatedReplyCount),
             PlatformHint = platformHint,
             SampleSource = NormalizeSampleSource(sampleSource),
             OutputDirectory = outputDirectory,

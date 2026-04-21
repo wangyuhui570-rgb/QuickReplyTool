@@ -48,15 +48,13 @@ public sealed class PersonalConfigServiceTests
             {
                 Settings = new AppSettings
                 {
-                    SyncApiToken = "sync-secret",
-                    AiApiKey = "ai-secret"
+                    SyncApiToken = "sync-secret"
                 }
             });
 
             var json = await File.ReadAllTextAsync(filePath);
 
             Assert.DoesNotContain("sync-secret", json, StringComparison.Ordinal);
-            Assert.DoesNotContain("ai-secret", json, StringComparison.Ordinal);
         }
         finally
         {

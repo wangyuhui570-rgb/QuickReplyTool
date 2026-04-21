@@ -26,8 +26,6 @@ internal static class OperationalEndpoints
         {
             service = "QuickReply.CloudService",
             version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
-            aiProvider = options.Value.AiProvider,
-            aiSynthesisEnabled = options.Value.EnableAiSynthesis,
             managementApiTokenConfigured = !string.IsNullOrWhiteSpace(options.Value.ManagementApiToken),
             loopbackBypassEnabled = options.Value.AllowLoopbackWithoutAuth
         }));

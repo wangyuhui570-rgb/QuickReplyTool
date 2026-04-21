@@ -31,9 +31,7 @@
 
   <ItemGroup>
     <Compile Remove="Models\KnowledgeReviewModels.cs" />
-    <Compile Remove="Services\AiAuthClientService.cs" />
     <Compile Include="..\QuickReply.Core\DesktopCompatibility\DesktopContractAliases.cs" Link="GlobalUsings\DesktopContractAliases.cs" />
-    <Compile Include="..\QuickReply.Core\DesktopCompatibility\AiAuthClientService.cs" Link="Services\AiAuthClientService.cs" />
   </ItemGroup>
 
   <ItemGroup>
