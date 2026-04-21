@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       includePackagingChecks:
-        description: Run portable and patch smoke packaging checks
+        description: Run packaging smoke, signature verification, and rollback drill scaffolds
         required: false
         default: false
         type: boolean
@@ -71,13 +71,13 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
-      - name: Run local test gates
+      - name: Run release test gates
         shell: pwsh
         env:
           INCLUDE_INSTALLER_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.includeInstallerCheck || false }}
           RELEASE_EVIDENCE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.releaseEvidenceVersion || '' }}
         run: |
-          $gateArgs = @('-IncludePackagingChecks')
+          $gateArgs = @('-Configuration', 'Release', '-IncludePackagingChecks')
           if ($env:INCLUDE_INSTALLER_CHECK -eq 'true') {
             $gateArgs += '-IncludeInstallerCheck'
           }

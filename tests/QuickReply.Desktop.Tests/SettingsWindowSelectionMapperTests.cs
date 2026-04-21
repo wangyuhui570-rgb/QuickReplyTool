@@ -19,6 +19,8 @@ public sealed class SettingsWindowSelectionMapperTests
             ScreenshotToolSaveDirectory = @"C:\Screenshots",
             IssueReportDirectory = @"C:\Feedback",
             EnableCloudSync = true,
+            AllowRawConversationCloudSync = true,
+            AllowAutomaticIssueReportUpload = true,
             EnableUpdateChecks = false,
             ServerBaseUrl = "https://example.com",
             EnableAiDrafts = true,
@@ -60,6 +62,7 @@ public sealed class SettingsWindowSelectionMapperTests
             PhraseHoverPreviewDelayMs = 420,
             LogScreenshotRetentionDays = 14,
             LogScreenshotMaxSizeMb = 2048,
+            LogTextRetentionDays = 60,
             CategoryColorHex = "#112233",
             CategoryOpacityPercent = 65,
             TagColorHex = "#223344",
@@ -83,11 +86,14 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(settings.SidebarWorkMode, selections.SelectedSidebarWorkMode);
         Assert.Equal(settings.ScreenshotToolHotkey, selections.SelectedScreenshotToolHotkey);
         Assert.Equal(settings.ServerBaseUrl, selections.SelectedServerBaseUrl);
+        Assert.Equal(settings.AllowRawConversationCloudSync, selections.SelectedAllowRawConversationCloudSync);
+        Assert.Equal(settings.AllowAutomaticIssueReportUpload, selections.SelectedAllowAutomaticIssueReportUpload);
         Assert.Equal(settings.AiApiKey, selections.SelectedAiApiKey);
         Assert.Equal(settings.PhraseImageSendMode, selections.SelectedPhraseImageSendMode);
         Assert.Equal(settings.SearchOverlayWidthPercent, selections.SelectedSearchOverlayWidthPercent);
         Assert.Equal(settings.SidebarWidth, selections.SelectedSidebarWidth);
         Assert.Equal(settings.LogScreenshotRetentionDays, selections.SelectedLogScreenshotRetentionDays);
+        Assert.Equal(settings.LogTextRetentionDays, selections.SelectedLogTextRetentionDays);
         Assert.Equal(settings.SearchInputOpacityPercent, selections.SelectedSearchInputOpacityPercent);
     }
 
@@ -106,6 +112,8 @@ public sealed class SettingsWindowSelectionMapperTests
             SelectedScreenshotToolSaveDirectory = @"D:\Screenshots",
             SelectedIssueReportDirectory = @"D:\IssueReports",
             SelectedEnableCloudSync = true,
+            SelectedAllowRawConversationCloudSync = true,
+            SelectedAllowAutomaticIssueReportUpload = true,
             SelectedEnableUpdateChecks = true,
             SelectedServerBaseUrl = "https://sync.example.com",
             SelectedEnableAiDrafts = true,
@@ -147,6 +155,7 @@ public sealed class SettingsWindowSelectionMapperTests
             SelectedPhraseHoverPreviewDelayMs = 500,
             SelectedLogScreenshotRetentionDays = 30,
             SelectedLogScreenshotMaxSizeMb = 4096,
+            SelectedLogTextRetentionDays = 90,
             SelectedCategoryColorHex = "#AA1100",
             SelectedCategoryOpacityPercent = 60,
             SelectedTagColorHex = "#BB2200",
@@ -167,12 +176,15 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(selections.SelectedRunAsAdministrator, settings.RunAsAdministrator);
         Assert.Equal(selections.SelectedLaunchAtStartup, settings.LaunchAtStartup);
         Assert.Equal(selections.SelectedIssueReportDirectory, settings.IssueReportDirectory);
+        Assert.Equal(selections.SelectedAllowRawConversationCloudSync, settings.AllowRawConversationCloudSync);
+        Assert.Equal(selections.SelectedAllowAutomaticIssueReportUpload, settings.AllowAutomaticIssueReportUpload);
         Assert.Equal(selections.SelectedEnableAiApiFallback, settings.EnableAiApiFallback);
         Assert.Equal(selections.SelectedSyncApiToken, settings.SyncApiToken);
         Assert.Equal(selections.SelectedDefaultSearchOverlayMode, settings.DefaultSearchOverlayMode);
         Assert.Equal(selections.SelectedSendHotkeyMode, settings.SendHotkeyMode);
         Assert.Equal(selections.SelectedPhraseImageFolderPath, settings.PhraseImageFolderPath);
         Assert.Equal(selections.SelectedRichImageClipboardRestoreDelayMs, settings.RichImageClipboardRestoreDelayMs);
+        Assert.Equal(selections.SelectedLogTextRetentionDays, settings.LogTextRetentionDays);
         Assert.Equal(selections.SelectedSidebarOpacityPercent, settings.SidebarOpacityPercent);
     }
 
@@ -188,6 +200,8 @@ public sealed class SettingsWindowSelectionMapperTests
         public string SelectedScreenshotToolSaveDirectory { get; set; } = string.Empty;
         public string SelectedIssueReportDirectory { get; set; } = string.Empty;
         public bool SelectedEnableCloudSync { get; set; }
+        public bool SelectedAllowRawConversationCloudSync { get; set; }
+        public bool SelectedAllowAutomaticIssueReportUpload { get; set; }
         public bool SelectedEnableUpdateChecks { get; set; }
         public string SelectedServerBaseUrl { get; set; } = string.Empty;
         public bool SelectedEnableAiDrafts { get; set; }
@@ -229,6 +243,7 @@ public sealed class SettingsWindowSelectionMapperTests
         public int SelectedPhraseHoverPreviewDelayMs { get; set; }
         public int SelectedLogScreenshotRetentionDays { get; set; }
         public int SelectedLogScreenshotMaxSizeMb { get; set; }
+        public int SelectedLogTextRetentionDays { get; set; }
         public string SelectedCategoryColorHex { get; set; } = string.Empty;
         public int SelectedCategoryOpacityPercent { get; set; }
         public string SelectedTagColorHex { get; set; } = string.Empty;

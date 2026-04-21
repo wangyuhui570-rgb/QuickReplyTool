@@ -61,7 +61,9 @@ public sealed class RecommendationOrchestrator : IRecommendationOrchestrator
 
     private IntPtr ResolveTargetWindowHandle(IntPtr preferredWindowHandle)
     {
-        if (preferredWindowHandle != IntPtr.Zero)
+        if (preferredWindowHandle != IntPtr.Zero &&
+            _externalWorkbenchService.TryGetWindowInfo(preferredWindowHandle, out var preferredWindowInfo) &&
+            preferredWindowInfo is not null)
         {
             return preferredWindowHandle;
         }

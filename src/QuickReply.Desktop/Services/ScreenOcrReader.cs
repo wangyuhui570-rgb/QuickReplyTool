@@ -12,21 +12,27 @@ internal static class ScreenOcrReader
 {
     private static readonly TimeSpan OcrTimeout = TimeSpan.FromSeconds(8);
     private static readonly string[] PowerShellHostCandidates = ["powershell.exe", "pwsh.exe"];
-    private static readonly string[] PreferredFallbackOcrLanguageTags =
+    private static readonly string[] PreferredChineseOcrLanguageTags =
     [
         "zh-Hans-CN",
         "zh-CN",
         "zh-Hans",
-        "zh-Hant",
-        "en-US"
+        "zh-Hant"
     ];
+    private static readonly string[] FallbackLatinOcrLanguageTags = ["en-US"];
     private static readonly Lazy<string> ScriptPath = new(EnsureScriptPath, LazyThreadSafetyMode.ExecutionAndPublication);
 
     public static async Task<string> TryReadTextAsync(string screenshotPath, string platformHint = "")
     {
+        var result = await TryReadTextDetailedAsync(screenshotPath, platformHint).ConfigureAwait(false);
+        return result.Text;
+    }
+
+    internal static async Task<OcrReadResult> TryReadTextDetailedAsync(string screenshotPath, string platformHint = "")
+    {
         if (string.IsNullOrWhiteSpace(screenshotPath) || !File.Exists(screenshotPath))
         {
-            return string.Empty;
+            return OcrReadResult.Failure("missing_image");
         }
 
         var generatedVariantPaths = new List<string>();
@@ -34,10 +40,12 @@ internal static class ScreenOcrReader
         {
             var mergedLines = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var bestResult = OcrReadResult.Failure("ocr_empty");
             foreach (var imagePath in BuildScanPlan(screenshotPath, platformHint, generatedVariantPaths))
             {
-                var output = await TryReadSingleImageAsync(imagePath).ConfigureAwait(false);
-                foreach (var line in SplitNormalizedLines(output))
+                var result = await TryReadSingleImageDetailedAsync(imagePath, platformHint).ConfigureAwait(false);
+                bestResult = PickPreferredResult(bestResult, result);
+                foreach (var line in SplitNormalizedLines(result.Text))
                 {
                     if (seen.Add(line))
                     {
@@ -46,11 +54,21 @@ internal static class ScreenOcrReader
                 }
             }
 
-            return string.Join(Environment.NewLine, mergedLines);
+            if (mergedLines.Count > 0)
+            {
+                return bestResult with
+                {
+                    Success = true,
+                    Status = "ocr_read",
+                    Text = string.Join(Environment.NewLine, mergedLines)
+                };
+            }
+
+            return bestResult;
         }
         catch
         {
-            return string.Empty;
+            return OcrReadResult.Failure("ocr_error");
         }
         finally
         {
@@ -156,21 +174,24 @@ internal static class ScreenOcrReader
                 "wecom",
                 2.0d,
                 [
-                    new NormalizedCrop(0.34d, 0.18d, 0.44d, 0.60d),
-                    new NormalizedCrop(0.34d, 0.26d, 0.44d, 0.42d)
+                    new NormalizedCrop(0.30d, 0.10d, 0.48d, 0.74d),
+                    new NormalizedCrop(0.33d, 0.18d, 0.46d, 0.60d),
+                    new NormalizedCrop(0.35d, 0.30d, 0.42d, 0.36d)
                 ]),
             "qianniu" or "jd_workbench" or "pdd_workbench" => new OcrProfile(
                 "workbench",
                 2.2d,
                 [
-                    new NormalizedCrop(0.22d, 0.18d, 0.43d, 0.62d),
-                    new NormalizedCrop(0.24d, 0.28d, 0.39d, 0.38d)
+                    new NormalizedCrop(0.18d, 0.10d, 0.50d, 0.74d),
+                    new NormalizedCrop(0.21d, 0.18d, 0.46d, 0.60d),
+                    new NormalizedCrop(0.24d, 0.30d, 0.40d, 0.36d)
                 ]),
             _ => new OcrProfile(
                 "generic",
                 1.8d,
                 [
-                    new NormalizedCrop(0.24d, 0.18d, 0.52d, 0.60d)
+                    new NormalizedCrop(0.20d, 0.10d, 0.56d, 0.72d),
+                    new NormalizedCrop(0.24d, 0.22d, 0.50d, 0.52d)
                 ])
         };
     }
@@ -188,9 +209,14 @@ internal static class ScreenOcrReader
         return PowerShellHostCandidates;
     }
 
-    internal static IReadOnlyList<string> GetPreferredFallbackOcrLanguageTagsForTesting()
+    internal static IReadOnlyList<string> GetPreferredOcrLanguageTagsForTesting(string platformHint)
     {
-        return PreferredFallbackOcrLanguageTags;
+        return ResolvePreferredOcrLanguageTags(platformHint);
+    }
+
+    internal static int GetResultPriorityForTesting(string status)
+    {
+        return GetResultPriority(status);
     }
 
     private static Rectangle ToAbsoluteRectangle(int width, int height, NormalizedCrop crop)
@@ -216,21 +242,24 @@ internal static class ScreenOcrReader
         return target;
     }
 
-    private static async Task<string> TryReadSingleImageAsync(string screenshotPath)
+    private static async Task<OcrReadResult> TryReadSingleImageDetailedAsync(string screenshotPath, string platformHint)
     {
+        var bestResult = OcrReadResult.Failure("host_missing");
         foreach (var hostFileName in PowerShellHostCandidates)
         {
-            var result = await TryReadSingleImageWithHostAsync(screenshotPath, hostFileName).ConfigureAwait(false);
-            if (result is not null)
+            var result = await TryReadSingleImageWithHostAsync(screenshotPath, platformHint, hostFileName).ConfigureAwait(false);
+            if (result.Success)
             {
                 return result;
             }
+
+            bestResult = PickPreferredResult(bestResult, result);
         }
 
-        return string.Empty;
+        return bestResult;
     }
 
-    private static async Task<string?> TryReadSingleImageWithHostAsync(string screenshotPath, string hostFileName)
+    private static async Task<OcrReadResult> TryReadSingleImageWithHostAsync(string screenshotPath, string platformHint, string hostFileName)
     {
         var processStartInfo = new ProcessStartInfo
         {
@@ -249,6 +278,7 @@ internal static class ScreenOcrReader
         processStartInfo.ArgumentList.Add("-File");
         processStartInfo.ArgumentList.Add(ScriptPath.Value);
         processStartInfo.ArgumentList.Add(screenshotPath);
+        processStartInfo.ArgumentList.Add(platformHint);
 
         using var process = new Process
         {
@@ -259,12 +289,12 @@ internal static class ScreenOcrReader
         {
             if (!process.Start())
             {
-                return string.Empty;
+                return OcrReadResult.Failure("ocr_error", hostFileName);
             }
         }
         catch (Win32Exception)
         {
-            return null;
+            return OcrReadResult.Failure("host_missing", hostFileName);
         }
 
         var outputTask = process.StandardOutput.ReadToEndAsync();
@@ -278,17 +308,20 @@ internal static class ScreenOcrReader
         catch (OperationCanceledException)
         {
             TryTerminate(process);
-            return string.Empty;
+            return OcrReadResult.Failure("ocr_timeout", hostFileName);
         }
 
         var output = await outputTask.ConfigureAwait(false);
         var error = await errorTask.ConfigureAwait(false);
-        if (process.ExitCode != 0 || !string.IsNullOrWhiteSpace(error))
+        if (process.ExitCode != 0)
         {
-            return string.Empty;
+            return OcrReadResult.Failure("ocr_error", hostFileName, NormalizeOutput(error));
         }
 
-        return NormalizeOutput(output);
+        var normalizedOutput = NormalizeOutput(output);
+        return string.IsNullOrWhiteSpace(normalizedOutput)
+            ? OcrReadResult.Failure("ocr_empty", hostFileName, NormalizeOutput(error))
+            : OcrReadResult.SuccessResult(normalizedOutput, hostFileName, NormalizeOutput(error));
     }
 
     private static void TryTerminate(Process process)
@@ -305,11 +338,26 @@ internal static class ScreenOcrReader
         }
     }
 
+    private static IReadOnlyList<string> ResolvePreferredOcrLanguageTags(string platformHint)
+    {
+        var languages = new List<string>();
+        if (platformHint is "wecom" or "wechat" or "qianniu" or "jd_workbench" or "pdd_workbench")
+        {
+            languages.AddRange(PreferredChineseOcrLanguageTags);
+        }
+
+        languages.AddRange(FallbackLatinOcrLanguageTags);
+        return languages
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static string BuildPowerShellScript()
     {
-        var fallbackLanguageList = string.Join(", ", PreferredFallbackOcrLanguageTags.Select(tag => $"'{tag}'"));
+        var chineseLanguageList = string.Join(", ", PreferredChineseOcrLanguageTags.Select(tag => $"'{tag}'"));
+        var latinLanguageList = string.Join(", ", FallbackLatinOcrLanguageTags.Select(tag => $"'{tag}'"));
         return $$"""
-param([string]$ImagePath)
+param([string]$ImagePath, [string]$PlatformHint = '')
 
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -324,6 +372,8 @@ $SoftwareBitmap = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics, Co
 $Language = [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime]
 $OcrEngine = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
 $OcrResult = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType = WindowsRuntime]
+$PreferredChineseLanguageTags = @({{chineseLanguageList}})
+$FallbackLatinLanguageTags = @({{latinLanguageList}})
 
 $asTaskGeneric = [System.WindowsRuntimeSystemExtensions].GetMethods() |
     Where-Object {
@@ -356,7 +406,23 @@ function TryCreateLanguageEngine([string]$LanguageTag) {
     }
 }
 
-function GetOcrEngine() {
+function GetPreferredLanguageTags([string]$PlatformHint) {
+    $normalizedPlatform = $PlatformHint.Trim().ToLowerInvariant()
+    if ($normalizedPlatform -in @('wecom', 'wechat', 'qianniu', 'jd_workbench', 'pdd_workbench')) {
+        return @($PreferredChineseLanguageTags + $FallbackLatinLanguageTags)
+    }
+
+    return @($FallbackLatinLanguageTags)
+}
+
+function GetOcrEngine([string]$PlatformHint) {
+    foreach ($languageTag in GetPreferredLanguageTags $PlatformHint) {
+        $engine = TryCreateLanguageEngine $languageTag
+        if ($null -ne $engine) {
+            return $engine
+        }
+    }
+
     try {
         $engine = $OcrEngine::TryCreateFromUserProfileLanguages()
         if ($null -ne $engine) {
@@ -364,13 +430,6 @@ function GetOcrEngine() {
         }
     }
     catch {
-    }
-
-    foreach ($languageTag in @({{fallbackLanguageList}})) {
-        $engine = TryCreateLanguageEngine $languageTag
-        if ($null -ne $engine) {
-            return $engine
-        }
     }
 
     return $null
@@ -385,7 +444,7 @@ try {
     $stream = AwaitGeneric $RandomAccessStream ($file.OpenAsync($FileAccessMode::Read))
     $decoder = AwaitGeneric $BitmapDecoder ($BitmapDecoder::CreateAsync($stream))
     $bitmap = AwaitGeneric $SoftwareBitmap ($decoder.GetSoftwareBitmapAsync($BitmapPixelFormat::Bgra8, $BitmapAlphaMode::Premultiplied))
-    $engine = GetOcrEngine
+    $engine = GetOcrEngine $PlatformHint
 
     if ($null -eq $engine) {
         exit 0
@@ -406,4 +465,53 @@ catch {
     private sealed record NormalizedCrop(double X, double Y, double Width, double Height);
 
     private sealed record OcrProfile(string Name, double ScaleMultiplier, IReadOnlyList<NormalizedCrop> CropRectangles);
+
+    internal readonly record struct OcrReadResult(
+        bool Success,
+        string Status,
+        string Text,
+        string HostFileName,
+        string Detail)
+    {
+        public static OcrReadResult SuccessResult(string text, string hostFileName, string detail = "")
+        {
+            return new OcrReadResult(true, "ocr_read", text, hostFileName, detail);
+        }
+
+        public static OcrReadResult Failure(string status, string hostFileName = "", string detail = "")
+        {
+            return new OcrReadResult(false, status, string.Empty, hostFileName, detail);
+        }
+    }
+
+    private static OcrReadResult PickPreferredResult(OcrReadResult current, OcrReadResult candidate)
+    {
+        if (!current.Success && candidate.Success)
+        {
+            return candidate;
+        }
+
+        if (current.Success && !candidate.Success)
+        {
+            return current;
+        }
+
+        return GetResultPriority(candidate.Status) >= GetResultPriority(current.Status)
+            ? candidate
+            : current;
+    }
+
+    private static int GetResultPriority(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "ocr_read" => 5,
+            "ocr_error" => 4,
+            "ocr_timeout" => 3,
+            "ocr_empty" => 2,
+            "host_missing" => 1,
+            "missing_image" => 0,
+            _ => 0
+        };
+    }
 }

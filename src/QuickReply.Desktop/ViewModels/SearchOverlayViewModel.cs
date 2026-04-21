@@ -11,6 +11,7 @@ namespace QuickReply.Desktop.ViewModels;
 public sealed class SearchOverlayViewModel : ObservableObject
 {
     private const int MinimumRecommendationSampleCount = 3;
+    private const int RecommendationContextPreviewMaxLength = 160;
     private readonly MainViewModel _mainViewModel;
     private readonly IRecommendationOrchestrator _recommendationOrchestrator;
     private readonly IRecommendationTrackingService _recommendationTrackingService;
@@ -443,7 +444,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
             if (!string.IsNullOrWhiteSpace(_recommendationSnapshot.RecognizedContextText))
             {
-                parts.Add($"上下文：{BuildPreviewText(_recommendationSnapshot.RecognizedContextText, 40)}");
+                parts.Add($"上下文：{BuildPreviewText(_recommendationSnapshot.RecognizedContextText, RecommendationContextPreviewMaxLength)}");
             }
 
             return string.Join("  |  ", parts);

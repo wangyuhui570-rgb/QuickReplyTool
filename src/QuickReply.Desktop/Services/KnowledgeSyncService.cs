@@ -95,7 +95,10 @@ public sealed class KnowledgeSyncService
             var clientId = settingsSnapshot.SyncClientId;
             var knowledgePayload = await BuildKnowledgePayloadAsync(settingsSnapshot, clientId).ConfigureAwait(false);
             var conversationPayload = await _conversationLoggingService
-                .ExportSyncPayloadAsync(clientId, settingsSnapshot.LastConversationSyncAt)
+                .ExportSyncPayloadAsync(
+                    clientId,
+                    settingsSnapshot.LastConversationSyncAt,
+                    settingsSnapshot.AllowRawConversationCloudSync)
                 .ConfigureAwait(false);
 
             using var httpClient = _httpClientFactory(baseUri, settingsSnapshot);

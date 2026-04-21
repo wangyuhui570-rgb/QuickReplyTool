@@ -5,7 +5,7 @@ This project is an offline evaluation tool layered on top of desktop-side code.
 ## Role
 
 - `QuickReply.ReplayEval` is a non-UI .NET project for replaying historical conversation data and writing evaluation artifacts.
-- It references `..\QuickReply.Desktop\QuickReply.Desktop.csproj` and reuses desktop models/services rather than reimplementing them.
+- It references `..\QuickReply.Core\QuickReply.Core.csproj` and keeps replay-only query/retrieval logic inside this project so the tool can run without the desktop host.
 
 ## Data dependencies
 

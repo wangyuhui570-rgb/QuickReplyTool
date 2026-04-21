@@ -590,6 +590,8 @@ public sealed class SqliteAppDataStore
             ["screenshot_tool_save_directory"] = settings.ScreenshotToolSaveDirectory,
             ["issue_report_directory"] = settings.IssueReportDirectory,
             ["enable_cloud_sync"] = settings.EnableCloudSync ? "1" : "0",
+            ["allow_raw_conversation_cloud_sync"] = settings.AllowRawConversationCloudSync ? "1" : "0",
+            ["allow_automatic_issue_report_upload"] = settings.AllowAutomaticIssueReportUpload ? "1" : "0",
             ["enable_update_checks"] = settings.EnableUpdateChecks ? "1" : "0",
             ["server_base_url"] = settings.ServerBaseUrl,
             ["enable_ai_drafts"] = settings.EnableAiDrafts ? "1" : "0",
@@ -640,6 +642,7 @@ public sealed class SqliteAppDataStore
             ["phrase_hover_preview_delay_ms"] = settings.PhraseHoverPreviewDelayMs.ToString(CultureInfo.InvariantCulture),
             ["log_screenshot_retention_days"] = settings.LogScreenshotRetentionDays.ToString(CultureInfo.InvariantCulture),
             ["log_screenshot_max_size_mb"] = settings.LogScreenshotMaxSizeMb.ToString(CultureInfo.InvariantCulture),
+            ["log_text_retention_days"] = settings.LogTextRetentionDays.ToString(CultureInfo.InvariantCulture),
             ["category_color_hex"] = settings.CategoryColorHex,
             ["category_opacity_percent"] = settings.CategoryOpacityPercent.ToString(CultureInfo.InvariantCulture),
             ["tag_color_hex"] = settings.TagColorHex,
@@ -1524,6 +1527,12 @@ public sealed class SqliteAppDataStore
                 case "enable_cloud_sync":
                     settings.EnableCloudSync = value is "1" or "true" or "True";
                     break;
+                case "allow_raw_conversation_cloud_sync":
+                    settings.AllowRawConversationCloudSync = value is "1" or "true" or "True";
+                    break;
+                case "allow_automatic_issue_report_upload":
+                    settings.AllowAutomaticIssueReportUpload = value is "1" or "true" or "True";
+                    break;
                 case "enable_update_checks":
                     settings.EnableUpdateChecks = value is "1" or "true" or "True";
                     break;
@@ -1774,6 +1783,12 @@ public sealed class SqliteAppDataStore
                     if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var logScreenshotMaxSizeMb))
                     {
                         settings.LogScreenshotMaxSizeMb = logScreenshotMaxSizeMb;
+                    }
+                    break;
+                case "log_text_retention_days":
+                    if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var logTextRetentionDays))
+                    {
+                        settings.LogTextRetentionDays = logTextRetentionDays;
                     }
                     break;
                 case "category_color_hex":

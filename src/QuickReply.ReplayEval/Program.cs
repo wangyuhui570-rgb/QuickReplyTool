@@ -35,11 +35,10 @@ static async Task<int> RunReplayEvaluationAsync(ReplayEvalOptions options)
         DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
     Directory.CreateDirectory(outputDirectory);
 
-    await using var queryService = new ConversationLoggingService();
+    await using var queryService = new ReplayRecommendationQueryService(logDatabasePath);
     var replyGenerator = new RetrievalBackedReplyGenerator();
     var replayStore = new ReplaySampleStore(logDatabasePath);
 
-    await queryService.GetStatsAsync().ConfigureAwait(false);
     var corrections = await replayStore.LoadCorrectionsAsync().ConfigureAwait(false);
     var samples = await replayStore.LoadSamplesAsync(options.SampleLimit, options.PlatformHint, options.SampleSource).ConfigureAwait(false);
     if (samples.Count == 0)

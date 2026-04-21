@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using QuickReply.Desktop.Models;
 
@@ -133,7 +134,11 @@ public sealed class IssueReportService : IPatchInstallationStateService
             await File.WriteAllTextAsync(packagePath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)).ConfigureAwait(false);
 
             stage = "upload";
-            var uploadResult = await TryUploadReportAsync(settings, reportPackage).ConfigureAwait(false);
+            var uploadResult = await TryUploadReportAsync(
+                    settings,
+                    reportPackage,
+                    settings.AllowAutomaticIssueReportUpload)
+                .ConfigureAwait(false);
             stage = "persist_index";
             await UpsertIssueIndexEntryAsync(
                     feedbackRootPath,
@@ -393,7 +398,7 @@ public sealed class IssueReportService : IPatchInstallationStateService
                 }
 
                 stage = "upload";
-                var uploadResult = await TryUploadReportAsync(settings, reportPackage).ConfigureAwait(false);
+                var uploadResult = await TryUploadReportAsync(settings, reportPackage, uploadAllowed: true).ConfigureAwait(false);
                 if (uploadResult.Success)
                 {
                     succeededCount++;
@@ -577,8 +582,14 @@ public sealed class IssueReportService : IPatchInstallationStateService
 
     private async Task<IssueReportUploadAttemptResult> TryUploadReportAsync(
         AppSettings settings,
-        IssueReportPackage reportPackage)
+        IssueReportPackage reportPackage,
+        bool uploadAllowed)
     {
+        if (!uploadAllowed)
+        {
+            return new IssueReportUploadAttemptResult(false, false, "自动上传未开启，已保留本地问题包。", string.Empty);
+        }
+
         if (!TryBuildBaseUri(settings.ServerBaseUrl, out var baseUri))
         {
             return new IssueReportUploadAttemptResult(false, false, "未配置可用的服务器地址。", string.Empty);
@@ -586,9 +597,10 @@ public sealed class IssueReportService : IPatchInstallationStateService
 
         try
         {
+            var uploadPackage = BuildUploadPackage(reportPackage);
             using var httpClient = _httpClientFactory(baseUri, settings, reportPackage.ClientId);
             using var response = await httpClient
-                .PostAsJsonAsync(IssueReportUploadPath, reportPackage)
+                .PostAsJsonAsync(IssueReportUploadPath, uploadPackage)
                 .ConfigureAwait(false);
 
             if (IsUnsupportedBuiltInIssueEndpoint(settings, response.StatusCode))
@@ -651,6 +663,11 @@ public sealed class IssueReportService : IPatchInstallationStateService
     {
         if (!uploadResult.Attempted)
         {
+            if (string.Equals(uploadResult.Message, "自动上传未开启，已保留本地问题包。", StringComparison.Ordinal))
+            {
+                return "问题反馈文件和问题包已生成。本次未自动上传到服务器，后续可手动重试。";
+            }
+
             return string.Equals(uploadResult.Message, "当前内置服务未启用问题上报接口。", StringComparison.Ordinal)
                 ? "问题反馈文件和问题包已生成。当前内置服务未启用问题上报接口，已保留本地问题包。"
                 : "问题反馈文件和问题包已生成。本次未上传到服务器，后续可手动重试。";
@@ -659,6 +676,115 @@ public sealed class IssueReportService : IPatchInstallationStateService
         return uploadResult.Success
             ? "问题反馈文件和问题包已生成，并已上传到服务器。"
             : $"问题反馈文件和问题包已生成，但上传失败：{uploadResult.Message}。后续可手动重试。";
+    }
+
+    internal static IssueReportPackage BuildUploadPackageForTesting(IssueReportPackage reportPackage)
+    {
+        return BuildUploadPackage(reportPackage);
+    }
+
+    private static IssueReportPackage BuildUploadPackage(IssueReportPackage reportPackage)
+    {
+        return new IssueReportPackage
+        {
+            IssueId = reportPackage.IssueId,
+            CreatedAt = reportPackage.CreatedAt,
+            ClientId = reportPackage.ClientId,
+            AppVersion = reportPackage.AppVersion,
+            MachineName = reportPackage.MachineName,
+            ProcessPath = Path.GetFileName(reportPackage.ProcessPath),
+            ProcessId = reportPackage.ProcessId,
+            UserDescription = SanitizeUploadText(reportPackage.UserDescription, 800),
+            ServerBaseUrl = reportPackage.ServerBaseUrl,
+            SettingsSnapshot = reportPackage.SettingsSnapshot
+                .ToDictionary(
+                    pair => pair.Key,
+                    pair => SanitizeUploadSettingValue(pair.Value),
+                    StringComparer.Ordinal),
+            Paths = new IssueReportPathSnapshot
+            {
+                DataRootPath = string.Empty,
+                LogsRootPath = string.Empty,
+                FeedbackRootPath = string.Empty,
+                DatabasePath = Path.GetFileName(reportPackage.Paths.DatabasePath),
+                ConversationLogDatabasePath = Path.GetFileName(reportPackage.Paths.ConversationLogDatabasePath),
+                ScreenshotToolSettingsPath = Path.GetFileName(reportPackage.Paths.ScreenshotToolSettingsPath)
+            },
+            Diagnostics = new IssueReportDiagnostics
+            {
+                ScreenshotToolSettingsText = SanitizeUploadText(reportPackage.Diagnostics.ScreenshotToolSettingsText, 800),
+                StartupLogText = SanitizeUploadText(reportPackage.Diagnostics.StartupLogText, 1000),
+                ExceptionLogTail = SanitizeUploadText(reportPackage.Diagnostics.ExceptionLogTail, 1000),
+                SearchOverlayLogTail = SanitizeUploadText(reportPackage.Diagnostics.SearchOverlayLogTail, 1000),
+                LogDirectorySnapshot = SanitizeDirectorySnapshot(reportPackage.Diagnostics.LogDirectorySnapshot),
+                RecentConversationEntries = reportPackage.Diagnostics.RecentConversationEntries
+                    .Select(entry => new IssueReportConversationEntry
+                    {
+                        OccurredAt = entry.OccurredAt,
+                        TriggerSource = entry.TriggerSource,
+                        ActionMode = entry.ActionMode,
+                        PayloadType = entry.PayloadType,
+                        ResultSuccess = entry.ResultSuccess,
+                        ResultMessage = SanitizeUploadText(entry.ResultMessage, 120),
+                        TargetProcessName = entry.TargetProcessName,
+                        PhraseTitle = SanitizeUploadText(entry.PhraseTitle, 80),
+                        FileDisplayName = Path.GetFileName(entry.FileDisplayName)
+                    })
+                    .ToArray()
+            }
+        };
+    }
+
+    private static string? SanitizeUploadSettingValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? value
+            : SanitizeUploadText(value, 200);
+    }
+
+    private static string SanitizeDirectorySnapshot(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var lines = value
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line =>
+            {
+                var parts = line.Split('|', StringSplitOptions.TrimEntries);
+                if (parts.Length < 3)
+                {
+                    return SanitizeUploadText(line, 180);
+                }
+
+                parts[^1] = Path.GetFileName(parts[^1]);
+                return string.Join(" | ", parts);
+            });
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string SanitizeUploadText(string value, int maxLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        normalized = Regex.Replace(normalized, @"https?://\S+", "[url]", RegexOptions.IgnoreCase);
+        normalized = Regex.Replace(normalized, @"(?:[A-Za-z]:\\|/)[^\s]+", "[path]");
+        normalized = Regex.Replace(normalized, @"\b\d{6,}\b", "[num]");
+        normalized = Regex.Replace(normalized, @"\b[A-Za-z0-9_-]{12,}\b", "[id]");
+        normalized = Regex.Replace(normalized, @"\s+", " ").Trim();
+
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return $"{normalized[..Math.Max(0, maxLength - 3)]}...";
     }
 
     private static string BuildMarkdownReport(IssueReportPackage reportPackage)

@@ -2,6 +2,12 @@ namespace QuickReply.Desktop.Services;
 
 public static class RecommendationKeywordBuilder
 {
+    private const int MaxKeywordCount = 12;
+    private const int PreferredCustomerKeywordCount = 6;
+    private const int PreferredContextKeywordCount = 4;
+    private const int PreferredProductIdKeywordCount = 1;
+    private const int PreferredProductNameKeywordCount = 2;
+
     public static IReadOnlyList<string> Build(
         string recognizedCustomerText,
         string recognizedContextText = "",
@@ -11,31 +17,37 @@ public static class RecommendationKeywordBuilder
         var keywords = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        AddKeywordsFromText(recognizedCustomerText, seen, keywords);
-        if (keywords.Count < 12)
+        AddKeywordsFromText(recognizedCustomerText, seen, keywords, PreferredCustomerKeywordCount);
+        AddKeywordsFromText(recognizedContextText, seen, keywords, PreferredContextKeywordCount);
+        AddKeywordsFromText(productId, seen, keywords, PreferredProductIdKeywordCount);
+        AddKeywordsFromText(productName, seen, keywords, PreferredProductNameKeywordCount);
+
+        if (keywords.Count < MaxKeywordCount)
         {
-            AddKeywordsFromText(productId, seen, keywords);
+            AddKeywordsFromText(recognizedCustomerText, seen, keywords, MaxKeywordCount);
+            AddKeywordsFromText(recognizedContextText, seen, keywords, MaxKeywordCount);
+            AddKeywordsFromText(productId, seen, keywords, MaxKeywordCount);
+            AddKeywordsFromText(productName, seen, keywords, MaxKeywordCount);
         }
 
-        if (keywords.Count < 12)
-        {
-            AddKeywordsFromText(productName, seen, keywords);
-        }
-
-        if (keywords.Count < 12)
-        {
-            AddKeywordsFromText(recognizedContextText, seen, keywords);
-        }
-
-        return keywords.Take(12).ToArray();
+        return keywords.Take(MaxKeywordCount).ToArray();
     }
 
-    private static void AddKeywordsFromText(string value, HashSet<string> seen, List<string> keywords)
+    private static void AddKeywordsFromText(string value, HashSet<string> seen, List<string> keywords, int maxAdditionalKeywords)
     {
+        var added = 0;
         foreach (var keyword in ExtractRecommendationKeywords(value))
         {
-            AddKeyword(keyword, seen, keywords);
-            if (keywords.Count >= 12)
+            if (AddKeyword(keyword, seen, keywords))
+            {
+                added++;
+                if (added >= maxAdditionalKeywords)
+                {
+                    return;
+                }
+            }
+
+            if (keywords.Count >= MaxKeywordCount)
             {
                 return;
             }
@@ -69,7 +81,7 @@ public static class RecommendationKeywordBuilder
             for (var index = 0; index <= chineseOnly.Length - length; index++)
             {
                 AddKeyword(chineseOnly.Substring(index, length), seen, keywords);
-                if (keywords.Count >= 12)
+                if (keywords.Count >= MaxKeywordCount)
                 {
                     return keywords;
                 }
@@ -79,7 +91,7 @@ public static class RecommendationKeywordBuilder
         return keywords;
     }
 
-    private static void AddKeyword(string keyword, HashSet<string> seen, List<string> keywords)
+    private static bool AddKeyword(string keyword, HashSet<string> seen, List<string> keywords)
     {
         var normalized = keyword.Trim();
         if (normalized.Length < 2 ||
@@ -87,10 +99,11 @@ public static class RecommendationKeywordBuilder
             !seen.Add(normalized) ||
             IsStopword(normalized))
         {
-            return;
+            return false;
         }
 
         keywords.Add(normalized);
+        return true;
     }
 
     private static bool IsStopword(string keyword)

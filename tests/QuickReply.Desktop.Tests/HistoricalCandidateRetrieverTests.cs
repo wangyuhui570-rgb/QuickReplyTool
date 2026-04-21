@@ -43,6 +43,39 @@ public sealed class HistoricalCandidateRetrieverTests
     }
 
     [Fact]
+    public async Task RetrieveCandidatesAsync_AllowsWeakButUsableRecognitionSnapshots()
+    {
+        var phrase = new ReplyPhrase
+        {
+            Id = Guid.NewGuid(),
+            Title = "安装说明",
+            Tags = "安装,视频",
+            Content = "您好，安装视频这边发您。"
+        };
+
+        var retriever = new HistoricalCandidateRetriever(
+            new FakeRecommendationQueryService(),
+            new FakeRecommendationPhraseCatalog([phrase]),
+            new FakePublishedKnowledgeCardCatalog([]));
+
+        var result = await retriever.RetrieveCandidatesAsync(
+            new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                RecognitionConfidence = 0.22d,
+                RecognizedCustomerText = "安装视频在哪里",
+                Keywords = ["安装", "视频"]
+            },
+            new RecommendationRequest
+            {
+                DisplayCount = 3,
+                MinimumSampleCount = 3
+            });
+
+        Assert.Single(result.Suggestions);
+    }
+
+    [Fact]
     public async Task RetrieveCandidatesAsync_ReturnsPublishedKnowledgeSuggestions_WhenKnowledgeMatches()
     {
         var retriever = new HistoricalCandidateRetriever(

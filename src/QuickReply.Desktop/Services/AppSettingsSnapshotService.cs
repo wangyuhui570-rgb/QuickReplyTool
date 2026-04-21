@@ -25,6 +25,8 @@ internal static class AppSettingsSnapshotService
         target.ScreenshotToolSaveDirectory = source.ScreenshotToolSaveDirectory;
         target.IssueReportDirectory = source.IssueReportDirectory;
         target.EnableCloudSync = source.EnableCloudSync;
+        target.AllowRawConversationCloudSync = source.AllowRawConversationCloudSync;
+        target.AllowAutomaticIssueReportUpload = source.AllowAutomaticIssueReportUpload;
         target.EnableUpdateChecks = source.EnableUpdateChecks;
         target.ServerBaseUrl = source.ServerBaseUrl;
         target.EnableAiDrafts = source.EnableAiDrafts;
@@ -74,6 +76,7 @@ internal static class AppSettingsSnapshotService
         target.PhraseRowSpacing = source.PhraseRowSpacing;
         target.LogScreenshotRetentionDays = source.LogScreenshotRetentionDays;
         target.LogScreenshotMaxSizeMb = source.LogScreenshotMaxSizeMb;
+        target.LogTextRetentionDays = source.LogTextRetentionDays;
         target.CategoryColorHex = source.CategoryColorHex;
         target.CategoryOpacityPercent = source.CategoryOpacityPercent;
         target.TagColorHex = source.TagColorHex;

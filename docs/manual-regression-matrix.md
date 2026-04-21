@@ -20,6 +20,8 @@
 - `portable-release-checklist.md`
 - `ota-release-checklist.md`
 - `patch-release-checklist.md`
+- `signature-verification-checklist.md`
+- `rollback-drill-checklist.md`
 
 ## 核心场景
 

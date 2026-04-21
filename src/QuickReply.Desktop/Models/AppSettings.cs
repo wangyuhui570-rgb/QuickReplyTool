@@ -16,6 +16,8 @@ public sealed class AppSettings : ObservableObject
     private string _screenshotToolSaveDirectory = string.Empty;
     private string _issueReportDirectory = string.Empty;
     private bool _enableCloudSync;
+    private bool _allowRawConversationCloudSync;
+    private bool _allowAutomaticIssueReportUpload;
     private bool _enableUpdateChecks;
     private string _serverBaseUrl = QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl;
     private bool _enableAiDrafts;
@@ -66,6 +68,7 @@ public sealed class AppSettings : ObservableObject
     private int _phraseRowSpacing;
     private int _logScreenshotRetentionDays = 7;
     private int _logScreenshotMaxSizeMb = 1024;
+    private int _logTextRetentionDays = 30;
     private string _categoryColorHex = "#0071E3";
     private int _categoryOpacityPercent = 100;
     private string _tagColorHex = "#E8EEF9";
@@ -145,6 +148,18 @@ public sealed class AppSettings : ObservableObject
     {
         get => _enableCloudSync;
         set => SetProperty(ref _enableCloudSync, value);
+    }
+
+    public bool AllowRawConversationCloudSync
+    {
+        get => _allowRawConversationCloudSync;
+        set => SetProperty(ref _allowRawConversationCloudSync, value);
+    }
+
+    public bool AllowAutomaticIssueReportUpload
+    {
+        get => _allowAutomaticIssueReportUpload;
+        set => SetProperty(ref _allowAutomaticIssueReportUpload, value);
     }
 
     public bool EnableUpdateChecks
@@ -445,6 +460,12 @@ public sealed class AppSettings : ObservableObject
     {
         get => _logScreenshotMaxSizeMb;
         set => SetProperty(ref _logScreenshotMaxSizeMb, value);
+    }
+
+    public int LogTextRetentionDays
+    {
+        get => _logTextRetentionDays;
+        set => SetProperty(ref _logTextRetentionDays, Math.Clamp(value, 3, 180));
     }
 
     public string CategoryColorHex

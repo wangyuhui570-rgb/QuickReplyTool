@@ -102,7 +102,7 @@ Write-TextFile -Path (Join-Path $outputRootFullPath 'summary.md') -Lines @(
     '- build/: build commands, build logs, version notes',
     '- automated-tests/: gate logs, .trx files, waivers',
     '- manual-regression/: candidate checklist, screenshots, open risks',
-    '- packaging-upgrade/: installer, portable, ota, patch verification and package-specific checklists',
+    '- packaging-upgrade/: installer, portable, ota, patch verification plus signature and rollback drill evidence',
     '- screenshots/: optional screenshots or short clips'
 )
 
@@ -358,6 +358,65 @@ Write-TextFile -Path (Join-Path $outputRootFullPath 'packaging-upgrade\patch-rel
     '- Follow-ups:'
 )
 
+Write-TextFile -Path (Join-Path $outputRootFullPath 'packaging-upgrade\signature-verification-checklist.md') -Lines @(
+    '# Signature Verification Checklist',
+    '',
+    '- Version:',
+    '- Operator:',
+    '- Executed at:',
+    '- Signer profile:',
+    '',
+    '## Signature Smoke',
+    '',
+    '1. [ ] Generate a signature sidecar for each release artifact',
+    '   - Expected: signature json is created for installer/portable/ota/patch or the applicable package types',
+    '   - Evidence:',
+    '2. [ ] Verify every generated signature sidecar',
+    '   - Expected: verification receipt is generated and hash values match the package metadata',
+    '   - Evidence:',
+    '3. [ ] Record smoke-only signer caveat',
+    '   - Expected: release notes or evidence clearly state whether the signer is smoke-only or production-backed',
+    '   - Evidence:',
+    '',
+    '## Summary',
+    '',
+    '- Passed items:',
+    '- Failed items:',
+    '- Risks:',
+    '- Follow-ups:'
+)
+
+Write-TextFile -Path (Join-Path $outputRootFullPath 'packaging-upgrade\rollback-drill-checklist.md') -Lines @(
+    '# Rollback Drill Checklist',
+    '',
+    '- Version:',
+    '- Operator:',
+    '- Executed at:',
+    '- Rollback package path:',
+    '',
+    '## Rollback Smoke',
+    '',
+    '1. [ ] Generate rollback package scaffold',
+    '   - Expected: rollback zip, rollback-plan.json, and rollback-package-info.json are created',
+    '   - Evidence:',
+    '2. [ ] Sign and verify the rollback package scaffold',
+    '   - Expected: rollback signature sidecar and verification receipt are generated',
+    '   - Evidence:',
+    '3. [ ] Run rollback drill in dry-run mode',
+    '   - Expected: rollback-drill-summary.json and rollback-drill-report.md are produced without touching user data',
+    '   - Evidence:',
+    '4. [ ] Confirm manual evidence checklist is complete',
+    '   - Expected: plan includes backup, restore, version verification, and signoff steps',
+    '   - Evidence:',
+    '',
+    '## Summary',
+    '',
+    '- Passed items:',
+    '- Failed items:',
+    '- Risks:',
+    '- Follow-ups:'
+)
+
 Write-TextFile -Path (Join-Path $outputRootFullPath 'packaging-upgrade\packaging-verification.md') -Lines @(
     '# Packaging And Upgrade Notes',
     '',
@@ -395,6 +454,18 @@ Write-TextFile -Path (Join-Path $outputRootFullPath 'packaging-upgrade\packaging
     '- Apply result:',
     '- Restart result:',
     '- Status marker result:',
+    '',
+    '## Signature',
+    '',
+    '- Signature sidecars:',
+    '- Verification receipts:',
+    '- Production signer or smoke signer:',
+    '',
+    '## Rollback',
+    '',
+    '- Rollback package path:',
+    '- Rollback drill result:',
+    '- Manual rollback owner:',
     '',
     '## Evidence',
     '',

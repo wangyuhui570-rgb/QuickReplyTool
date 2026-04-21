@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.IO.Compression;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +25,29 @@ public sealed class KnowledgeCloudApiTests
         Assert.Equal("QuickReply.CloudService", response.Service);
         Assert.False(response.AiSynthesisEnabled);
         Assert.True(response.AiReady);
+    }
+
+    [Fact]
+    public async Task GetVersion_ReturnsConfiguredRuntimeShape()
+    {
+        await using var factory = new CloudServiceFactory(
+            allowLoopbackWithoutAuth: false,
+            managementApiToken: "secret-token",
+            enableAiSynthesis: false,
+            aiProvider: "openai_api");
+
+        var client = factory.CreateClient();
+        using var response = await client.GetAsync("/version");
+        response.EnsureSuccessStatusCode();
+
+        var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+
+        Assert.Equal("QuickReply.CloudService", root.GetProperty("service").GetString());
+        Assert.Equal("openai_api", root.GetProperty("aiProvider").GetString());
+        Assert.False(root.GetProperty("aiSynthesisEnabled").GetBoolean());
+        Assert.True(root.GetProperty("managementApiTokenConfigured").GetBoolean());
+        Assert.False(root.GetProperty("loopbackBypassEnabled").GetBoolean());
     }
 
     [Fact]

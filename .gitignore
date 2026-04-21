@@ -22,3 +22,5 @@ generated-knowledge-samples-*.md
 manual-knowledge-review-batch-*.md
 
 *.log
+
+.DS_Store

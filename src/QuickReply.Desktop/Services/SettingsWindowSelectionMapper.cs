@@ -14,6 +14,8 @@ internal interface ISettingsWindowSelections
     string SelectedScreenshotToolSaveDirectory { get; set; }
     string SelectedIssueReportDirectory { get; set; }
     bool SelectedEnableCloudSync { get; set; }
+    bool SelectedAllowRawConversationCloudSync { get; set; }
+    bool SelectedAllowAutomaticIssueReportUpload { get; set; }
     bool SelectedEnableUpdateChecks { get; set; }
     string SelectedServerBaseUrl { get; set; }
     bool SelectedEnableAiDrafts { get; set; }
@@ -55,6 +57,7 @@ internal interface ISettingsWindowSelections
     int SelectedPhraseHoverPreviewDelayMs { get; set; }
     int SelectedLogScreenshotRetentionDays { get; set; }
     int SelectedLogScreenshotMaxSizeMb { get; set; }
+    int SelectedLogTextRetentionDays { get; set; }
     string SelectedCategoryColorHex { get; set; }
     int SelectedCategoryOpacityPercent { get; set; }
     string SelectedTagColorHex { get; set; }
@@ -83,6 +86,8 @@ internal static class SettingsWindowSelectionMapper
         target.SelectedScreenshotToolSaveDirectory = source.ScreenshotToolSaveDirectory;
         target.SelectedIssueReportDirectory = source.IssueReportDirectory;
         target.SelectedEnableCloudSync = source.EnableCloudSync;
+        target.SelectedAllowRawConversationCloudSync = source.AllowRawConversationCloudSync;
+        target.SelectedAllowAutomaticIssueReportUpload = source.AllowAutomaticIssueReportUpload;
         target.SelectedEnableUpdateChecks = source.EnableUpdateChecks;
         target.SelectedServerBaseUrl = source.ServerBaseUrl;
         target.SelectedEnableAiDrafts = source.EnableAiDrafts;
@@ -124,6 +129,7 @@ internal static class SettingsWindowSelectionMapper
         target.SelectedPhraseHoverPreviewDelayMs = source.PhraseHoverPreviewDelayMs;
         target.SelectedLogScreenshotRetentionDays = source.LogScreenshotRetentionDays;
         target.SelectedLogScreenshotMaxSizeMb = source.LogScreenshotMaxSizeMb;
+        target.SelectedLogTextRetentionDays = source.LogTextRetentionDays;
         target.SelectedCategoryColorHex = source.CategoryColorHex;
         target.SelectedCategoryOpacityPercent = source.CategoryOpacityPercent;
         target.SelectedTagColorHex = source.TagColorHex;
@@ -150,6 +156,8 @@ internal static class SettingsWindowSelectionMapper
         target.ScreenshotToolSaveDirectory = source.SelectedScreenshotToolSaveDirectory;
         target.IssueReportDirectory = source.SelectedIssueReportDirectory;
         target.EnableCloudSync = source.SelectedEnableCloudSync;
+        target.AllowRawConversationCloudSync = source.SelectedAllowRawConversationCloudSync;
+        target.AllowAutomaticIssueReportUpload = source.SelectedAllowAutomaticIssueReportUpload;
         target.EnableUpdateChecks = source.SelectedEnableUpdateChecks;
         target.ServerBaseUrl = source.SelectedServerBaseUrl;
         target.EnableAiDrafts = source.SelectedEnableAiDrafts;
@@ -191,6 +199,7 @@ internal static class SettingsWindowSelectionMapper
         target.PhraseHoverPreviewDelayMs = source.SelectedPhraseHoverPreviewDelayMs;
         target.LogScreenshotRetentionDays = source.SelectedLogScreenshotRetentionDays;
         target.LogScreenshotMaxSizeMb = source.SelectedLogScreenshotMaxSizeMb;
+        target.LogTextRetentionDays = source.SelectedLogTextRetentionDays;
         target.CategoryColorHex = source.SelectedCategoryColorHex;
         target.CategoryOpacityPercent = source.SelectedCategoryOpacityPercent;
         target.TagColorHex = source.SelectedTagColorHex;

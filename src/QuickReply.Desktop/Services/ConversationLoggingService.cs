@@ -26,6 +26,7 @@ public sealed class ConversationLoggingService :
     private const int MaxAutomationNodes = 400;
     private const int MaxAutomationDepth = 7;
     private const int DefaultScreenshotRetentionDays = 7;
+    private const int DefaultStructuredLogRetentionDays = 30;
     private const string RecognitionMethodVersion = "automation_ocr_hybrid_v2";
     private const string RecommendationRuleVersion = "keyword-frequency-v2";
     private const string AiDraftRuleVersion = "grounded-ai-v1";
@@ -33,6 +34,11 @@ public sealed class ConversationLoggingService :
     private const int FrequentReplySuggestionThreshold = 3;
     private const int FrequentReplySuggestionMinimumGeneralLength = 6;
     private const int FrequentReplySuggestionMinimumCjkCount = 3;
+    private const int MaxSelectedCustomerLines = 4;
+    private const int MaxRecentContextLines = 24;
+    private const int MaxRecentCandidateContextLines = 12;
+    private const int ContextNeighborLineRadius = 4;
+    private const int MaxRecognizedContextLines = 18;
     private static readonly TimeSpan FrequentReplySuggestionLookback = TimeSpan.FromDays(30);
 
     private readonly string _databasePath;
@@ -44,6 +50,7 @@ public sealed class ConversationLoggingService :
     private long _sessionPersistedCount;
     private volatile int _screenshotRetentionDays = DefaultScreenshotRetentionDays;
     private volatile int _screenshotMaxSizeMb = 1024;
+    private volatile int _structuredLogRetentionDays = DefaultStructuredLogRetentionDays;
 
     public ConversationLoggingService()
         : this(
@@ -410,7 +417,10 @@ public sealed class ConversationLoggingService :
             _capturesRootPath);
     }
 
-    public async Task<ConversationSyncPayload> ExportSyncPayloadAsync(string clientId, DateTimeOffset? since)
+    public async Task<ConversationSyncPayload> ExportSyncPayloadAsync(
+        string clientId,
+        DateTimeOffset? since,
+        bool includeRawConversationData = false)
     {
         await InitializeSchemaAsync().ConfigureAwait(false);
 
@@ -418,9 +428,9 @@ public sealed class ConversationLoggingService :
         await connection.OpenAsync().ConfigureAwait(false);
 
         var generatedAt = DateTimeOffset.Now;
-        var conversationLogs = await LoadConversationSyncItemsAsync(connection, since).ConfigureAwait(false);
-        var recommendationEvents = await LoadRecommendationEventSyncItemsAsync(connection, since).ConfigureAwait(false);
-        var recognitionCorrections = await LoadRecognitionCorrectionSyncItemsAsync(connection, since).ConfigureAwait(false);
+        var conversationLogs = await LoadConversationSyncItemsAsync(connection, since, includeRawConversationData).ConfigureAwait(false);
+        var recommendationEvents = await LoadRecommendationEventSyncItemsAsync(connection, since, includeRawConversationData).ConfigureAwait(false);
+        var recognitionCorrections = await LoadRecognitionCorrectionSyncItemsAsync(connection, since, includeRawConversationData).ConfigureAwait(false);
 
         return new ConversationSyncPayload
         {
@@ -441,22 +451,76 @@ public sealed class ConversationLoggingService :
         bool enableOcr = false)
     {
         await InitializeSchemaAsync().ConfigureAwait(false);
+        var captureStopwatch = Stopwatch.StartNew();
         var snapshot = await RunStaWorkerAsync(() =>
         {
-            return CaptureWindowSnapshot(targetWindowHandle, includeScreenshot);
+            return CaptureWindowSnapshot(targetWindowHandle, includeScreenshot || enableOcr);
         }).ConfigureAwait(false);
+        await LogOperationEventAsync(
+                "recommendation_capture",
+                "capture",
+                success: !string.IsNullOrWhiteSpace(snapshot.CapturedText) || !string.IsNullOrWhiteSpace(snapshot.ScreenshotPath),
+                skipped: false,
+                durationMs: captureStopwatch.ElapsedMilliseconds,
+                message: BuildCaptureOperationMessage(snapshot),
+                details: new
+                {
+                    snapshot.PlatformHint,
+                    snapshot.CaptureStatus,
+                    hasText = !string.IsNullOrWhiteSpace(snapshot.CapturedText),
+                    hasScreenshot = !string.IsNullOrWhiteSpace(snapshot.ScreenshotPath)
+                })
+            .ConfigureAwait(false);
 
         if (enableOcr &&
-            includeScreenshot &&
             !string.IsNullOrWhiteSpace(snapshot.ScreenshotPath) &&
             ShouldUseOcrFallback(snapshot))
         {
-            var ocrText = await ScreenOcrReader.TryReadTextAsync(snapshot.ScreenshotPath, snapshot.PlatformHint).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(ocrText))
+            var ocrStopwatch = Stopwatch.StartNew();
+            var ocrResult = await ScreenOcrReader.TryReadTextDetailedAsync(snapshot.ScreenshotPath, snapshot.PlatformHint).ConfigureAwait(false);
+            snapshot.CaptureStatus = AppendCaptureStatus(snapshot.CaptureStatus, ocrResult.Status);
+            if (ocrResult.Success && !string.IsNullOrWhiteSpace(ocrResult.Text))
             {
-                snapshot.CapturedText = MergeCapturedText(snapshot.CapturedText, ocrText);
+                snapshot.CapturedText = MergeCapturedText(snapshot.CapturedText, ocrResult.Text);
                 snapshot.CaptureStatus = AppendCaptureStatus(BuildCaptureStatus(snapshot), "ocr");
             }
+
+            await LogOperationEventAsync(
+                    "recommendation_capture",
+                    "ocr",
+                    success: ocrResult.Success,
+                    skipped: false,
+                    durationMs: ocrStopwatch.ElapsedMilliseconds,
+                    message: BuildOcrOperationMessage(ocrResult),
+                    details: new
+                    {
+                        snapshot.PlatformHint,
+                        snapshot.CaptureStatus,
+                        ocrResult.Status,
+                        ocrResult.HostFileName
+                    })
+                .ConfigureAwait(false);
+        }
+        else if (enableOcr)
+        {
+            await LogOperationEventAsync(
+                    "recommendation_capture",
+                    "ocr",
+                    success: true,
+                    skipped: true,
+                    durationMs: 0,
+                    message: "窗口文本已足够，跳过 OCR。",
+                    details: new
+                    {
+                        snapshot.PlatformHint,
+                        snapshot.CaptureStatus
+                    })
+                .ConfigureAwait(false);
+        }
+
+        if (enableOcr && !string.IsNullOrWhiteSpace(snapshot.ScreenshotPath))
+        {
+            DeleteTemporaryScreenshot(snapshot);
         }
 
         return ToCapturedConversationContext(snapshot, targetWindowHandle);
@@ -507,7 +571,10 @@ public sealed class ConversationLoggingService :
         };
     }
 
-    private static async Task<IReadOnlyList<ConversationLogSyncItem>> LoadConversationSyncItemsAsync(SqliteConnection connection, DateTimeOffset? since)
+    private static async Task<IReadOnlyList<ConversationLogSyncItem>> LoadConversationSyncItemsAsync(
+        SqliteConnection connection,
+        DateTimeOffset? since,
+        bool includeRawConversationData)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -560,28 +627,28 @@ public sealed class ConversationLoggingService :
                 TriggerSource = reader.GetString(2),
                 ActionMode = reader.GetString(3),
                 PayloadType = reader.GetString(4),
-                SearchKeyword = reader.GetString(5),
+                SearchKeyword = SanitizeRemoteTextIfNeeded(reader.GetString(5), includeRawConversationData, 64),
                 ResultSuccess = reader.GetInt32(6) == 1,
-                ResultMessage = reader.GetString(7),
+                ResultMessage = SanitizeRemoteTextIfNeeded(reader.GetString(7), includeRawConversationData, 160),
                 PlatformHint = reader.GetString(8),
-                TargetWindowTitle = reader.GetString(9),
+                TargetWindowTitle = includeRawConversationData ? reader.GetString(9) : string.Empty,
                 TargetProcessName = reader.GetString(10),
                 CaptureStatus = reader.GetString(11),
-                CapturedText = reader.GetString(12),
+                CapturedText = SanitizeRemoteTextIfNeeded(reader.GetString(12), includeRawConversationData, 220),
                 PhraseId = reader.GetString(13),
                 PhraseTitle = reader.GetString(14),
                 PhraseTags = reader.GetString(15),
                 PhraseCategoryName = reader.GetString(16),
                 FileItemId = reader.GetString(17),
                 FileDisplayName = reader.GetString(18),
-                PayloadText = reader.GetString(19),
+                PayloadText = includeRawConversationData ? reader.GetString(19) : string.Empty,
                 RecognitionStatus = reader.GetString(20),
                 RecognitionConfidence = reader.GetDouble(21),
-                RecognizedCustomerText = reader.GetString(22),
-                RecognizedContextText = reader.GetString(23),
-                RecognizedProductId = reader.GetString(24),
-                RecognizedProductName = reader.GetString(25),
-                RecognizedMessagesJson = reader.GetString(26),
+                RecognizedCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(22), includeRawConversationData, 180),
+                RecognizedContextText = SanitizeRemoteTextIfNeeded(reader.GetString(23), includeRawConversationData, 220),
+                RecognizedProductId = SanitizeRemoteTextIfNeeded(reader.GetString(24), includeRawConversationData, 64),
+                RecognizedProductName = SanitizeRemoteTextIfNeeded(reader.GetString(25), includeRawConversationData, 80),
+                RecognizedMessagesJson = includeRawConversationData ? reader.GetString(26) : string.Empty,
                 ReplyGroupId = reader.GetString(27),
                 ReplyGroupIndex = reader.GetInt32(28),
                 DataQualityGrade = reader.GetString(29),
@@ -593,7 +660,10 @@ public sealed class ConversationLoggingService :
         return items;
     }
 
-    private static async Task<IReadOnlyList<RecommendationEventSyncItem>> LoadRecommendationEventSyncItemsAsync(SqliteConnection connection, DateTimeOffset? since)
+    private static async Task<IReadOnlyList<RecommendationEventSyncItem>> LoadRecommendationEventSyncItemsAsync(
+        SqliteConnection connection,
+        DateTimeOffset? since,
+        bool includeRawConversationData)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -640,21 +710,21 @@ public sealed class ConversationLoggingService :
                 RecommendationSessionId = reader.GetString(2),
                 EventType = reader.GetString(3),
                 SearchMode = reader.GetString(4),
-                SearchKeyword = reader.GetString(5),
+                SearchKeyword = SanitizeRemoteTextIfNeeded(reader.GetString(5), includeRawConversationData, 64),
                 ActionMode = reader.GetString(6),
                 ResultSuccess = reader.GetInt32(7) == 1,
                 PhraseId = reader.GetString(8),
                 PhraseTitle = reader.GetString(9),
                 PhraseCategoryName = reader.GetString(10),
                 DisplayRank = reader.GetInt32(11),
-                MatchedKeyword = reader.GetString(12),
+                MatchedKeyword = SanitizeRemoteTextIfNeeded(reader.GetString(12), includeRawConversationData, 48),
                 MatchCount = reader.GetInt32(13),
                 SampleCount = reader.GetInt32(14),
                 Confidence = reader.GetDouble(15),
-                RecognizedCustomerText = reader.GetString(16),
+                RecognizedCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(16), includeRawConversationData, 180),
                 PlatformHint = reader.GetString(17),
-                WindowTitle = reader.GetString(18),
-                ActualPayloadText = reader.GetString(19),
+                WindowTitle = includeRawConversationData ? reader.GetString(18) : string.Empty,
+                ActualPayloadText = includeRawConversationData ? reader.GetString(19) : string.Empty,
                 GroundingPhraseCount = reader.GetInt32(20),
                 GroundingKnowledgeCount = reader.GetInt32(21),
                 GroundingKnowledgeIdsJson = reader.GetString(22),
@@ -667,7 +737,10 @@ public sealed class ConversationLoggingService :
         return items;
     }
 
-    private static async Task<IReadOnlyList<RecognitionCorrectionSyncItem>> LoadRecognitionCorrectionSyncItemsAsync(SqliteConnection connection, DateTimeOffset? since)
+    private static async Task<IReadOnlyList<RecognitionCorrectionSyncItem>> LoadRecognitionCorrectionSyncItemsAsync(
+        SqliteConnection connection,
+        DateTimeOffset? since,
+        bool includeRawConversationData)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -704,17 +777,17 @@ public sealed class ConversationLoggingService :
                 OccurredAt = ParseSyncDateTime(reader.GetString(1)),
                 RecommendationSessionId = reader.GetString(2),
                 PlatformHint = reader.GetString(3),
-                WindowTitle = reader.GetString(4),
-                SourceCustomerText = reader.GetString(5),
-                CorrectedCustomerText = reader.GetString(6),
-                SourceContextText = reader.GetString(7),
-                SourceProductId = reader.GetString(8),
-                SourceProductName = reader.GetString(9),
-                SourceMessagesJson = reader.GetString(10),
-                CorrectedContextText = reader.GetString(11),
-                CorrectedProductId = reader.GetString(12),
-                CorrectedProductName = reader.GetString(13),
-                CorrectedMessagesJson = reader.GetString(14),
+                WindowTitle = includeRawConversationData ? reader.GetString(4) : string.Empty,
+                SourceCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(5), includeRawConversationData, 180),
+                CorrectedCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(6), includeRawConversationData, 180),
+                SourceContextText = SanitizeRemoteTextIfNeeded(reader.GetString(7), includeRawConversationData, 220),
+                SourceProductId = SanitizeRemoteTextIfNeeded(reader.GetString(8), includeRawConversationData, 64),
+                SourceProductName = SanitizeRemoteTextIfNeeded(reader.GetString(9), includeRawConversationData, 80),
+                SourceMessagesJson = includeRawConversationData ? reader.GetString(10) : string.Empty,
+                CorrectedContextText = SanitizeRemoteTextIfNeeded(reader.GetString(11), includeRawConversationData, 220),
+                CorrectedProductId = SanitizeRemoteTextIfNeeded(reader.GetString(12), includeRawConversationData, 64),
+                CorrectedProductName = SanitizeRemoteTextIfNeeded(reader.GetString(13), includeRawConversationData, 80),
+                CorrectedMessagesJson = includeRawConversationData ? reader.GetString(14) : string.Empty,
                 RecognitionMethod = reader.GetString(15),
                 AppVersion = reader.GetString(16)
             });
@@ -728,6 +801,40 @@ public sealed class ConversationLoggingService :
         return DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 
+    internal static string SanitizeRemoteTextForTesting(string value, int maxLength = 180)
+    {
+        return SanitizeRemoteText(value, maxLength);
+    }
+
+    private static string SanitizeRemoteTextIfNeeded(string value, bool includeRawConversationData, int maxLength)
+    {
+        return includeRawConversationData
+            ? value
+            : SanitizeRemoteText(value, maxLength);
+    }
+
+    private static string SanitizeRemoteText(string value, int maxLength)
+    {
+        var normalized = NormalizeOptionalValue(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        normalized = Regex.Replace(normalized, @"https?://\S+", "[url]", RegexOptions.IgnoreCase);
+        normalized = Regex.Replace(normalized, @"(?:[A-Za-z]:\\|/)[^\s]+", "[path]");
+        normalized = Regex.Replace(normalized, @"\b\d{6,}\b", "[num]");
+        normalized = Regex.Replace(normalized, @"\b[A-Za-z0-9_-]{12,}\b", "[id]");
+        normalized = Regex.Replace(normalized, @"\s+", " ").Trim();
+
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return $"{normalized[..Math.Max(0, maxLength - 3)]}...";
+    }
+
     public async Task<IReadOnlyList<PhraseRecommendationCandidate>> GetPhraseRecommendationsAsync(
         ConversationRecommendationSnapshot snapshot,
         int maxResults = 5,
@@ -736,7 +843,7 @@ public sealed class ConversationLoggingService :
         await InitializeSchemaAsync().ConfigureAwait(false);
 
         if (snapshot is null ||
-            snapshot.RecognitionConfidence < 0.35d ||
+            snapshot.RecognitionConfidence < 0.20d ||
             snapshot.Keywords.Count == 0 ||
             (string.IsNullOrWhiteSpace(snapshot.RecognizedCustomerText) &&
              string.IsNullOrWhiteSpace(snapshot.RecognizedContextText) &&
@@ -768,7 +875,7 @@ public sealed class ConversationLoggingService :
                   AND result_success = 1
                   AND action_mode IN ('Send', 'Input')
                   AND phrase_id <> ''
-                  AND recognition_confidence >= 0.4
+                  AND recognition_confidence >= 0.2
                   AND (
                         recognized_customer_text LIKE $keywordLike
                      OR recognized_context_text LIKE $keywordLike
@@ -839,6 +946,7 @@ public sealed class ConversationLoggingService :
 
         _screenshotRetentionDays = Math.Max(1, settings.LogScreenshotRetentionDays);
         _screenshotMaxSizeMb = Math.Max(64, settings.LogScreenshotMaxSizeMb);
+        _structuredLogRetentionDays = Math.Max(3, settings.LogTextRetentionDays);
     }
 
     public void RequestMaintenance()
@@ -1202,6 +1310,7 @@ public sealed class ConversationLoggingService :
     {
         await InitializeSchemaAsync().ConfigureAwait(false);
         await CleanupCapturesAsync().ConfigureAwait(false);
+        await CleanupStructuredTelemetryAsync().ConfigureAwait(false);
     }
 
     public async Task<int> DeleteAllCapturesAsync()
@@ -1260,11 +1369,13 @@ public sealed class ConversationLoggingService :
                 if (request.IsMaintenance)
                 {
                     await CleanupCapturesAsync().ConfigureAwait(false);
+                    await CleanupStructuredTelemetryAsync().ConfigureAwait(false);
                     continue;
                 }
 
                 await PersistRequestAsync(request).ConfigureAwait(false);
                 await CleanupCapturesAsync().ConfigureAwait(false);
+                await CleanupStructuredTelemetryAsync().ConfigureAwait(false);
             }
             catch
             {
@@ -1275,7 +1386,7 @@ public sealed class ConversationLoggingService :
     private async Task PersistRequestAsync(ConversationLogRequest request)
     {
         var snapshot = request.RecognitionOverride is null
-            ? CaptureWindowSnapshot(request.TargetWindowHandle)
+            ? CaptureWindowSnapshot(request.TargetWindowHandle, includeScreenshot: false)
             : ToWindowCaptureSnapshot(request.RecognitionOverride);
         var recognition = request.RecognitionOverride is null
             ? RecognizeConversation(request, snapshot)
@@ -1518,6 +1629,30 @@ public sealed class ConversationLoggingService :
         }
     }
 
+    private async Task CleanupStructuredTelemetryAsync()
+    {
+        try
+        {
+            var retentionCutoff = DateTimeOffset.UtcNow
+                .AddDays(-Math.Max(3, _structuredLogRetentionDays))
+                .ToString("O", CultureInfo.InvariantCulture);
+
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+
+            foreach (var tableName in new[] { "conversation_logs", "recommendation_events", "recognition_corrections", "operation_events" })
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"DELETE FROM {tableName} WHERE occurred_at < $retentionCutoff;";
+                command.Parameters.AddWithValue("$retentionCutoff", retentionCutoff);
+                await command.ExecuteNonQueryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+        }
+    }
+
     private async Task ClearScreenshotPathReferencesAsync(IReadOnlyCollection<string> removedPaths)
     {
         var normalizedPaths = removedPaths
@@ -1539,8 +1674,8 @@ public sealed class ConversationLoggingService :
                 UPDATE conversation_logs
                 SET screenshot_path = '',
                     capture_status = CASE
-                        WHEN capture_status = 'text_and_screenshot' THEN 'text_only'
-                        WHEN capture_status = 'screenshot_only' THEN 'capture_failed'
+                        WHEN capture_status LIKE 'text_and_screenshot%' THEN REPLACE(capture_status, 'text_and_screenshot', 'text_only')
+                        WHEN capture_status LIKE 'screenshot_only%' THEN REPLACE(capture_status, 'screenshot_only', 'capture_failed')
                         ELSE capture_status
                     END
                 WHERE screenshot_path = $screenshotPath;
@@ -1645,21 +1780,17 @@ public sealed class ConversationLoggingService :
             .OrderBy(candidate => candidate.Index)
             .ToList();
 
-        var contextCandidateIndexes = orderedCandidates
-            .TakeLast(8)
-            .Select(candidate => candidate.Index)
-            .ToHashSet();
-
         var customerCandidateIndexes = orderedCandidates
             .OrderByDescending(candidate => candidate.Score)
             .ThenByDescending(candidate => candidate.Index)
-            .Take(3)
+            .Take(MaxSelectedCustomerLines)
             .Select(candidate => candidate.Index)
             .ToHashSet();
 
-        var contextLines = orderedCandidates
-            .Where(candidate => contextCandidateIndexes.Contains(candidate.Index))
-            .Select(candidate => candidate.Text)
+        var contextLineIndexes = BuildContextLineIndexes(rawLines, orderedCandidates, customerCandidateIndexes, snapshot.PlatformHint);
+        var contextLineIndexSet = contextLineIndexes.ToHashSet();
+        var contextLines = contextLineIndexes
+            .Select(index => rawLines[index])
             .ToList();
 
         var customerLines = orderedCandidates
@@ -1669,7 +1800,9 @@ public sealed class ConversationLoggingService :
             .ToList();
 
         var filteredCustomerLines = FilterRecognizedConversationLines(customerLines, snapshot.PlatformHint);
-        var filteredContextLines = FilterRecognizedConversationLines(contextLines, snapshot.PlatformHint);
+        var filteredContextLines = FilterRecognizedConversationLines(contextLines, snapshot.PlatformHint)
+            .TakeLast(MaxRecognizedContextLines)
+            .ToList();
         var messageTurns = orderedCandidates
             .Select(candidate => new ConversationMessageTurn
             {
@@ -1678,7 +1811,7 @@ public sealed class ConversationLoggingService :
                 Score = Math.Round(candidate.Score, 3, MidpointRounding.AwayFromZero),
                 Reason = candidate.Reason,
                 SelectedForCustomerText = customerCandidateIndexes.Contains(candidate.Index),
-                IncludedInContext = contextCandidateIndexes.Contains(candidate.Index)
+                IncludedInContext = contextLineIndexSet.Contains(candidate.Index)
             })
             .ToArray();
         var product = ExtractProductReference(rawLines, customerLines, contextLines, snapshot.WindowTitle);
@@ -1744,6 +1877,62 @@ public sealed class ConversationLoggingService :
         }
 
         return new ProductReference(productId, productName);
+    }
+
+    private static IReadOnlyList<int> BuildContextLineIndexes(
+        IReadOnlyList<string> rawLines,
+        IReadOnlyList<RecognizedMessageCandidate> orderedCandidates,
+        HashSet<int> customerCandidateIndexes,
+        string platformHint)
+    {
+        var indexes = new SortedSet<int>();
+
+        foreach (var index in rawLines
+                     .Select((line, index) => new { line, index })
+                     .Where(item => LooksLikePotentialContextLine(item.line, platformHint))
+                     .Select(item => item.index)
+                     .TakeLast(MaxRecentContextLines))
+        {
+            indexes.Add(index);
+        }
+
+        foreach (var customerIndex in customerCandidateIndexes.OrderBy(index => index))
+        {
+            var start = Math.Max(0, customerIndex - ContextNeighborLineRadius);
+            var end = Math.Min(rawLines.Count - 1, customerIndex + ContextNeighborLineRadius);
+            for (var index = start; index <= end; index++)
+            {
+                if (LooksLikePotentialContextLine(rawLines[index], platformHint))
+                {
+                    indexes.Add(index);
+                }
+            }
+        }
+
+        foreach (var index in orderedCandidates
+                     .TakeLast(MaxRecentCandidateContextLines)
+                     .Select(candidate => candidate.Index))
+        {
+            indexes.Add(index);
+        }
+
+        return indexes.ToArray();
+    }
+
+    private static bool LooksLikePotentialContextLine(string line, string platformHint)
+    {
+        var normalized = NormalizeCapturedValue(line);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        if (LooksLikeUiNoise(normalized, platformHint) || LooksLikeWindowControlText(normalized))
+        {
+            return false;
+        }
+
+        return normalized.Length >= 2 || ContainsMeaningfulText(normalized);
     }
 
     private static string ExtractProductId(string text)
@@ -2230,6 +2419,7 @@ public sealed class ConversationLoggingService :
 
     private WindowCaptureSnapshot CaptureWindowSnapshot(IntPtr windowHandle, bool includeScreenshot = true)
     {
+        windowHandle = NormalizeTopLevelWindow(windowHandle);
         if (windowHandle == IntPtr.Zero || !NativeMethods.IsWindow(windowHandle))
         {
             return WindowCaptureSnapshot.Empty("no_target_window");
@@ -2248,11 +2438,28 @@ public sealed class ConversationLoggingService :
         }
 
         snapshot.PlatformHint = InferPlatformHint(snapshot.WindowTitle, snapshot.ProcessName, snapshot.ProcessPath, snapshot.WindowClassName);
+        if (!NativeMethods.IsWindowVisible(windowHandle))
+        {
+            snapshot.CaptureStatus = "invisible_window";
+            return snapshot;
+        }
+
+        if (NativeMethods.IsIconic(windowHandle))
+        {
+            snapshot.CaptureStatus = "minimized_window";
+            return snapshot;
+        }
+
+        var isBackgroundWindow = !IsForegroundWindow(windowHandle);
 
         if (!NativeMethods.GetWindowRect(windowHandle, out var rect))
         {
             snapshot.CaptureStatus = "missing_rect";
             snapshot.CapturedText = CaptureAutomationText(windowHandle);
+            if (isBackgroundWindow)
+            {
+                snapshot.CaptureStatus = AppendCaptureStatus(snapshot.CaptureStatus, "background_window");
+            }
             return snapshot;
         }
 
@@ -2263,6 +2470,16 @@ public sealed class ConversationLoggingService :
         snapshot.CapturedText = CaptureAutomationText(windowHandle);
         snapshot.ScreenshotPath = includeScreenshot ? TryCaptureScreenshot(snapshot) : string.Empty;
         snapshot.CaptureStatus = BuildCaptureStatus(snapshot);
+        if (string.IsNullOrWhiteSpace(snapshot.CapturedText))
+        {
+            snapshot.CaptureStatus = AppendCaptureStatus(snapshot.CaptureStatus, "empty");
+        }
+
+        if (isBackgroundWindow)
+        {
+            snapshot.CaptureStatus = AppendCaptureStatus(snapshot.CaptureStatus, "background_window");
+        }
+
         return snapshot;
     }
 
@@ -2342,6 +2559,88 @@ public sealed class ConversationLoggingService :
         return captureStatus.Contains(suffix, StringComparison.OrdinalIgnoreCase)
             ? captureStatus
             : $"{captureStatus}+{suffix}";
+    }
+
+    private static string BuildCaptureOperationMessage(WindowCaptureSnapshot snapshot)
+    {
+        return snapshot.CaptureStatus switch
+        {
+            var status when status.Contains("minimized_window", StringComparison.OrdinalIgnoreCase) => "目标聊天窗口已最小化，未执行正文抓取。",
+            var status when status.Contains("invisible_window", StringComparison.OrdinalIgnoreCase) => "目标聊天窗口当前不可见，未执行正文抓取。",
+            var status when status.Contains("background_window", StringComparison.OrdinalIgnoreCase) => "当前抓取的是后台窗口，识别结果可能偏弱。",
+            var status when status.Contains("missing_rect", StringComparison.OrdinalIgnoreCase) => "未能读取窗口区域坐标。",
+            var status when status.Contains("empty", StringComparison.OrdinalIgnoreCase) => "未抓到稳定聊天文本。",
+            _ => "已抓取聊天窗口上下文。"
+        };
+    }
+
+    private static string BuildOcrOperationMessage(ScreenOcrReader.OcrReadResult result)
+    {
+        return result.Status switch
+        {
+            "ocr_read" => "OCR 已补充聊天文本。",
+            "ocr_empty" => "OCR 已执行，但没有识别出可用文本。",
+            "ocr_timeout" => "OCR 执行超时。",
+            "ocr_error" => "OCR 执行失败。",
+            "host_missing" => "本机缺少可用的 PowerShell OCR 宿主。",
+            "missing_image" => "OCR 输入截图不存在。",
+            _ => "OCR 已结束。"
+        };
+    }
+
+    private static void DeleteTemporaryScreenshot(WindowCaptureSnapshot snapshot)
+    {
+        var screenshotPath = snapshot.ScreenshotPath;
+        if (string.IsNullOrWhiteSpace(screenshotPath))
+        {
+            return;
+        }
+
+        snapshot.ScreenshotPath = string.Empty;
+        snapshot.CaptureStatus = RemoveScreenshotReferenceFromCaptureStatus(snapshot.CaptureStatus);
+
+        try
+        {
+            if (File.Exists(screenshotPath))
+            {
+                File.Delete(screenshotPath);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static string RemoveScreenshotReferenceFromCaptureStatus(string captureStatus)
+    {
+        if (string.IsNullOrWhiteSpace(captureStatus))
+        {
+            return captureStatus;
+        }
+
+        if (captureStatus.StartsWith("text_and_screenshot", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"text_only{captureStatus["text_and_screenshot".Length..]}";
+        }
+
+        if (captureStatus.StartsWith("screenshot_only", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"capture_failed{captureStatus["screenshot_only".Length..]}";
+        }
+
+        return captureStatus;
+    }
+
+    private static IntPtr NormalizeTopLevelWindow(IntPtr windowHandle)
+    {
+        return windowHandle == IntPtr.Zero
+            ? IntPtr.Zero
+            : NativeMethods.GetAncestor(windowHandle, NativeMethods.GaRoot);
+    }
+
+    private static bool IsForegroundWindow(IntPtr windowHandle)
+    {
+        return NormalizeTopLevelWindow(windowHandle) == NormalizeTopLevelWindow(NativeMethods.GetForegroundWindow());
     }
 
     private string TryCaptureScreenshot(WindowCaptureSnapshot snapshot)
@@ -3308,32 +3607,55 @@ public sealed class ConversationLoggingService :
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT reply_group_id,
-                   reply_group_index
+                   reply_group_index,
+                   recognized_customer_text,
+                   recognized_context_text
             FROM conversation_logs
             WHERE occurred_at >= $threshold
               AND platform_hint = $platformHint
               AND target_window_title = $windowTitle
-              AND recognized_customer_text = $customerText
             ORDER BY occurred_at DESC
-            LIMIT 1;
+            LIMIT 8;
             """;
         command.Parameters.AddWithValue("$threshold", threshold);
         command.Parameters.AddWithValue("$platformHint", snapshot.PlatformHint);
         command.Parameters.AddWithValue("$windowTitle", snapshot.WindowTitle);
-        command.Parameters.AddWithValue("$customerText", recognition.RecognizedCustomerText);
 
         await using var reader = await command.ExecuteReaderAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-        if (await reader.ReadAsync(_cancellationTokenSource.Token).ConfigureAwait(false))
+        var currentText = BuildSearchableRecommendationText(
+            recognition.RecognizedCustomerText,
+            recognition.RecognizedContextText,
+            recognition.RecognizedProductId,
+            recognition.RecognizedProductName);
+        var bestMatchGroupId = Guid.Empty;
+        var bestMatchIndex = 0;
+        var bestSimilarity = 0d;
+        while (await reader.ReadAsync(_cancellationTokenSource.Token).ConfigureAwait(false))
         {
             var groupText = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
             var lastIndex = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
-            if (Guid.TryParse(groupText, out var groupId))
+            if (!Guid.TryParse(groupText, out var groupId))
             {
-                return new ReplyGroupResolution(groupId, lastIndex + 1);
+                continue;
+            }
+
+            var historicalText = BuildSearchableRecommendationText(
+                reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                string.Empty,
+                string.Empty);
+            var similarity = ComputeLooseTextSimilarity(currentText, historicalText);
+            if (similarity >= 0.55d && similarity > bestSimilarity)
+            {
+                bestSimilarity = similarity;
+                bestMatchGroupId = groupId;
+                bestMatchIndex = lastIndex;
             }
         }
 
-        return new ReplyGroupResolution(Guid.NewGuid(), 1);
+        return bestMatchGroupId != Guid.Empty
+            ? new ReplyGroupResolution(bestMatchGroupId, bestMatchIndex + 1)
+            : new ReplyGroupResolution(Guid.NewGuid(), 1);
     }
 
     private static string DetermineQualityGrade(ConversationLogRequest request, ConversationRecognitionResult recognition)
@@ -3371,7 +3693,7 @@ public sealed class ConversationLoggingService :
         command.CommandText = """
             SELECT COUNT(1)
             FROM conversation_logs
-            WHERE recognition_confidence >= 0.4
+            WHERE recognition_confidence >= 0.2
               AND (
                     recognized_customer_text LIKE $keywordLike
                  OR recognized_context_text LIKE $keywordLike
@@ -3424,15 +3746,62 @@ public sealed class ConversationLoggingService :
     {
         if (sampleCount >= 20)
         {
-            return confidence >= 0.55d;
+            return confidence >= 0.35d;
         }
 
         if (sampleCount >= 8)
         {
-            return confidence >= 0.65d;
+            return confidence >= 0.45d;
         }
 
-        return confidence >= 0.8d;
+        return confidence >= 0.60d;
+    }
+
+    private static double ComputeLooseTextSimilarity(string currentText, string historicalText)
+    {
+        var normalizedCurrent = NormalizeLooseComparisonText(currentText);
+        var normalizedHistorical = NormalizeLooseComparisonText(historicalText);
+        if (string.IsNullOrWhiteSpace(normalizedCurrent) || string.IsNullOrWhiteSpace(normalizedHistorical))
+        {
+            return 0d;
+        }
+
+        if (string.Equals(normalizedCurrent, normalizedHistorical, StringComparison.Ordinal))
+        {
+            return 1d;
+        }
+
+        if (normalizedCurrent.Contains(normalizedHistorical, StringComparison.Ordinal) ||
+            normalizedHistorical.Contains(normalizedCurrent, StringComparison.Ordinal))
+        {
+            return (double)Math.Min(normalizedCurrent.Length, normalizedHistorical.Length) /
+                   Math.Max(normalizedCurrent.Length, normalizedHistorical.Length);
+        }
+
+        var currentTokens = ExtractRecommendationKeywords(normalizedCurrent);
+        var historicalTokens = ExtractRecommendationKeywords(normalizedHistorical);
+        if (currentTokens.Count == 0 || historicalTokens.Count == 0)
+        {
+            return 0d;
+        }
+
+        var currentSet = currentTokens.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var historicalSet = historicalTokens.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var overlap = currentSet.Intersect(historicalSet, StringComparer.OrdinalIgnoreCase).Count();
+        return overlap <= 0
+            ? 0d
+            : (double)overlap / Math.Max(currentSet.Count, historicalSet.Count);
+    }
+
+    private static string NormalizeLooseComparisonText(string value)
+    {
+        var normalized = NormalizeCapturedValue(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        return Regex.Replace(normalized.ToLowerInvariant(), @"[\s\p{P}\p{S}]+", string.Empty);
     }
 
     private static IReadOnlyList<string> BuildRecommendationKeywords(string recognizedCustomerText)

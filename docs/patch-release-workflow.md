@@ -51,6 +51,42 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-patch-package.ps1 `
 - `sha256`
 - `sizeBytes`
 
+如果你要在发布前补上 smoke 签名和回滚演练，可以继续执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release-artifact.ps1 `
+  -ArtifactPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\QuickReplyTool-Patch-v2.1.9-hotfix1.zip `
+  -MetadataPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\patch-package-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-release-artifact-signature.ps1 `
+  -SignaturePath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\QuickReplyTool-Patch-v2.1.9-hotfix1.zip.signature.json `
+  -ArtifactPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\QuickReplyTool-Patch-v2.1.9-hotfix1.zip `
+  -MetadataPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\patch-package-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\build-rollback-package.ps1 `
+  -CurrentArtifactPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\QuickReplyTool-Patch-v2.1.9-hotfix1.zip `
+  -CurrentMetadataPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\patch-package-info.json `
+  -BaselineVersion 2.1.9 `
+  -RollbackVersion 2.1.9-hotfix1-rollback-smoke
+
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release-artifact.ps1 `
+  -ArtifactPath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\QuickReplyTool-Rollback-v2.1.9-hotfix1-rollback-smoke.zip `
+  -MetadataPath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\rollback-package-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-release-artifact-signature.ps1 `
+  -SignaturePath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\QuickReplyTool-Rollback-v2.1.9-hotfix1-rollback-smoke.zip.signature.json `
+  -ArtifactPath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\QuickReplyTool-Rollback-v2.1.9-hotfix1-rollback-smoke.zip `
+  -MetadataPath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\rollback-package-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\invoke-rollback-drill.ps1 `
+  -RollbackPackagePath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\QuickReplyTool-Rollback-v2.1.9-hotfix1-rollback-smoke.zip `
+  -CurrentArtifactPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\QuickReplyTool-Patch-v2.1.9-hotfix1.zip `
+  -CurrentMetadataPath .\artifacts\patches\QuickReplyTool-Patch-2.1.9-hotfix1\patch-package-info.json `
+  -SignaturePath .\artifacts\rollback\QuickReplyTool-Rollback-2.1.9-hotfix1-rollback-smoke\QuickReplyTool-Rollback-v2.1.9-hotfix1-rollback-smoke.zip.signature.json
+```
+
+完整说明见 [release-signing-and-rollback-smoke.md](./release-signing-and-rollback-smoke.md)。
+
 ## 2. 上传到服务器
 
 你可以把补丁包上传到 nginx 可直接访问的目录，例如：
@@ -117,8 +153,8 @@ curl -X POST http://127.0.0.1:18080/api/quickreply/issues/patch/register \
 ## 6. 当前限制
 
 - 还没有做真正的二进制差分
-- 还没有做补丁签名校验
-- 还没有做自动回滚
+- 已经有 smoke 级别的签名 sidecar / 验签 receipt 流程，但还没有接真实证书或签名服务
+- 已经有 rollback package scaffold 和 dry-run drill，但还没有接真实自动回滚执行器
 - 当前补丁包仍然是“完整应用文件覆盖式更新”
 
 这套方案的优点是先落地，足够稳定，且和你现在的 Inno Setup 安装包体系不冲突。

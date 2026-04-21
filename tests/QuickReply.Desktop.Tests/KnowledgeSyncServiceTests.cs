@@ -82,6 +82,68 @@ public sealed class KnowledgeSyncServiceTests
     }
 
     [Fact]
+    public async Task RunScheduledSyncAsync_RedactsConversationPayload_WhenRawUploadIsDisabled()
+    {
+        using var scope = new TestAppDataScope();
+        var store = scope.CreateDataStore();
+        await store.LoadAsync();
+        await using var loggingService = scope.CreateConversationLoggingService();
+        loggingService.LogPlainTextUsage(
+            "内部回复 C:\\secret\\reply.txt",
+            "manual_send",
+            ComposeActionMode.Send,
+            searchKeyword: "订单 123456789",
+            resultSuccess: true,
+            resultMessage: "已处理 https://example.com/order/123456789",
+            targetWindowHandle: IntPtr.Zero,
+            recognitionOverride: new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                WindowTitle = "企业微信",
+                CaptureStatus = "text_only",
+                CapturedText = "客户订单号 123456789 路径 C:\\Users\\alice\\Desktop\\capture.png",
+                RecognitionStatus = "identified",
+                RecognitionMethod = "automation_ocr_hybrid_v2",
+                RecognitionConfidence = 0.66d,
+                RecognizedCustomerText = "订单号123456789 https://example.com/order/123456789",
+                RecognizedContextText = "查看路径 C:\\Users\\alice\\Desktop\\capture.png"
+            });
+        await Task.Delay(250);
+
+        var handler = new RecordingHttpMessageHandler((request, _) =>
+        {
+            return Task.FromResult(request.RequestUri!.AbsolutePath switch
+            {
+                "/api/quickreply/knowledge/published" => HttpResponseFactory.Json("""{"knowledgeVersion":"knowledge-r0","generatedAt":"2026-04-16T12:00:00+08:00","latestRevision":0,"nextCursor":"","hasMore":false,"cards":[],"removedCardIds":[]}"""),
+                _ => HttpResponseFactory.Json("{}")
+            });
+        });
+        var service = new KnowledgeSyncService(
+            store,
+            loggingService,
+            publishedKnowledgeCatalog: null,
+            (baseUri, _) => new HttpClient(handler)
+            {
+                BaseAddress = baseUri
+            });
+
+        var result = await service.RunScheduledSyncAsync(new AppSettings
+        {
+            EnableCloudSync = true,
+            ServerBaseUrl = "https://sync.example.com/",
+            SyncClientId = "client-001",
+            AllowRawConversationCloudSync = false
+        }, force: true);
+
+        Assert.True(result.Success);
+        var conversationRequest = Assert.Single(handler.Requests.Where(request => request.RequestUri!.AbsolutePath == "/api/quickreply/sync/conversation-delta"));
+        Assert.DoesNotContain("123456789", conversationRequest.Body, StringComparison.Ordinal);
+        Assert.Contains("[num]", conversationRequest.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("C:\\Users\\alice\\Desktop\\capture.png", conversationRequest.Body, StringComparison.Ordinal);
+        Assert.Contains("[path]", conversationRequest.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunScheduledSyncAsync_SkipsWhenDisabled()
     {
         using var scope = new TestAppDataScope();

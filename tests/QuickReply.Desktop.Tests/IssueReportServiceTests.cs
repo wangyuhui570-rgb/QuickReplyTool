@@ -37,6 +37,7 @@ public sealed class IssueReportServiceTests
             SyncClientId = "client-001",
             SyncApiToken = "sensitive-token-6789",
             AiApiKey = "openai-secret-1234",
+            AllowAutomaticIssueReportUpload = true,
             IssueReportDirectory = scope.FeedbackRootPath
         });
 
@@ -65,6 +66,7 @@ public sealed class IssueReportServiceTests
         Assert.Contains("6789", packageJson, StringComparison.Ordinal);
         Assert.Contains("1234", packageJson, StringComparison.Ordinal);
         Assert.Contains("***", packageJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(scope.FeedbackRootPath, handler.Requests[0].Body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -76,6 +78,7 @@ public sealed class IssueReportServiceTests
         await store.UpdateSettingsAsync(new AppSettings
         {
             ServerBaseUrl = "ftp://invalid-service",
+            AllowAutomaticIssueReportUpload = true,
             IssueReportDirectory = scope.FeedbackRootPath
         });
 
@@ -100,6 +103,49 @@ public sealed class IssueReportServiceTests
         Assert.True(File.Exists(result.FilePath));
         Assert.True(File.Exists(result.PackagePath));
         Assert.Equal("srv-ftp-fallback", result.ServerIssueId);
+    }
+
+    [Fact]
+    public void BuildUploadPackageForTesting_StripsPathsAndSanitizesDiagnostics()
+    {
+        var uploadPackage = IssueReportService.BuildUploadPackageForTesting(new IssueReportPackage
+        {
+            IssueId = "issue-001",
+            CreatedAt = DateTimeOffset.Parse("2026-04-21T10:00:00+08:00", null, System.Globalization.DateTimeStyles.RoundtripKind),
+            ClientId = "client-001",
+            AppVersion = "1.0.0",
+            MachineName = "mac-mini",
+            ProcessPath = "/Applications/QuickReplyTool/QuickReplyTool.exe",
+            ProcessId = 1234,
+            UserDescription = "打开 https://example.com/order/123456789 时失败，日志在 C:\\secret\\logs\\latest.log",
+            ServerBaseUrl = "https://issues.example.com/",
+            SettingsSnapshot = new Dictionary<string, string?>
+            {
+                ["SyncApiToken"] = "***6789"
+            },
+            Paths = new IssueReportPathSnapshot
+            {
+                DataRootPath = "/Users/yuhui/Library/Application Support/QuickReplyTool",
+                LogsRootPath = "/Users/yuhui/Library/Application Support/QuickReplyTool/logs",
+                FeedbackRootPath = "/Users/yuhui/Library/Application Support/QuickReplyTool/feedback",
+                DatabasePath = "/Users/yuhui/Library/Application Support/QuickReplyTool/data.db",
+                ConversationLogDatabasePath = "/Users/yuhui/Library/Application Support/QuickReplyTool/conversation-logs.db",
+                ScreenshotToolSettingsPath = "/Users/yuhui/Library/Application Support/QuickReplyTool/ScreenshotTool/lite_shot_settings.json"
+            },
+            Diagnostics = new IssueReportDiagnostics
+            {
+                StartupLogText = "请求 https://example.com/order/123456789，文件 /tmp/test.log",
+                LogDirectorySnapshot = "2026-04-21 10:00:00 | 100 | /Users/yuhui/Library/Application Support/QuickReplyTool/logs/startup/latest.log"
+            }
+        });
+
+        Assert.Equal("QuickReplyTool.exe", uploadPackage.ProcessPath);
+        Assert.Equal(string.Empty, uploadPackage.Paths.DataRootPath);
+        Assert.Equal("data.db", uploadPackage.Paths.DatabasePath);
+        Assert.Contains("[url]", uploadPackage.UserDescription, StringComparison.Ordinal);
+        Assert.Contains("[path]", uploadPackage.Diagnostics.StartupLogText, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Users/yuhui/Library/Application Support", uploadPackage.Diagnostics.LogDirectorySnapshot, StringComparison.Ordinal);
+        Assert.Contains("latest.log", uploadPackage.Diagnostics.LogDirectorySnapshot, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -130,6 +176,36 @@ public sealed class IssueReportServiceTests
         Assert.True(File.Exists(result.FilePath));
         Assert.True(File.Exists(result.PackagePath));
         Assert.Contains("当前内置服务未启用问题上报接口", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateReportAsync_SkipsUploadWhenAutomaticUploadIsDisabled()
+    {
+        using var scope = new TestAppDataScope();
+        var store = scope.CreateDataStore();
+        await store.LoadAsync();
+        await store.UpdateSettingsAsync(new AppSettings
+        {
+            ServerBaseUrl = "https://issues.example.com/",
+            AllowAutomaticIssueReportUpload = false,
+            IssueReportDirectory = scope.FeedbackRootPath
+        });
+
+        var handler = new RecordingHttpMessageHandler((_, _) => Task.FromResult(HttpResponseFactory.Json("{}")));
+        var service = new IssueReportService(
+            store,
+            (baseUri, _, _) => new HttpClient(handler)
+            {
+                BaseAddress = baseUri
+            });
+
+        var result = await service.CreateReportAsync("先只保留本地问题包");
+
+        Assert.True(result.Success);
+        Assert.False(result.UploadAttempted);
+        Assert.False(result.UploadSucceeded);
+        Assert.Empty(handler.Requests);
+        Assert.Contains("未自动上传", result.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -180,6 +256,7 @@ public sealed class IssueReportServiceTests
         {
             ServerBaseUrl = "https://issues.example.com/",
             SyncClientId = "client-001",
+            AllowAutomaticIssueReportUpload = true,
             IssueReportDirectory = scope.FeedbackRootPath
         });
 
@@ -294,6 +371,7 @@ public sealed class IssueReportServiceTests
         {
             ServerBaseUrl = "https://issues.example.com/",
             SyncClientId = "client-001",
+            AllowAutomaticIssueReportUpload = true,
             IssueReportDirectory = scope.FeedbackRootPath
         });
 

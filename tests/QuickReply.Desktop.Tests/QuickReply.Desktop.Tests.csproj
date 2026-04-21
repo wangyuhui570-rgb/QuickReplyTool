@@ -25,4 +25,8 @@
     <ProjectReference Include="..\..\src\QuickReply.Desktop\QuickReply.Desktop.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\src\QuickReply.Core\DesktopCompatibility\DesktopContractAliases.cs" Link="GlobalUsings\DesktopContractAliases.cs" />
+  </ItemGroup>
+
 </Project>

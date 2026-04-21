@@ -146,6 +146,43 @@ public sealed class ConversationLoggingServiceTests
     }
 
     [Fact]
+    public async Task RecognizeContext_KeepsBroaderRecentConversationContext()
+    {
+        using var scope = new TestAppDataScope();
+        var logsRootPath = Path.Combine(scope.AppRootPath, "logs");
+
+        await using var service = new ConversationLoggingService(logsRootPath);
+        var snapshot = service.RecognizeContext(new CapturedConversationContext
+        {
+            PlatformHint = "wecom",
+            WindowTitle = "企业微信",
+            CapturedText = string.Join(
+                Environment.NewLine,
+                [
+                    "企业微信",
+                    "订单还没收到",
+                    "我这边查一下",
+                    "昨天已经给您发出了",
+                    "物流单号稍后发您",
+                    "那安装视频在哪里",
+                    "安装视频等会发您",
+                    "还有尺码怎么选",
+                    "按平时尺码拍就行",
+                    "今天下单什么时候发",
+                    "16点前付款当天发",
+                    "好的谢谢"
+                ])
+        });
+
+        var contextLines = snapshot.RecognizedContextText
+            .Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        Assert.Contains("订单还没收到", contextLines);
+        Assert.Contains("今天下单什么时候发", contextLines);
+        Assert.True(contextLines.Length >= 10);
+    }
+
+    [Fact]
     public async Task LogOperationEventAsync_PersistsOperationEvent()
     {
         using var scope = new TestAppDataScope();
@@ -501,5 +538,208 @@ public sealed class ConversationLoggingServiceTests
         Assert.Equal(1L, reader.GetInt64(4));
         Assert.Equal(1L, reader.GetInt64(5));
         Assert.Equal("安装视频：https://example.com/install", reader.GetString(6));
+    }
+
+    [Fact]
+    public async Task ExportSyncPayloadAsync_RedactsSensitiveConversationFields_WhenRawUploadDisabled()
+    {
+        using var scope = new TestAppDataScope();
+        var databasePath = Path.Combine(scope.LogsRootPath, "conversation-logs.db");
+
+        await using var service = scope.CreateConversationLoggingService();
+        service.LogPlainTextUsage(
+            "内部回复 C:\\secret\\reply.txt",
+            "manual_send",
+            ComposeActionMode.Send,
+            searchKeyword: "订单 123456789",
+            resultSuccess: true,
+            resultMessage: "已处理 https://example.com/order/123456789",
+            targetWindowHandle: IntPtr.Zero,
+            recognitionOverride: new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                WindowTitle = "企业微信",
+                CaptureStatus = "text_only",
+                CapturedText = "客户订单号 123456789 路径 C:\\Users\\alice\\Desktop\\capture.png",
+                RecognitionStatus = "identified",
+                RecognitionMethod = "automation_ocr_hybrid_v2",
+                RecognitionConfidence = 0.62d,
+                RecognizedCustomerText = "订单号123456789 https://example.com/order/123456789",
+                RecognizedContextText = "查看路径 C:\\Users\\alice\\Desktop\\capture.png",
+                Product = new ConversationProductContext
+                {
+                    ProductId = "SKU-123456",
+                    ProductName = "测试商品"
+                }
+            });
+
+        await WaitForTableCountAsync(databasePath, "conversation_logs", minimumCount: 1);
+        var payload = await service.ExportSyncPayloadAsync("client-001", since: null, includeRawConversationData: false);
+        var log = Assert.Single(payload.ConversationLogs);
+
+        Assert.Equal(string.Empty, log.TargetWindowTitle);
+        Assert.Equal(string.Empty, log.PayloadText);
+        Assert.Equal(string.Empty, log.RecognizedMessagesJson);
+        Assert.Contains("[num]", log.RecognizedCustomerText, StringComparison.Ordinal);
+        Assert.Contains("[url]", log.RecognizedCustomerText, StringComparison.Ordinal);
+        Assert.Contains("[path]", log.CapturedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("123456789", log.RecognizedCustomerText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExportSyncPayloadAsync_PreservesRawConversationFields_WhenOptedIn()
+    {
+        using var scope = new TestAppDataScope();
+        var databasePath = Path.Combine(scope.LogsRootPath, "conversation-logs.db");
+
+        await using var service = scope.CreateConversationLoggingService();
+        service.LogPhraseUsage(
+            new ReplyPhrase
+            {
+                Id = Guid.NewGuid(),
+                Title = "售后答复",
+                Content = "这边帮您处理"
+            },
+            "search_overlay_recommendation_send",
+            ComposeActionMode.Send,
+            searchKeyword: "退款",
+            resultSuccess: true,
+            resultMessage: "发送成功",
+            targetWindowHandle: IntPtr.Zero,
+            recognitionOverride: new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                WindowTitle = "企业微信",
+                CaptureStatus = "text_only",
+                CapturedText = "客户说退款",
+                RecognitionStatus = "identified",
+                RecognitionMethod = "automation_ocr_hybrid_v2",
+                RecognitionConfidence = 0.88d,
+                RecognizedCustomerText = "客户说退款",
+                RecognizedContextText = "之前已经催过一次"
+            });
+
+        await WaitForTableCountAsync(databasePath, "conversation_logs", minimumCount: 1);
+        var payload = await service.ExportSyncPayloadAsync("client-001", since: null, includeRawConversationData: true);
+        var log = Assert.Single(payload.ConversationLogs);
+
+        Assert.Equal("企业微信", log.TargetWindowTitle);
+        Assert.Equal("客户说退款", log.RecognizedCustomerText);
+        Assert.Equal("之前已经催过一次", log.RecognizedContextText);
+    }
+
+    [Fact]
+    public async Task RunMaintenanceAsync_RemovesExpiredStructuredTelemetryRows()
+    {
+        using var scope = new TestAppDataScope();
+        var databasePath = Path.Combine(scope.LogsRootPath, "conversation-logs.db");
+
+        await using var service = scope.CreateConversationLoggingService();
+        service.LogPlainTextUsage(
+            "测试发送",
+            "manual_send",
+            ComposeActionMode.Send,
+            searchKeyword: null,
+            resultSuccess: true,
+            resultMessage: "发送成功",
+            targetWindowHandle: IntPtr.Zero,
+            recognitionOverride: new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                WindowTitle = "企业微信",
+                CaptureStatus = "text_only",
+                CapturedText = "客户问发货",
+                RecognitionStatus = "identified",
+                RecognitionMethod = "automation_ocr_hybrid_v2",
+                RecognitionConfidence = 0.71d,
+                RecognizedCustomerText = "客户问发货"
+            });
+        await service.LogOperationEventAsync("maintenance_probe", "capture", success: true, skipped: false, durationMs: 10, message: "ok");
+        var sessionId = service.LogAiDraftsShown(
+            new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                RecognizedCustomerText = "客户问发货"
+            },
+            [
+                new GeneratedReplyCandidate
+                {
+                    DisplayRank = 1,
+                    Text = "今天可以发出",
+                    ProviderType = "ollama",
+                    ModelName = "qwen2.5:3b"
+                }
+            ],
+            SearchOverlayMode.Phrase,
+            "发货");
+        await service.SaveRecognitionCorrectionAsync(
+            sessionId,
+            new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                RecognizedCustomerText = "客户问发货",
+                RecognitionMethod = "automation_ocr_hybrid_v2"
+            },
+            new ConversationRecognitionCorrection
+            {
+                CustomerText = "客户问发货",
+                ContextText = "昨天已下单"
+            });
+
+        await WaitForTableCountAsync(databasePath, "conversation_logs", minimumCount: 1);
+        await WaitForTableCountAsync(databasePath, "recommendation_events", minimumCount: 1);
+        await WaitForTableCountAsync(databasePath, "recognition_corrections", minimumCount: 1);
+        await WaitForTableCountAsync(databasePath, "operation_events", minimumCount: 1);
+
+        await using (var connection = new SqliteConnection($"Data Source={databasePath}"))
+        {
+            await connection.OpenAsync();
+            foreach (var tableName in new[] { "conversation_logs", "recommendation_events", "recognition_corrections", "operation_events" })
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"UPDATE {tableName} SET occurred_at = $occurredAt;";
+                command.Parameters.AddWithValue("$occurredAt", DateTimeOffset.UtcNow.AddDays(-45).ToString("O"));
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        service.ApplySettings(new AppSettings
+        {
+            LogTextRetentionDays = 7,
+            LogScreenshotRetentionDays = 30,
+            LogScreenshotMaxSizeMb = 512
+        });
+        await service.RunMaintenanceAsync();
+
+        await using var verifyConnection = new SqliteConnection($"Data Source={databasePath}");
+        await verifyConnection.OpenAsync();
+        foreach (var tableName in new[] { "conversation_logs", "recommendation_events", "recognition_corrections", "operation_events" })
+        {
+            await using var command = verifyConnection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(1) FROM {tableName};";
+            var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+            Assert.Equal(0, count);
+        }
+    }
+
+    private static async Task WaitForTableCountAsync(string databasePath, string tableName, int minimumCount)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync();
+
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(1) FROM {tableName};";
+            var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+            if (count >= minimumCount)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException($"Timed out waiting for {tableName} to reach {minimumCount} rows.");
     }
 }

@@ -13,9 +13,9 @@ public sealed class ScreenOcrReaderTests
     }
 
     [Fact]
-    public void GetPreferredFallbackOcrLanguageTagsForTesting_PrioritizesChineseBeforeEnglish()
+    public void GetPreferredOcrLanguageTagsForTesting_PrioritizesChineseForChineseWorkbench()
     {
-        var languages = ScreenOcrReader.GetPreferredFallbackOcrLanguageTagsForTesting();
+        var languages = ScreenOcrReader.GetPreferredOcrLanguageTagsForTesting("wecom");
         var orderedLanguages = languages.ToArray();
 
         Assert.Contains("zh-CN", languages);
@@ -24,20 +24,46 @@ public sealed class ScreenOcrReaderTests
     }
 
     [Fact]
-    public void GetNormalizedCropRectanglesForTesting_UsesLowerChatRegionForWeCom()
+    public void GetPreferredOcrLanguageTagsForTesting_UsesLatinFallbackForUnknownPlatform()
+    {
+        var languages = ScreenOcrReader.GetPreferredOcrLanguageTagsForTesting("unknown");
+
+        Assert.Equal(["en-US"], languages);
+    }
+
+    [Fact]
+    public void GetNormalizedCropRectanglesForTesting_CoversBroaderConversationAreaForWeCom()
     {
         var rectangles = ScreenOcrReader.GetNormalizedCropRectanglesForTesting("wecom");
 
         Assert.NotEmpty(rectangles);
-        Assert.All(rectangles, rectangle => Assert.True(rectangle.Y >= 0.18d));
+        Assert.Contains(rectangles, rectangle => rectangle.Y <= 0.10d && rectangle.Height >= 0.70d);
     }
 
     [Fact]
-    public void GetNormalizedCropRectanglesForTesting_UsesLowerChatRegionForWorkbench()
+    public void GetNormalizedCropRectanglesForTesting_CoversBroaderConversationAreaForWorkbench()
     {
         var rectangles = ScreenOcrReader.GetNormalizedCropRectanglesForTesting("qianniu");
 
         Assert.NotEmpty(rectangles);
-        Assert.All(rectangles, rectangle => Assert.True(rectangle.Y >= 0.18d));
+        Assert.Contains(rectangles, rectangle => rectangle.Y <= 0.10d && rectangle.Height >= 0.70d);
+    }
+
+    [Fact]
+    public async Task TryReadTextDetailedAsync_ReturnsMissingImageStatus_WhenScreenshotDoesNotExist()
+    {
+        var result = await ScreenOcrReader.TryReadTextDetailedAsync("/tmp/quickreply-missing-image.png", "wecom");
+
+        Assert.False(result.Success);
+        Assert.Equal("missing_image", result.Status);
+        Assert.Equal(string.Empty, result.Text);
+    }
+
+    [Fact]
+    public void GetResultPriorityForTesting_PrefersErrorsOverEmptyReads()
+    {
+        Assert.True(
+            ScreenOcrReader.GetResultPriorityForTesting("ocr_error") >
+            ScreenOcrReader.GetResultPriorityForTesting("ocr_empty"));
     }
 }

@@ -27,7 +27,7 @@ public sealed class HistoricalCandidateRetriever : ICandidateRetriever
         var rankingReferenceTime = request.QueryScope?.MaxOccurredAt ?? DateTimeOffset.Now;
 
         if (snapshot is null ||
-            snapshot.RecognitionConfidence < 0.35d ||
+            snapshot.RecognitionConfidence < 0.20d ||
             snapshot.Keywords.Count == 0 ||
             (string.IsNullOrWhiteSpace(snapshot.RecognizedCustomerText) &&
              string.IsNullOrWhiteSpace(snapshot.RecognizedContextText) &&
@@ -100,7 +100,7 @@ public sealed class HistoricalCandidateRetriever : ICandidateRetriever
         {
             Suggestions = suggestions,
             KnowledgeCards = knowledgeCards,
-            SimilarReplyGroups = suggestions.Count == 0 ? [] : similarReplyGroups
+            SimilarReplyGroups = similarReplyGroups
         };
     }
 

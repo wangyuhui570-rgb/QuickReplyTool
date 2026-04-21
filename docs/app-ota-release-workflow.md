@@ -64,6 +64,42 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-app-update-release.ps
 - `app-update-info.json` 用于包内自描述
 - `release-manifest.snippet.json` 用于给服务端登记 OTA 元数据
 
+如果你要把发布前的签名 smoke 和 rollback drill 一并做掉，继续执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release-artifact.ps1 `
+  -ArtifactPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\QuickReplyTool-AppUpdate-v2.2.0.zip `
+  -MetadataPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\package\app-update-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-release-artifact-signature.ps1 `
+  -SignaturePath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\QuickReplyTool-AppUpdate-v2.2.0.zip.signature.json `
+  -ArtifactPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\QuickReplyTool-AppUpdate-v2.2.0.zip `
+  -MetadataPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\package\app-update-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\build-rollback-package.ps1 `
+  -CurrentArtifactPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\QuickReplyTool-AppUpdate-v2.2.0.zip `
+  -CurrentMetadataPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\package\app-update-info.json `
+  -BaselineVersion 2.1.9 `
+  -RollbackVersion 2.2.0-rollback-smoke
+
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release-artifact.ps1 `
+  -ArtifactPath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\QuickReplyTool-Rollback-v2.2.0-rollback-smoke.zip `
+  -MetadataPath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\rollback-package-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-release-artifact-signature.ps1 `
+  -SignaturePath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\QuickReplyTool-Rollback-v2.2.0-rollback-smoke.zip.signature.json `
+  -ArtifactPath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\QuickReplyTool-Rollback-v2.2.0-rollback-smoke.zip `
+  -MetadataPath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\rollback-package-info.json
+
+powershell -ExecutionPolicy Bypass -File .\scripts\invoke-rollback-drill.ps1 `
+  -RollbackPackagePath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\QuickReplyTool-Rollback-v2.2.0-rollback-smoke.zip `
+  -CurrentArtifactPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\QuickReplyTool-AppUpdate-v2.2.0.zip `
+  -CurrentMetadataPath .\artifacts\ota\QuickReplyTool-AppUpdate-2.2.0\package\app-update-info.json `
+  -SignaturePath .\artifacts\rollback\QuickReplyTool-Rollback-2.2.0-rollback-smoke\QuickReplyTool-Rollback-v2.2.0-rollback-smoke.zip.signature.json
+```
+
+完整说明见 [release-signing-and-rollback-smoke.md](./release-signing-and-rollback-smoke.md)。
+
 ## 2. 上传 OTA zip
 
 把 `QuickReplyTool-AppUpdate-v<appVersion>.zip` 上传到可直接访问的下载目录，例如：
@@ -113,6 +149,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-app-update-release.ps
 2. `Program Files` 安装 -> 触发 UAC -> OTA 成功
 3. 服务端改成 `installer_exe` -> 客户端仍然打开下载页，不崩
 4. 损坏 zip -> 客户端提示失败并给出本地日志路径
+5. smoke 签名 sidecar -> 验签 receipt 成功
+6. rollback scaffold -> dry-run rollback drill 成功
 
 ## 6. 和 patch 的边界
 

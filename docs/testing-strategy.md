@@ -151,6 +151,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-test-gates.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-test-gates.ps1 -IncludePackagingChecks
 ```
 
+这组 packaging smoke 现在除了校验产物结构和元数据，还会自动补做：
+
+- portable / OTA / patch 的 smoke 签名与验签
+- OTA / patch 的 rollback package scaffold 与 dry-run rollback drill
+- 如果再加 `-IncludeInstallerCheck`，installer 也会进入 smoke 签名与验签
+
 如果当前机器安装了 Inno Setup，或者希望在 CI / 手工触发时把 installer 也纳入固定 smoke，可以再补上：
 
 ```powershell
@@ -171,22 +177,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-test-gates.ps1
 
 脚本默认执行：
 
-1. 解决方案构建
-2. `QuickReply.Desktop.Tests`
-3. `QuickReply.ReplayEval.Tests`
+1. 以 `Release` 配置执行解决方案构建
+2. 运行 `QuickReply.Desktop.Tests`、`QuickReply.ReplayEval.Tests`、`QuickReply.CloudService.Tests`
+3. 采集每个测试套件的 Cobertura 覆盖率，并校验基础 line coverage 门槛
 4. 如果传入 `-LogHealthInputPath`，再额外执行日志健康检查
 5. 如果传入 `-IncludePackagingChecks`，再额外校验 portable / OTA / patch 的产物结构和侧车元数据
-6. 如果同时传入 `-IncludeInstallerCheck`，再额外校验 installer 产物和侧车元数据
+6. 对 packaging smoke 产物自动执行 smoke 签名、验签，以及 OTA / patch 的 rollback drill
+7. 如果同时传入 `-IncludeInstallerCheck`，再额外校验 installer 产物和侧车元数据，并把 installer 纳入 smoke 签名/验签
 
 输出日志会写入 `artifacts\test-gates\<timestamp>\`。
-测试结果同时会输出 `.trx` 文件，方便本地留档和 CI 上传。
-如果传入 `-ReleaseEvidenceVersion`，脚本还会自动生成 `artifacts\release-evidence\...` 目录，并把构建日志、测试日志、`.trx` 结果和打包烟测日志归档进去。
+测试结果同时会输出 `.trx` 文件，方便本地留档和 CI 上传；覆盖率原始 Cobertura XML 和汇总会落到 `artifacts\test-gates\<timestamp>\coverage\`。
+如果需要临时切回 `Debug` 验证，可以显式追加 `-Configuration Debug`。
+如果传入 `-ReleaseEvidenceVersion`，脚本还会自动生成 `artifacts\release-evidence\...` 目录，并把构建日志、测试日志、`.trx` 结果、覆盖率结果和打包烟测日志归档进去。
 这份证据目录现在会额外带上可直接勾选的 `manual-regression-checklist.md`，以及按安装包、便携包、正式 OTA 包、补丁包拆分的 package-specific checklists，方便候选发布和正式发布时逐项留证。
+`packaging-upgrade\` 下还会附带 `signature-verification-checklist.md` 和 `rollback-drill-checklist.md`，用于记录 smoke signer、验签 receipt 和 dry-run 回滚演练结果。
 
 如果仓库托管在 GitHub，可以直接复用 `.github/workflows/ci.yml`，让云端 CI 与本地门禁保持同一入口。
 手动触发工作流时还可以填写 `releaseEvidenceVersion`，让 CI 同步上传 `artifacts\release-evidence\...` 作为独立 artifact。
 如果手动触发时把 `includeInstallerCheck` 打开，工作流会先安装 Inno Setup，再跑 installer smoke。
 CI 上传的 artifact 现在会优先带上 `releaseEvidenceVersion`；如果没有提供版本号，则会退化成 `run-<run_number>`，方便区分多次触发的结果。
+CI 的 packaging smoke 现在也会把 `signing-smoke\` 和 `rollback-smoke\` 一起上传到 `artifacts\test-gates\...`。
+
+如果要单独运行签名/验签或回滚 smoke，而不跑整套 test gate，可参考 [release-signing-and-rollback-smoke.md](./release-signing-and-rollback-smoke.md)。
 
 如果只想单独分析一包日志，不跑整套门禁，也可以直接执行：
 
@@ -214,6 +226,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-log-health.p
   - 自动测试结果
   - 手工回归勾选表
   - 打包与升级验证记录
+  - 签名验签与回滚演练记录
 
 可以先用下面的脚本生成证据目录脚手架：
 

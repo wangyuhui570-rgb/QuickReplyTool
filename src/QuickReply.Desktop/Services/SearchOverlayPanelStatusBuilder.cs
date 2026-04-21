@@ -199,6 +199,13 @@ internal static class SearchOverlayPanelStatusBuilder
             "ocr" => "OCR",
             "missing_rect" => "未取到聊天区域",
             "empty" => "未抓到文本",
+            "background_window" => "后台窗口",
+            "invisible_window" => "窗口不可见",
+            "minimized_window" => "窗口已最小化",
+            "ocr_empty" => "OCR 无结果",
+            "ocr_timeout" => "OCR 超时",
+            "ocr_error" => "OCR 失败",
+            "host_missing" => "缺少 OCR 宿主",
             _ => token
         });
 

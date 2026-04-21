@@ -6,7 +6,16 @@
 
 1. 生成本地 markdown 反馈文件
 2. 生成同目录 JSON 结构化问题包
-3. 如果已配置服务器地址，则立即向 `/api/quickreply/issues/report` 尝试上传
+3. 只有设置里显式开启“允许自动把问题包上传到服务器”后，才会自动向 `/api/quickreply/issues/report` 尝试上传
+
+说明：
+
+- 本地 `.md` 和 `.json` 仍保留完整问题包，方便你离线排查
+- 真正上传到服务器的包现在会走一层最小化处理：
+  - 清空绝对路径
+  - 目录快照只保留文件名
+  - 日志文本里的 URL、长数字、长 ID、文件路径会被替换成占位符
+- 如果没有打开自动上传，客户端只生成本地问题包；后续可以手动重试上传
 
 本地文件目录沿用现有“问题反馈目录”配置。
 
@@ -66,6 +75,11 @@ Authorization: Bearer <syncApiToken>
 - `searchOverlayLogTail`
 - `logDirectorySnapshot`
 - `recentConversationEntries`
+
+补充：
+
+- 上传到服务器的 `paths` 不再携带完整本机绝对路径
+- `diagnostics` 会保留排障所需摘要，但不再原样携带完整原始日志
 
 ### `recentConversationEntries`
 

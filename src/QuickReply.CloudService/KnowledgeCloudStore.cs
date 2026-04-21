@@ -307,8 +307,8 @@ public sealed class KnowledgeCloudStore
             LatestRevision = latestBatchRevision,
             HasMore = hasMore,
             NextCursor = hasMore ? latestBatchRevision.ToString() : string.Empty,
-            Cards = cards,
-            RemovedCardIds = removedIds
+            Cards = cards.ToList(),
+            RemovedCardIds = removedIds.ToList()
         };
     }
 
@@ -624,7 +624,7 @@ public sealed class KnowledgeCloudStore
             totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken));
         }
 
-        var items = new List<KnowledgeCandidateSourceRecord>();
+        var items = new List<KnowledgeReviewSourceRecord>();
         await using (var command = connection.CreateCommand())
         {
             command.CommandText =
@@ -647,7 +647,7 @@ public sealed class KnowledgeCloudStore
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                items.Add(new KnowledgeCandidateSourceRecord
+                items.Add(new KnowledgeReviewSourceRecord
                 {
                     Id = Guid.Parse(reader.GetString(0)),
                     CandidateId = Guid.Parse(reader.GetString(1)),
@@ -1557,7 +1557,7 @@ public sealed class KnowledgeCloudStore
         long latestRevision,
         CancellationToken cancellationToken)
     {
-        var cards = new List<PublishedKnowledgeCardRecord>();
+        var cards = new List<PublishedKnowledgeCardSyncItem>();
         await using (var cardCommand = connection.CreateCommand())
         {
             cardCommand.CommandText =
@@ -1583,21 +1583,7 @@ public sealed class KnowledgeCloudStore
             await using var reader = await cardCommand.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                cards.Add(new PublishedKnowledgeCardRecord
-                {
-                    Id = Guid.Parse(reader.GetString(0)),
-                    CandidateKind = reader.GetString(1),
-                    Platform = reader.GetString(2),
-                    ProductKey = reader.GetString(3),
-                    Question = reader.GetString(4),
-                    Answer = reader.GetString(5),
-                    Synonyms = DeserializeStringList(reader.GetString(6)),
-                    Tags = DeserializeStringList(reader.GetString(7)),
-                    UsageNotes = reader.GetString(8),
-                    Version = reader.GetString(9),
-                    Revision = reader.GetInt64(10),
-                    UpdatedAt = ParseDateTimeOffset(reader.GetString(11))
-                });
+                cards.Add(ReadPublishedKnowledgeCardSyncItem(reader));
             }
         }
 
@@ -1637,7 +1623,7 @@ public sealed class KnowledgeCloudStore
         };
     }
 
-    private async Task<IReadOnlyList<PublishedKnowledgeCardRecord>> LoadPublishedKnowledgeCardsByIdsAsync(
+    private async Task<IReadOnlyList<PublishedKnowledgeCardSyncItem>> LoadPublishedKnowledgeCardsByIdsAsync(
         SqliteConnection connection,
         IReadOnlyCollection<Guid> cardIds,
         CancellationToken cancellationToken)
@@ -1676,28 +1662,33 @@ public sealed class KnowledgeCloudStore
             ORDER BY revision ASC;
             """;
 
-        var cards = new List<PublishedKnowledgeCardRecord>();
+        var cards = new List<PublishedKnowledgeCardSyncItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            cards.Add(new PublishedKnowledgeCardRecord
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                CandidateKind = reader.GetString(1),
-                Platform = reader.GetString(2),
-                ProductKey = reader.GetString(3),
-                Question = reader.GetString(4),
-                Answer = reader.GetString(5),
-                Synonyms = DeserializeStringList(reader.GetString(6)),
-                Tags = DeserializeStringList(reader.GetString(7)),
-                UsageNotes = reader.GetString(8),
-                Version = reader.GetString(9),
-                Revision = reader.GetInt64(10),
-                UpdatedAt = ParseDateTimeOffset(reader.GetString(11))
-            });
+            cards.Add(ReadPublishedKnowledgeCardSyncItem(reader));
         }
 
         return cards;
+    }
+
+    private static PublishedKnowledgeCardSyncItem ReadPublishedKnowledgeCardSyncItem(SqliteDataReader reader)
+    {
+        return new PublishedKnowledgeCardSyncItem
+        {
+            Id = Guid.Parse(reader.GetString(0)),
+            CandidateKind = reader.GetString(1),
+            Platform = reader.GetString(2),
+            ProductKey = reader.GetString(3),
+            Question = reader.GetString(4),
+            Answer = reader.GetString(5),
+            Synonyms = DeserializeStringList(reader.GetString(6)),
+            Tags = DeserializeStringList(reader.GetString(7)),
+            UsageNotes = reader.GetString(8),
+            Version = reader.GetString(9),
+            Revision = reader.GetInt64(10),
+            UpdatedAt = ParseDateTimeOffset(reader.GetString(11))
+        };
     }
 
     private static async Task<long> GetLatestPublishedKnowledgeRevisionAsync(

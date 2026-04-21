@@ -179,6 +179,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private string _selectedScreenshotToolSaveDirectory = string.Empty;
     private string _selectedIssueReportDirectory = string.Empty;
     private bool _selectedEnableCloudSync;
+    private bool _selectedAllowRawConversationCloudSync;
+    private bool _selectedAllowAutomaticIssueReportUpload;
     private bool _selectedEnableUpdateChecks;
     private bool _selectedEnableAiDrafts;
     private string _selectedServerBaseUrl = QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl;
@@ -219,6 +221,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private int _selectedPhraseHoverPreviewDelayMs = 500;
     private int _selectedLogScreenshotRetentionDays = 7;
     private int _selectedLogScreenshotMaxSizeMb = 1024;
+    private int _selectedLogTextRetentionDays = 30;
     private string _selectedCategoryColorHex = "#D8EAFE";
     private int _selectedCategoryOpacityPercent = 100;
     private string _selectedTagColorHex = "#DBEAFE";
@@ -372,6 +375,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
                 RefreshValidationState();
             }
         }
+    }
+
+    public bool SelectedAllowRawConversationCloudSync
+    {
+        get => _selectedAllowRawConversationCloudSync;
+        set => SetField(ref _selectedAllowRawConversationCloudSync, value);
+    }
+
+    public bool SelectedAllowAutomaticIssueReportUpload
+    {
+        get => _selectedAllowAutomaticIssueReportUpload;
+        set => SetField(ref _selectedAllowAutomaticIssueReportUpload, value);
     }
 
     public bool SelectedEnableUpdateChecks
@@ -686,6 +701,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     {
         get => _selectedLogScreenshotMaxSizeMb;
         set => SetField(ref _selectedLogScreenshotMaxSizeMb, value);
+    }
+
+    public int SelectedLogTextRetentionDays
+    {
+        get => _selectedLogTextRetentionDays;
+        set => SetField(ref _selectedLogTextRetentionDays, value);
     }
 
     public string SelectedCategoryColorHex
@@ -1111,6 +1132,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public int[] LogScreenshotRetentionDayOptions { get; } = [3, 7, 14, 30, 60];
 
     public int[] LogScreenshotMaxSizeOptions { get; } = [256, 512, 1024, 2048, 4096];
+
+    public int[] LogTextRetentionDayOptions { get; } = [7, 14, 30, 60, 90, 180];
 
     public int[] ThemeOpacityOptions { get; } = [20, 35, 50, 65, 80, 90, 100];
 
@@ -3736,7 +3759,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         }
     }
 }
-
 
 
 

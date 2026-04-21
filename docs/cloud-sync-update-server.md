@@ -16,6 +16,7 @@
 当前仓库里的桌面端已经完成这些能力：
 
 - 本地保存云同步开关、更新检查开关、服务器地址、客户端标识、API Token
+- 本地保存“是否允许上传原始会话文本”的隐私开关；默认关闭
 - 启动后后台执行一次云同步和更新检查
 - 同一天内默认只自动执行一次
 - 设置页支持手动立即同步、立即检查更新
@@ -142,6 +143,16 @@ Content-Type: application/json
 3. `recognitionCorrections`
    记录“识别错了，人工纠正成什么”的样本
 
+隐私与默认行为：
+
+- 默认情况下，客户端上传的是“脱敏后的训练摘要”，不是完整原始聊天文本
+- 这些字段会做最小化处理：
+  - `targetWindowTitle` 默认清空
+  - `payloadText`、`actualPayloadText` 默认清空
+  - `recognizedMessagesJson` / `sourceMessagesJson` / `correctedMessagesJson` 默认清空
+  - 文本字段中的 URL、长数字、长 ID、文件路径会替换成占位符
+- 只有用户显式打开“允许上传原始会话文本用于云端分析”后，客户端才会发送原始字段
+
 服务端最低要求：
 
 - 成功时返回任意 `2xx`
@@ -155,6 +166,14 @@ Content-Type: application/json
 - `recognition_corrections_raw`
 
 这样后面做统计、回放和 AI 训练都方便。
+
+如果你沿用现在这版客户端默认行为，服务端表名更建议改成：
+
+- `conversation_logs_ingest`
+- `recommendation_events_ingest`
+- `recognition_corrections_ingest`
+
+因为第一阶段收到的往往是脱敏摘要，不一定是完整 raw data。
 
 ### 3. 拉取更新清单
 

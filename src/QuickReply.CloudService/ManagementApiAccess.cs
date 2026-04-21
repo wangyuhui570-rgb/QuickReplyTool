@@ -6,7 +6,8 @@ namespace QuickReply.CloudService;
 
 internal static class ManagementApiAccess
 {
-    public static RouteHandlerBuilder RequireManagementAccess(this RouteHandlerBuilder builder)
+    public static TBuilder RequireManagementAccess<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
     {
         return builder.AddEndpointFilterFactory((_, next) => async context =>
         {
