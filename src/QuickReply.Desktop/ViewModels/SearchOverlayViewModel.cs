@@ -9,20 +9,33 @@ namespace QuickReply.Desktop.ViewModels;
 
 public sealed class SearchOverlayViewModel : ObservableObject
 {
+    private static readonly IReadOnlyList<PhraseRecommendationSuggestion> EmptyRecommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
+    private static readonly IReadOnlyList<KnowledgeCardSuggestion> EmptyKnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
+    private static readonly IReadOnlyList<HistoricalReplyGroupSuggestion> EmptyReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
     private readonly MainViewModel _mainViewModel;
     private IReadOnlyList<SearchOverlayResultItem> _results = Array.Empty<SearchOverlayResultItem>();
     private string _actionStatusMessage = string.Empty;
+    private string _recognitionCorrectionText = string.Empty;
     private string _searchText = string.Empty;
     private string _statusMessage = "输入关键词后，可按数字 1-9 或 Enter 发送结果；Ctrl+S 仅保存原文，Ctrl+Shift+S 发送并保存。";
     private SearchOverlayResultItem? _selectedResult;
     private SearchOverlayMode _currentMode = SearchOverlayMode.Phrase;
     private bool _isSettingsPreviewMode;
     private bool _isActionStatusWarning;
+    private bool _isEditingRecognition;
 
     public SearchOverlayViewModel(MainViewModel mainViewModel)
     {
         _mainViewModel = mainViewModel;
         _mainViewModel.Settings.PropertyChanged += Settings_OnPropertyChanged;
+    }
+
+    public SearchOverlayViewModel(
+        MainViewModel mainViewModel,
+        object? recommendationOrchestrator,
+        object? recommendationTrackingService)
+        : this(mainViewModel)
+    {
     }
 
     public IReadOnlyList<SearchOverlayResultItem> Results
@@ -112,7 +125,35 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public bool HasResults => Results.Count > 0;
 
+    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendedPhrases => EmptyRecommendedPhrases;
+
+    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendationItems => EmptyRecommendedPhrases;
+
+    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCards => EmptyKnowledgeCards;
+
+    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCardItems => EmptyKnowledgeCards;
+
+    public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups => EmptyReplyGroups;
+
+    public bool HasRecommendations => false;
+
+    public bool HasKnowledgeCardMatches => false;
+
+    public bool HasRecommendationContext => false;
+
+    public bool HasRecognizedCustomerMessage => false;
+
+    public string RecognizedCustomerMessageText => string.Empty;
+
+    public bool HasRecommendationPanelContent => false;
+
     public bool HasManualSearchText => SearchOverlayLayoutModeResolver.HasManualSearchText(SearchText);
+
+    public bool ShouldShowRecommendationPanel => false;
+
+    public bool ShouldShowSearchResultsPanel => true;
+
+    public bool HasSimilarReplyGroups => false;
 
     public AppSettings Settings => _mainViewModel.Settings;
 
@@ -137,6 +178,8 @@ public sealed class SearchOverlayViewModel : ObservableObject
     public bool IsMixedMode => CurrentMode == SearchOverlayMode.Mixed;
 
     public bool IsCompactSidebarMode => Settings.SidebarWorkMode == SidebarWorkMode.Compact;
+
+    public int RecommendationDisplayCount => 0;
 
     public string CurrentModeDisplayText => CurrentMode switch
     {
@@ -179,6 +222,18 @@ public sealed class SearchOverlayViewModel : ObservableObject
         _ => "短语模式  左右切换"
     };
 
+    public string RecommendationHintText => string.Empty;
+
+    public bool HasRecommendationHintText => false;
+
+    public string RecommendationStatusText => string.Empty;
+
+    public bool HasRecommendationStatusText => false;
+
+    public string GroundingSummaryText => string.Empty;
+
+    public bool HasGroundingSummaryText => false;
+
     public string ActionStatusMessage
     {
         get => _actionStatusMessage;
@@ -215,6 +270,24 @@ public sealed class SearchOverlayViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(OverlayAssistText);
 
     public bool IsOverlayAssistWarning => HasActionStatusMessage && IsActionStatusWarning;
+
+    public bool IsRefreshingRecommendations => false;
+
+    public bool IsEditingRecognition
+    {
+        get => _isEditingRecognition;
+        private set => SetProperty(ref _isEditingRecognition, value);
+    }
+
+    public string RecognitionCorrectionText
+    {
+        get => _recognitionCorrectionText;
+        set => SetProperty(ref _recognitionCorrectionText, value);
+    }
+
+    public string RecommendationContextText => string.Empty;
+
+    public bool HasRecommendationContextText => false;
 
     public string SearchBoxHintText
     {
@@ -1019,6 +1092,76 @@ public sealed class SearchOverlayViewModel : ObservableObject
         return score;
     }
 
+    public Task RefreshRecommendationsForOpenAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    public async Task<ReplyActionResult> SendRecommendedPhraseAsync(PhraseRecommendationSuggestion suggestion)
+    {
+        await Task.CompletedTask;
+        return BuildRetiredRecommendationResult();
+    }
+
+    public async Task<ReplyActionResult> InputRecommendedPhraseAsync(PhraseRecommendationSuggestion suggestion)
+    {
+        await Task.CompletedTask;
+        return BuildRetiredRecommendationResult();
+    }
+
+    public async Task<ReplyActionResult> SendKnowledgeCardAsync(KnowledgeCardSuggestion knowledgeCard)
+    {
+        await Task.CompletedTask;
+        return BuildRetiredRecommendationResult();
+    }
+
+    public async Task<ReplyActionResult> InputKnowledgeCardAsync(KnowledgeCardSuggestion knowledgeCard)
+    {
+        await Task.CompletedTask;
+        return BuildRetiredRecommendationResult();
+    }
+
+    public void BeginRecognitionCorrection()
+    {
+        RecognitionCorrectionText = string.Empty;
+        IsEditingRecognition = false;
+        StatusMessage = "识别修正功能已移除。";
+    }
+
+    public void CancelRecognitionCorrection()
+    {
+        RecognitionCorrectionText = string.Empty;
+        IsEditingRecognition = false;
+    }
+
+    public async Task SaveRecognitionCorrectionAsync()
+    {
+        await Task.CompletedTask;
+        RecognitionCorrectionText = string.Empty;
+        IsEditingRecognition = false;
+        StatusMessage = "识别修正功能已移除。";
+    }
+
+    public ConversationRecognitionCorrection CreateRecognitionCorrectionDraft()
+    {
+        return new ConversationRecognitionCorrection
+        {
+            CustomerText = string.Empty,
+            ContextText = string.Empty,
+            ProductId = string.Empty,
+            ProductName = string.Empty,
+            Messages = []
+        };
+    }
+
+    public async Task SaveRecognitionCorrectionAsync(ConversationRecognitionCorrection correction)
+    {
+        await Task.CompletedTask;
+        RecognitionCorrectionText = string.Empty;
+        IsEditingRecognition = false;
+        StatusMessage = "识别修正功能已移除。";
+    }
+
     private static double ComputeRecentBoost(DateTimeOffset? lastUsedAt)
     {
         if (lastUsedAt is null)
@@ -1028,6 +1171,13 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
         var days = Math.Max(0, (DateTimeOffset.Now - lastUsedAt.Value).TotalDays);
         return Math.Max(0, 18 - days);
+    }
+
+    private ReplyActionResult BuildRetiredRecommendationResult()
+    {
+        var result = new ReplyActionResult(false, "推荐功能已移除，请直接搜索并发送短语或文件。");
+        ShowActionStatus(result);
+        return result;
     }
 
 }
