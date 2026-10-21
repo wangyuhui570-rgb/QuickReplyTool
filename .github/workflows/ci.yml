@@ -77,12 +77,16 @@ jobs:
           INCLUDE_INSTALLER_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.includeInstallerCheck || false }}
           RELEASE_EVIDENCE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.releaseEvidenceVersion || '' }}
         run: |
-          $gateArgs = @('-Configuration', 'Release', '-IncludePackagingChecks')
+          # Hashtable splatting: array splatting passes '-Configuration' as a positional value, which broke every CI run.
+          $gateArgs = @{
+            Configuration = 'Release'
+            IncludePackagingChecks = $true
+          }
           if ($env:INCLUDE_INSTALLER_CHECK -eq 'true') {
-            $gateArgs += '-IncludeInstallerCheck'
+            $gateArgs.IncludeInstallerCheck = $true
           }
           if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_EVIDENCE_VERSION)) {
-            $gateArgs += @('-ReleaseEvidenceVersion', $env:RELEASE_EVIDENCE_VERSION)
+            $gateArgs.ReleaseEvidenceVersion = $env:RELEASE_EVIDENCE_VERSION
           }
           ./scripts/run-test-gates.ps1 @gateArgs
 

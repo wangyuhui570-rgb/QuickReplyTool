@@ -71,6 +71,28 @@ public sealed class UpdateManifestSignatureVerifierTests
         Assert.Equal(UpdateManifestSignatureStatus.Invalid, UpdateManifestSignatureVerifier.Verify(manifest, rsa.ToXmlString(false)));
     }
 
+    // 跨语言测试向量：由 scripts/new-update-signing-key.ps1 + sign-update-manifest.ps1
+    // 在 Windows PowerShell 5.1 上真实生成（测试专用密钥，与正式发布无关）。
+    // 如果 PowerShell 和 C# 的规范化逻辑不一致，这个测试会失败。
+    private const string PowerShellTestPublicKeyXml = "<RSAKeyValue><Modulus>uODyMy/jTv64WyIo99d6fdn03NGR000zZD5F2quPy3BuiZpAN04k+daTNGHa6pH5bd1hd+mq/9itXET+GVyEdauNJXLKO2eBaHIrHbCoIzQjQ2CZh2MHkJ9MoAocp2JL4uuDhJmbhT6xY8n4qQtQ+z6lsxGSG6XDNfG3obDbcRXMK4dZJ3hQ8VgPZeaDS3kclVhlU0KOrIEURCJQdE1CRiX6PixyMivg5kM6VYxE/wMCs+Czb3FGU3xZW6gu5B3+bhPpcntuxiiqphMz2x+R/RjudGDflUhV3/+8QwT+o1czHPLW4TsV8AqwGSmMrurMTLMYIjZowN3whCpglikXdQ==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>";
+
+    private const string PowerShellSignedManifestJson = """
+        { "latestAppVersion": "2.2.0", "latestAppDownloadUrl": "http://45.207.201.102/downloads/QuickReplyTool-AppUpdate-v2.2.0.zip", "latestAppPackageKind": "zip_ota", "latestAppSha256": "ABCDEF0123456789", "latestAppSizeBytes": 123456, "latestAppMandatory": false, "latestAppNotes": "测试", "latestAppSignature": "p+zKn/rBET71HsFDC6IFV9/iUBjTXJMCJBQ0XORs9MeOIkPwFZJlhYxacgzw53JrSEyOklNKCk7vJyElrtgIRbKgw7AAXp66TWGri6ZgLn5Wsc8KJNHreYLqTVaFmnLDrtKw1yEc1yh55/gYLuri6oOnlbYXU6XuRGhl9AzeRAKJra9HUQTl4PsoG84UMNuA22mCFuLKxP1TdtGmRa1gMIF9BBOEpFpND/YZtY90R9btyCqO4ZjqHAQQIm+ag5xQZgIVVK3cRBYn+yRVtDPs5yOmsnRG7E5mV0jF4P2B4LvZzDQSa8Fdm1h+wmNqisBzSmklCLdn1yS0FGhvgpQdLw==" }
+        """;
+
+    [Fact]
+    public void Verify_AcceptsManifestSignedByPowerShellScript()
+    {
+        var manifest = System.Text.Json.JsonSerializer.Deserialize<CloudUpdateManifest>(
+            PowerShellSignedManifestJson,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+
+        Assert.Equal(UpdateManifestSignatureStatus.Valid, UpdateManifestSignatureVerifier.Verify(manifest, PowerShellTestPublicKeyXml));
+        Assert.Equal(
+            UpdateManifestSignatureStatus.Invalid,
+            UpdateManifestSignatureVerifier.Verify(Clone(manifest, url: "http://evil.example.com/x.zip"), PowerShellTestPublicKeyXml));
+    }
+
     [Fact]
     public void BuildCanonicalPayload_NormalizesShaAndKind()
     {
