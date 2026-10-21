@@ -16,10 +16,170 @@ public sealed class ScreenshotToolService : IDisposable
     private static readonly TimeSpan StartupWaitTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan ShutdownWaitTimeout = TimeSpan.FromSeconds(3);
 
+    private static readonly TimeSpan WatchdogInterval = TimeSpan.FromSeconds(15);
+
     private readonly object _syncRoot = new();
+    private readonly List<DateTimeOffset> _recentRestarts = [];
     private Process? _managedProcess;
     private bool _startedByApp;
     private bool _disposed;
+    private ScreenshotToolConfiguration? _desiredConfiguration;
+    private System.Threading.Timer? _watchdogTimer;
+    private string _lastReportedHotkeyFailure = string.Empty;
+    private bool _restartLimitReported;
+    private bool _systemEventsHooked;
+
+    /// <summary>Raised (on a worker thread) with a user-facing message when the watchdog finds a problem.</summary>
+    public event Action<string>? HealthIssue;
+
+    public ScreenshotToolService()
+    {
+        _watchdogTimer = new System.Threading.Timer(_ => RunWatchdogTick(), null, WatchdogInterval, WatchdogInterval);
+        try
+        {
+            Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+            Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
+            _systemEventsHooked = true;
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+        {
+            ScreenshotToolLog.Write("system_resume");
+            ScheduleQuickCheck();
+        }
+    }
+
+    private void OnSessionSwitch(object? sender, Microsoft.Win32.SessionSwitchEventArgs e)
+    {
+        if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect)
+        {
+            ScreenshotToolLog.Write("session_unlock", new { reason = e.Reason.ToString() });
+            ScheduleQuickCheck();
+        }
+    }
+
+    private void ScheduleQuickCheck()
+    {
+        try
+        {
+            _watchdogTimer?.Change(TimeSpan.FromSeconds(5), WatchdogInterval);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void RunWatchdogTick()
+    {
+        string? issue = null;
+        if (!Monitor.TryEnter(_syncRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            if (_disposed || _desiredConfiguration is not { Enabled: true })
+            {
+                return;
+            }
+
+            var listening = IsInstanceResponsive();
+            var status = listening ? ScreenshotToolHealthEvaluator.ParseStatus(TryRequestStatus()) : null;
+            switch (ScreenshotToolHealthEvaluator.Evaluate(listening, status))
+            {
+                case ScreenshotToolHealthAction.Restart:
+                    issue = RestartFromWatchdog(listening ? "hung_ui_thread" : "not_running", status);
+                    break;
+                case ScreenshotToolHealthAction.ReportHotkeyFailure when status is not null:
+                    var key = $"{status.Hotkey}|{status.ErrorCode}";
+                    if (!string.Equals(key, _lastReportedHotkeyFailure, StringComparison.Ordinal))
+                    {
+                        _lastReportedHotkeyFailure = key;
+                        ScreenshotToolLog.Write("watchdog_hotkey_unregistered", status);
+                        issue = ScreenshotToolHealthEvaluator.BuildHotkeyFailureMessage(status);
+                    }
+                    break;
+                default:
+                    if (status is { Registered: true })
+                    {
+                        _lastReportedHotkeyFailure = string.Empty;
+                    }
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenshotToolLog.Write("watchdog_error", new { error = ex.Message });
+        }
+        finally
+        {
+            Monitor.Exit(_syncRoot);
+        }
+
+        if (issue is not null)
+        {
+            HealthIssue?.Invoke(issue);
+        }
+    }
+
+    private string? RestartFromWatchdog(string reason, ScreenshotToolStatus? status)
+    {
+        if (!ScreenshotToolHealthEvaluator.CanRestart(_recentRestarts, DateTimeOffset.Now))
+        {
+            ScreenshotToolLog.Write("watchdog_restart_suppressed", new { reason });
+            if (_restartLimitReported)
+            {
+                return null;
+            }
+
+            _restartLimitReported = true;
+            return $"截图工具反复退出，已暂停自动重启。日志：{ScreenshotToolLog.DirectoryPath}";
+        }
+
+        _recentRestarts.Add(DateTimeOffset.Now);
+        ScreenshotToolLog.Write("watchdog_restart", new { reason, status, exitCode = TryGetExitCode() });
+        if (reason == "hung_ui_thread" && _managedProcess is { HasExited: false })
+        {
+            try
+            {
+                _managedProcess.Kill(entireProcessTree: true);
+                _managedProcess.WaitForExit(1000);
+            }
+            catch
+            {
+            }
+        }
+
+        CleanupManagedProcess();
+        var result = EnsureStartedCore();
+        ScreenshotToolLog.Write("watchdog_restart_result", new { result.Success, result.Message });
+        if (result.Success)
+        {
+            _restartLimitReported = false;
+            return null;
+        }
+
+        return result.Message;
+    }
+
+    private int? TryGetExitCode()
+    {
+        try
+        {
+            return _managedProcess is { HasExited: true } ? _managedProcess.ExitCode : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public ScreenshotToolStateChangeResult ApplyConfiguration(ScreenshotToolConfiguration configuration)
     {
@@ -27,6 +187,11 @@ public sealed class ScreenshotToolService : IDisposable
         {
             ThrowIfDisposed();
             var normalizedConfiguration = NormalizeConfiguration(configuration);
+            _desiredConfiguration = normalizedConfiguration;
+            _lastReportedHotkeyFailure = string.Empty;
+            _recentRestarts.Clear();
+            _restartLimitReported = false;
+            ScreenshotToolLog.Write("apply_configuration", new { normalizedConfiguration.Enabled, normalizedConfiguration.Hotkey });
             var settingsWriteResult = TryWriteSettings(normalizedConfiguration);
             if (!settingsWriteResult.Success)
             {
@@ -43,7 +208,7 @@ public sealed class ScreenshotToolService : IDisposable
                 if (TryRequestReload())
                 {
                     _startedByApp = true;
-                    return new ScreenshotToolStateChangeResult(true, string.Empty);
+                    return CheckHotkeyRegistration();
                 }
 
                 var restartResult = RestartCore();
@@ -56,7 +221,57 @@ public sealed class ScreenshotToolService : IDisposable
                 return new ScreenshotToolStateChangeResult(false, "截图工具正在运行，但重新加载快捷键失败。");
             }
 
-            return EnsureStartedCore();
+            var startResult = EnsureStartedCore();
+            return startResult.Success ? CheckHotkeyRegistration() : startResult;
+        }
+    }
+
+    /// <summary>After start/reload, ask the tool whether the hotkey actually registered.</summary>
+    private ScreenshotToolStateChangeResult CheckHotkeyRegistration()
+    {
+        ScreenshotToolStatus? status = null;
+        for (var attempt = 0; attempt < 5 && status is null; attempt++)
+        {
+            status = ScreenshotToolHealthEvaluator.ParseStatus(TryRequestStatus());
+            if (status is null)
+            {
+                Thread.Sleep(100);
+            }
+        }
+
+        if (status is null || status.Registered)
+        {
+            return new ScreenshotToolStateChangeResult(true, string.Empty);
+        }
+
+        ScreenshotToolLog.Write("hotkey_unregistered_after_apply", status);
+        _lastReportedHotkeyFailure = $"{status.Hotkey}|{status.ErrorCode}";
+        return new ScreenshotToolStateChangeResult(false, ScreenshotToolHealthEvaluator.BuildHotkeyFailureMessage(status));
+    }
+
+    private static string? TryRequestStatus()
+    {
+        try
+        {
+            using var client = new TcpClient();
+            var connectTask = client.ConnectAsync("127.0.0.1", SingleInstancePort);
+            if (!connectTask.Wait(TimeSpan.FromMilliseconds(400)) || !client.Connected)
+            {
+                return null;
+            }
+
+            using var stream = client.GetStream();
+            stream.ReadTimeout = 800;
+            var payload = Encoding.ASCII.GetBytes("status");
+            stream.Write(payload, 0, payload.Length);
+            stream.Flush();
+            var buffer = new byte[2048];
+            var bytesRead = stream.Read(buffer, 0, buffer.Length);
+            return bytesRead > 0 ? Encoding.UTF8.GetString(buffer, 0, bytesRead) : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -70,6 +285,15 @@ public sealed class ScreenshotToolService : IDisposable
             }
 
             _disposed = true;
+            _watchdogTimer?.Dispose();
+            _watchdogTimer = null;
+            if (_systemEventsHooked)
+            {
+                Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+                Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
+                _systemEventsHooked = false;
+            }
+
             _ = StopCore(forceStop: false, appExit: true);
         }
     }
@@ -84,11 +308,13 @@ public sealed class ScreenshotToolService : IDisposable
         var scriptPath = ResolveScriptPath();
         if (scriptPath is null)
         {
+            ScreenshotToolLog.Write("script_missing");
             return new ScreenshotToolStateChangeResult(false, "未找到截图工具脚本，无法自动启动截图功能。");
         }
 
         if (!TryResolvePythonLauncher(out var launcherPath, out var launcherArguments))
         {
+            ScreenshotToolLog.Write("python_missing");
             return new ScreenshotToolStateChangeResult(false, "未找到可用的 Python 启动器，无法启动截图工具。");
         }
 
@@ -111,6 +337,7 @@ public sealed class ScreenshotToolService : IDisposable
             CleanupManagedProcess();
             _managedProcess = Process.Start(startInfo);
             _startedByApp = true;
+            ScreenshotToolLog.Write("process_started", new { launcherPath, scriptPath, pid = _managedProcess?.Id });
         }
         catch (Exception ex)
         {
@@ -125,8 +352,9 @@ public sealed class ScreenshotToolService : IDisposable
         }
 
         var message = _managedProcess is { HasExited: true }
-            ? $"截图工具启动后立即退出，退出码 {_managedProcess.ExitCode}。"
+            ? $"截图工具启动后立即退出，退出码 {_managedProcess.ExitCode}（可能缺少 Python 依赖 PySide6/Pillow/pywin32）。日志：{ScreenshotToolLog.DirectoryPath}"
             : "截图工具未在预期时间内完成启动。";
+        ScreenshotToolLog.Write("start_failed", new { message, launcherPath, scriptPath });
 
         CleanupManagedProcess();
         _startedByApp = false;

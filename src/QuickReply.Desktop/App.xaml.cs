@@ -120,6 +120,8 @@ public partial class App : System.Windows.Application
         _trayIconService.Start(mainWindow);
         StartupTrace.Mark("app.tray_started");
         _screenshotToolService = new ScreenshotToolService();
+        _screenshotToolService.HealthIssue += message =>
+            Dispatcher.BeginInvoke(() => ShowBackgroundNotification("截图工具", message, isWarning: true));
         RefreshScreenshotToolConfiguration(showNotificationOnFailure: true);
         StartupTrace.Mark("app.screenshot_tool_checked");
 
