@@ -10,7 +10,6 @@ namespace QuickReply.Desktop.ViewModels;
 public sealed class SearchOverlayViewModel : ObservableObject
 {
     private static readonly IReadOnlyList<PhraseRecommendationSuggestion> EmptyRecommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
-    private static readonly IReadOnlyList<KnowledgeCardSuggestion> EmptyKnowledgeCards = Array.Empty<KnowledgeCardSuggestion>();
     private static readonly IReadOnlyList<HistoricalReplyGroupSuggestion> EmptyReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
     private readonly MainViewModel _mainViewModel;
     private IReadOnlyList<SearchOverlayResultItem> _results = Array.Empty<SearchOverlayResultItem>();
@@ -129,15 +128,12 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public IReadOnlyList<PhraseRecommendationSuggestion> RecommendationItems => EmptyRecommendedPhrases;
 
-    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCards => EmptyKnowledgeCards;
 
-    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCardItems => EmptyKnowledgeCards;
 
     public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups => EmptyReplyGroups;
 
     public bool HasRecommendations => false;
 
-    public bool HasKnowledgeCardMatches => false;
 
     public bool HasRecommendationContext => false;
 
@@ -1109,17 +1105,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         return BuildRetiredRecommendationResult();
     }
 
-    public async Task<ReplyActionResult> SendKnowledgeCardAsync(KnowledgeCardSuggestion knowledgeCard)
-    {
-        await Task.CompletedTask;
-        return BuildRetiredRecommendationResult();
-    }
 
-    public async Task<ReplyActionResult> InputKnowledgeCardAsync(KnowledgeCardSuggestion knowledgeCard)
-    {
-        await Task.CompletedTask;
-        return BuildRetiredRecommendationResult();
-    }
 
     public void BeginRecognitionCorrection()
     {

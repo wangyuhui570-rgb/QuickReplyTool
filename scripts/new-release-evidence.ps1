@@ -122,7 +122,6 @@ Write-TextFile -Path (Join-Path $outputRootFullPath 'automated-tests\automated-t
     '',
     '- Gate command:',
     '- Desktop tests:',
-    '- ReplayEval tests:',
     '- TRX path:',
     '- Waivers:',
     '- Notes:'

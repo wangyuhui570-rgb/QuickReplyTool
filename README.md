@@ -5,23 +5,20 @@
 ## 项目结构说明
 
 ```text
-QuickReplyTool.slnx
+回复效率工具.sln
 README.md
 docs/
-  version-1.0.md
-  version-1.1.md
-  version-1.2.md
-  version-1.3.md
 src/
-  QuickReply.Desktop/
-    Commands/      命令封装
-    Models/        分类、短语、配置模型
-    Native/        Win32 输入与窗口切换声明
-    Services/      SQLite 数据访问、剪贴板、按键模拟、消息投递服务
-    ViewModels/    界面状态与交互逻辑
-    App.xaml
-    MainWindow.xaml
+  QuickReply.Core/      共享模型与无 UI 业务逻辑
+  QuickReply.Desktop/   WPF 本地桌面端
+tests/
+  QuickReply.Desktop.Tests/
+scripts/                安装包 / 便携包等本地发布脚本
+packaging/
+截图工具源码/
 ```
+
+当前版本是**纯本地工具**：不包含（已移除的云同步）、知识审核服务、OTA 自动更新或远端问题上报。
 
 ## 数据存储
 
@@ -130,34 +127,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
 以后如果只是不记得文件放哪，优先直接打开这个总目录：
 
 `C:\Users\24173\Desktop\回复效率工具\回复效率工具\artifacts\installer`
-
-## 如何生成补丁包
-
-补丁包发布：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-patch-package.ps1 `
-  -PatchVersion "2.1.9-hotfix1" `
-  -ReleaseChannel "stable" `
-  -IssueIds "issue-test-001" `
-  -ReleaseNotes "修复问题记录补丁下载和自动安装链路"
-```
-
-生成结果默认输出到：
-
-`artifacts\patches\QuickReplyTool-Patch-<补丁版本号>\QuickReplyTool-Patch-v<补丁版本号>.zip`
-
-补丁包会包含完整 `app` 发布目录，客户端拿到 `zip` 地址后会自动下载、退出、覆盖、重启。
-
-完整流程说明见：
-
-- [patch-release-workflow.md](C:/Users/24173/Desktop/回复效率工具/回复效率工具/docs/patch-release-workflow.md)
-
-升级方式：
-
-- 后续版本继续执行同一条安装包脚本
-- 安装包会覆盖安装到同一个目录
-- 用户数据继续保留在 `%AppData%\QuickReplyTool`
 
 ## 更新与发布文档
 

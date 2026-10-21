@@ -72,14 +72,13 @@ $rollbackPlan = [ordered]@{
         description = 'This smoke scaffold only packages the rollback plan and metadata snapshot. Replace it with a real signed restore payload before production use.'
         requiredRuntimeFiles = @(
             'QuickReplyTool.exe',
-            'LocalCloudService\QuickReply.CloudService.exe'
         )
     }
     rollbackSteps = @(
         [ordered]@{ id = 'stop-processes'; description = 'Stop QuickReplyTool and helper/update processes before replacing files.' },
         [ordered]@{ id = 'backup-current-install'; description = 'Snapshot the current installation directory and updater plan/log files.' },
         [ordered]@{ id = 'restore-known-good-package'; description = 'Restore the previously approved package or reinstall the known-good version.' },
-        [ordered]@{ id = 'verify-binaries'; description = 'Confirm QuickReplyTool.exe and LocalCloudService are present after restore.' },
+        [ordered]@{ id = 'verify-binaries'; description = 'Confirm QuickReplyTool.exe is present after restore.' },
         [ordered]@{ id = 'verify-version-and-startup'; description = 'Launch the app, confirm the expected version, and run a minimal send smoke.' },
         [ordered]@{ id = 'retain-backup-until-signoff'; description = 'Keep rollback backup assets until manual signoff completes.' }
     )

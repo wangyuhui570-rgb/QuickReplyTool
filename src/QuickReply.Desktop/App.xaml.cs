@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using QuickReply.Desktop.Models;
 using System.Diagnostics;
 using QuickReply.Desktop.Services;
@@ -16,12 +16,6 @@ public partial class App : System.Windows.Application
     private SingleInstanceService? _singleInstanceService;
     private ExceptionLogService? _exceptionLogService;
     private ScreenshotToolService? _screenshotToolService;
-    private UpdateCheckService? _updateCheckService;
-    private IssueReportService? _issueReportService;
-    private SelfUpdateService? _selfUpdateService;
-    private AppUpdateWorkflowCoordinator? _appUpdateWorkflowCoordinator;
-    private TrayUpdateCheckCoordinator? _trayUpdateCheckCoordinator;
-    private DesktopRuntimeCoordinator? _runtimeCoordinator;
     private bool _restartRequested;
 
     public static App? Instance => Current as App;
@@ -99,22 +93,6 @@ public partial class App : System.Windows.Application
         var personalConfigService = new PersonalConfigService();
         var messageComposeService = new MessageComposeService(externalWorkbenchService, clipboardService, keyboardInputSimulator);
         _conversationLoggingService = new Lazy<ConversationLoggingService>(() => new ConversationLoggingService());
-        _updateCheckService = new UpdateCheckService(dataStore);
-        _issueReportService = new IssueReportService(dataStore, null);
-        _selfUpdateService = new SelfUpdateService(dataStore);
-        _appUpdateWorkflowCoordinator = new AppUpdateWorkflowCoordinator(
-            _updateCheckService,
-            _selfUpdateService,
-            _issueReportService,
-            new AppUpdateWorkflowUiAdapter(this));
-        _trayUpdateCheckCoordinator = new TrayUpdateCheckCoordinator(
-            cancellationToken =>
-            {
-                var settingsSnapshot = _mainViewModel?.CreateSettingsSnapshot() ?? startupSettings;
-                return CheckForUpdatesNowAsync(settingsSnapshot, force: true, showUpdatePrompt: true, cancellationToken);
-            },
-            (title, message, icon, timeoutMs) => Dispatcher.Invoke(() =>
-                _trayIconService?.ShowNotification(title, message, icon, timeoutMs)));
 
         _mainViewModel = new MainViewModel(
             dataStore,
@@ -126,34 +104,6 @@ public partial class App : System.Windows.Application
             windowDockService,
             GetConversationLoggingService,
             _exceptionLogService);
-        _runtimeCoordinator = new DesktopRuntimeCoordinator(
-            () => _mainViewModel?.CreateSettingsSnapshot() ?? startupSettings,
-            (settingsSnapshot, force, cancellationToken) => Task.FromResult(
-                new KnowledgeSyncRunResult(true, true, "云同步已停用。", 0, 0, 0, 0, 0, 0, 0)),
-            (settingsSnapshot, force, cancellationToken) =>
-            {
-                if (_updateCheckService is null)
-                {
-                    return Task.FromResult(new UpdateCheckResult(false, false, "更新检查服务尚未初始化。", false, false, null));
-                }
-
-                return _updateCheckService.CheckForUpdatesAsync(settingsSnapshot, force, cancellationToken);
-            },
-            (settingsSnapshot, result) =>
-            {
-                if (_appUpdateWorkflowCoordinator is null || !result.Success || result.Manifest is null)
-                {
-                    return Task.CompletedTask;
-                }
-
-                return _appUpdateWorkflowCoordinator.HandleUpdateCheckResultAsync(settingsSnapshot, result);
-            },
-            RefreshIssueStatusesAndNotifyAsync,
-            async (title, message, isWarning) =>
-            {
-                await Dispatcher.InvokeAsync(() =>
-                    ShowBackgroundNotification(title, message, isWarning));
-            });
         var searchOverlayViewModel = new SearchOverlayViewModel(_mainViewModel);
         var searchOverlayWindow = new SearchOverlayWindow(externalWorkbenchService, searchOverlayViewModel);
         StartupTrace.Mark("app.windows_constructed");
@@ -167,12 +117,8 @@ public partial class App : System.Windows.Application
 
         await _mainViewModel.InitializeAsync(mainWindow);
         StartupTrace.Mark("app.main_view_model_initialized");
-        _trayIconService.Start(mainWindow, _trayUpdateCheckCoordinator);
+        _trayIconService.Start(mainWindow);
         StartupTrace.Mark("app.tray_started");
-        if (_appUpdateWorkflowCoordinator is not null)
-        {
-            await _appUpdateWorkflowCoordinator.HandlePendingPackageUpdateStatusAsync().ConfigureAwait(false);
-        }
         _screenshotToolService = new ScreenshotToolService();
         RefreshScreenshotToolConfiguration(showNotificationOnFailure: true);
         StartupTrace.Mark("app.screenshot_tool_checked");
@@ -198,7 +144,6 @@ public partial class App : System.Windows.Application
         }
 
         StartupTrace.Mark("app.startup_completed");
-        _ = RunBackgroundStartupTasksAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -255,137 +200,6 @@ public partial class App : System.Windows.Application
             title,
             message,
             isWarning ? System.Windows.Forms.ToolTipIcon.Warning : System.Windows.Forms.ToolTipIcon.Info);
-    }
-
-    public Task<PackageUpdateLaunchResult> ApplyIssuePatchUpdateAsync(IssueReportIndexEntry entry)
-    {
-        if (_appUpdateWorkflowCoordinator is null)
-        {
-            return Task.FromResult(new PackageUpdateLaunchResult(false, false, "自动更新流程尚未初始化。", string.Empty, string.Empty));
-        }
-
-        return _appUpdateWorkflowCoordinator.ApplyIssuePatchUpdateAsync(entry);
-    }
-
-    public async Task<KnowledgeSyncRunResult> RunCloudSyncNowAsync(
-        AppSettings settingsSnapshot,
-        bool force = false,
-        CancellationToken cancellationToken = default)
-    {
-        if (_runtimeCoordinator is null)
-        {
-            return new KnowledgeSyncRunResult(false, false, "云同步服务尚未初始化。", 0, 0, 0, 0, 0, 0, 0);
-        }
-
-        return await _runtimeCoordinator.RunCloudSyncNowAsync(settingsSnapshot, force, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<UpdateCheckResult> CheckForUpdatesNowAsync(
-        AppSettings settingsSnapshot,
-        bool force = false,
-        bool showUpdatePrompt = true,
-        CancellationToken cancellationToken = default)
-    {
-        if (_runtimeCoordinator is null)
-        {
-            return new UpdateCheckResult(false, false, "更新检查服务尚未初始化。", false, false, null);
-        }
-
-        return await _runtimeCoordinator
-            .CheckForUpdatesNowAsync(settingsSnapshot, force, showUpdatePrompt, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task RunBackgroundStartupTasksAsync()
-    {
-        if (_runtimeCoordinator is null)
-        {
-            return;
-        }
-
-        await _runtimeCoordinator.RunBackgroundStartupTasksAsync().ConfigureAwait(false);
-    }
-
-    private async Task RefreshIssueStatusesAndNotifyAsync()
-    {
-        if (_issueReportService is null)
-        {
-            return;
-        }
-
-        var refreshResult = await _issueReportService.RefreshIssueStatusesAsync().ConfigureAwait(false);
-        if (!refreshResult.Success)
-        {
-            await Dispatcher.InvokeAsync(() =>
-                ShowBackgroundNotification("问题记录", refreshResult.Message, isWarning: true));
-            return;
-        }
-
-        if (refreshResult.UpdatedCount <= 0)
-        {
-            return;
-        }
-
-        var entries = await _issueReportService.LoadRecentIssueEntriesAsync().ConfigureAwait(false);
-        var patchReadyEntries = entries
-            .Where(entry =>
-                !string.IsNullOrWhiteSpace(entry.PatchVersion) &&
-                !string.Equals(entry.PatchVersion, entry.InstalledPatchVersion, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(entry => entry.CreatedAt)
-            .Take(3)
-            .ToArray();
-
-        if (patchReadyEntries.Length > 0)
-        {
-            var latestPatchEntry = patchReadyEntries[0];
-            var latestPatchVersion = latestPatchEntry.PatchVersion;
-            var canSelfApplyPatch = _selfUpdateService?.CanSelfApplyPackage(latestPatchEntry.PatchDownloadUrl) == true;
-
-            await Dispatcher.InvokeAsync(() =>
-            {
-                var message = patchReadyEntries.Length == 1
-                    ? $"你提交的问题已有修复版本 {latestPatchVersion}。"
-                    : $"已有 {patchReadyEntries.Length} 条问题关联到修复版本，最新为 {latestPatchVersion}。";
-
-                ShowBackgroundNotification("问题修复", message);
-
-                if (string.IsNullOrWhiteSpace(latestPatchEntry.PatchDownloadUrl))
-                {
-                    return;
-                }
-
-                var prompt = $"检测到问题修复补丁：{latestPatchVersion}{Environment.NewLine}{Environment.NewLine}";
-                if (!string.IsNullOrWhiteSpace(latestPatchEntry.PatchReleaseNotes))
-                {
-                    prompt += $"{latestPatchEntry.PatchReleaseNotes.Trim()}{Environment.NewLine}{Environment.NewLine}";
-                }
-
-                prompt += canSelfApplyPatch
-                    ? "是否现在下载并自动安装补丁？"
-                    : "是否现在打开补丁下载地址？";
-                var result = System.Windows.MessageBox.Show(
-                    prompt,
-                    "问题修复",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    _ = ApplyIssuePatchUpdateAsync(latestPatchEntry);
-                }
-            });
-            return;
-        }
-
-        var analysisReadyCount = entries.Count(entry =>
-            !string.IsNullOrWhiteSpace(entry.AnalysisStatus) &&
-            !string.Equals(entry.AnalysisStatus, "reported", StringComparison.OrdinalIgnoreCase));
-
-        if (analysisReadyCount > 0)
-        {
-            await Dispatcher.InvokeAsync(() =>
-                ShowBackgroundNotification("问题记录", $"已刷新 {analysisReadyCount} 条问题状态，可在托盘“问题记录历史”里查看。"));
-        }
     }
 
     public void RefreshScreenshotToolConfiguration(bool showNotificationOnFailure)

@@ -16,10 +16,6 @@ public static class SettingsInputValidator
         AddIfNotNull(errors, ValidateOptionalDirectoryPath(settings.ScreenshotToolSaveDirectory, "截图默认保存目录"));
         AddIfNotNull(errors, ValidateOptionalDirectoryPath(settings.IssueReportDirectory, "问题反馈目录"));
 
-        if (!TryBuildConfiguredServerBaseUri(settings.ServerBaseUrl, out _))
-        {
-            errors.Add("服务器地址需要是完整地址；公网环境仅允许 https://，本机联调可使用 http://localhost 或 http://127.0.0.1。");
-        }
 
         return errors;
     }
@@ -29,33 +25,17 @@ public static class SettingsInputValidator
         return ValidateOptionalDirectoryPath(folderPath, "资料文件夹", requireExistingDirectory: true);
     }
 
-    public static bool CanRunCloudSyncActions(string? serverBaseUrl)
-    {
-        return TryBuildConfiguredServerBaseUri(serverBaseUrl, out _);
-    }
+    public static bool CanRunCloudSyncActions(string? serverBaseUrl) => false;
 
-    public static bool CanRunUpdateActions(string? serverBaseUrl)
-    {
-        return UpdateCheckService.TryBuildBaseUri(serverBaseUrl ?? string.Empty, out _);
-    }
+
+    public static bool CanRunUpdateActions(string? serverBaseUrl) => false;
+
 
     public static string GetCloudActionAvailabilitySummary(string? serverBaseUrl)
     {
-        var configuredServerBaseUrl = ResolveConfiguredServerBaseUrl(serverBaseUrl);
-        var effectiveServerBaseUrl = ResolveOperationalServerBaseUrl(serverBaseUrl);
-
-        if (!string.Equals(configuredServerBaseUrl, effectiveServerBaseUrl, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"当前自定义服务地址不可用，已自动回退到内置服务地址：{effectiveServerBaseUrl}。云同步、问题反馈和知识审核都会优先走这个地址。";
-        }
-
-        return string.Equals(
-            effectiveServerBaseUrl,
-            QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl,
-            StringComparison.OrdinalIgnoreCase)
-            ? $"当前使用内置服务地址：{effectiveServerBaseUrl}。云同步、问题反馈和知识审核都会优先走这个地址。"
-            : $"当前使用自定义服务地址：{effectiveServerBaseUrl}。云同步、问题反馈和知识审核都会优先走这个地址。";
+        return "当前版本为本地工具：云同步、在线更新和知识审核已移除。";
     }
+
 
     public static string ResolveConfiguredServerBaseUrl(string? serverBaseUrl)
     {

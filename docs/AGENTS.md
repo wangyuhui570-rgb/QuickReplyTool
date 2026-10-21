@@ -1,3 +1,4 @@
+<!-- Local-only docs. Cloud sync / OTA server docs removed. -->
 # Documentation Guide
 
 This directory contains Chinese-first product, ops, and release documentation.

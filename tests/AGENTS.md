@@ -1,28 +1,15 @@
 # Tests Guide
 
-This directory contains xUnit test projects for the desktop app, cloud service, and replay/evaluation tool.
-
 ## Scope
 
-- `QuickReply.Desktop.Tests`
-  - covers desktop services, settings, recommendation flows, packaging helpers, and local integration seams
-- `QuickReply.CloudService.Tests`
-  - covers cloud-service API contracts, import jobs, runtime diagnostics, and review/publish behavior
-- `QuickReply.ReplayEval.Tests`
-  - covers replay sample loading, reporting, and log-health analysis
+- `QuickReply.Desktop.Tests` covers local desktop services and models.
+- Former `QuickReply.CloudService.Tests` and `QuickReply.ReplayEval.Tests` projects were removed with the local-only refactor.
 
-## Change rules
+## Commands
 
-- Keep tests aligned with the actual public/internal behavior of the runtime project they exercise.
-- When runtime behavior changes intentionally, update the matching tests in the same turn instead of leaving stale expectations behind.
-- Prefer focused test doubles and fixture reuse over duplicating large setup logic across suites.
-- Do not silently weaken assertions for high-risk paths such as send flow, sync/update, runtime diagnostics, or knowledge review.
+- `dotnet test tests\QuickReply.Desktop.Tests\QuickReply.Desktop.Tests.csproj`
 
-## Validation
+## Notes
 
-- Prefer the smallest relevant suite first:
-  - `dotnet test tests\QuickReply.Desktop.Tests\QuickReply.Desktop.Tests.csproj`
-  - `dotnet test tests\QuickReply.CloudService.Tests\QuickReply.CloudService.Tests.csproj`
-  - `dotnet test tests\QuickReply.ReplayEval.Tests\QuickReply.ReplayEval.Tests.csproj`
-- If a change touches shared contracts between desktop and cloud projects, run both affected suites.
-- Keep test names and failure messages descriptive enough for operators to understand which workflow regressed.
+- Prefer focused tests for the code you touch.
+- Do not reintroduce cloud sync / OTA / knowledge-review test suites unless the product adds those features again.

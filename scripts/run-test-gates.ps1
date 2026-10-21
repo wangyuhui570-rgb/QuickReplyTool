@@ -406,8 +406,6 @@ Push-Location $repoRoot
 try {
     Invoke-LoggedCommand -Name 'build-solution' -Command @('dotnet', 'build', $solutionFile.Name, '-c', $Configuration)
     Invoke-TestWithCoverage -Name 'test-desktop' -ProjectPath 'tests\QuickReply.Desktop.Tests\QuickReply.Desktop.Tests.csproj' -TrxFileName 'QuickReply.Desktop.Tests.trx' -SuiteName 'QuickReply.Desktop.Tests'
-    Invoke-TestWithCoverage -Name 'test-replayeval' -ProjectPath 'tests\QuickReply.ReplayEval.Tests\QuickReply.ReplayEval.Tests.csproj' -TrxFileName 'QuickReply.ReplayEval.Tests.trx' -SuiteName 'QuickReply.ReplayEval.Tests'
-    Invoke-TestWithCoverage -Name 'test-cloudservice' -ProjectPath 'tests\QuickReply.CloudService.Tests\QuickReply.CloudService.Tests.csproj' -TrxFileName 'QuickReply.CloudService.Tests.trx' -SuiteName 'QuickReply.CloudService.Tests'
 
     foreach ($coverageResult in $coverageResults) {
         if ($coverageResult.lineCoveragePercent -lt $MinimumSuiteLineCoveragePercent) {
@@ -449,16 +447,7 @@ try {
     $coverageSummary | ConvertTo-Json -Depth 6 | Set-Content -Path $coverageSummaryPath -Encoding UTF8
 
     if (-not [string]::IsNullOrWhiteSpace($LogHealthInputPath)) {
-        $logHealthOutputRoot = Join-Path $outputRoot 'log-health'
-        Invoke-LoggedCommand -Name 'check-log-health' -Command @(
-            'powershell.exe',
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', (Join-Path $repoRoot 'scripts\check-log-health.ps1'),
-            '-InputPath', $LogHealthInputPath,
-            '-Configuration', $Configuration,
-            '-OutputRoot', $logHealthOutputRoot,
-            '-NoBuild')
+        Add-SkippedStep -Name 'check-log-health' -Reason 'QuickReply.ReplayEval was removed in the local-only build.'
     }
 
     if ($IncludePackagingChecks) {
@@ -478,7 +467,6 @@ try {
             '-ReleaseChannel', 'ci-smoke',
             '-OutputRoot', $portableRoot)
         Assert-PathExists -Path (Join-Path $portableRoot 'app\QuickReplyTool.exe') -Description 'Portable app executable'
-        Assert-PathExists -Path (Join-Path $portableRoot 'app\LocalCloudService\QuickReply.CloudService.exe') -Description 'Portable local cloud-service executable'
         Assert-PathExists -Path (Join-Path $portableRoot 'START_HERE.bat') -Description 'Portable launcher'
         Assert-PathExists -Path (Join-Path $portableRoot 'Launch-QuickReplyTool.bat') -Description 'Portable helper launcher'
         Assert-PathExists -Path "${portableRoot}.zip" -Description 'Portable zip artifact'
@@ -497,102 +485,6 @@ try {
         }
         Invoke-SigningSmoke -NamePrefix 'portable' -ArtifactPath "${portableRoot}.zip" -MetadataPath (Join-Path $portableRoot 'portable-package-info.json') | Out-Null
 
-        $patchRoot = Join-Path $outputRoot 'patch-smoke'
-        Invoke-LoggedCommand -Name 'package-patch' -Command @(
-            'powershell.exe',
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', (Join-Path $repoRoot 'scripts\build-patch-package.ps1'),
-            '-Configuration', $Configuration,
-            '-SelfContained:$false',
-            '-PatchVersion', '0.0.0-smoke',
-            '-ReleaseChannel', 'ci-smoke',
-            '-ReleaseNotes', 'smoke test package',
-            '-OutputRoot', $patchRoot)
-        Assert-PathExists -Path (Join-Path $patchRoot 'package\app\QuickReplyTool.exe') -Description 'Patch app executable'
-        Assert-PathExists -Path (Join-Path $patchRoot 'package\app\LocalCloudService\QuickReply.CloudService.exe') -Description 'Patch local cloud-service executable'
-        Assert-PathExists -Path (Join-Path $patchRoot 'QuickReplyTool-Patch-v0.0.0-smoke.zip') -Description 'Patch zip artifact'
-        $patchMetadata = Read-JsonFile -Path (Join-Path $patchRoot 'package\patch-info.json')
-        if ($patchMetadata.patchVersion -ne '0.0.0-smoke') {
-            throw "Patch metadata patchVersion mismatch: $($patchMetadata.patchVersion)"
-        }
-        if ($patchMetadata.releaseChannel -ne 'ci-smoke') {
-            throw "Patch metadata releaseChannel mismatch: $($patchMetadata.releaseChannel)"
-        }
-        $patchPackageMetadata = Read-JsonFile -Path (Join-Path $patchRoot 'patch-package-info.json')
-        if ($patchPackageMetadata.packageKind -ne 'issue_patch_zip') {
-            throw "Patch package metadata packageKind mismatch: $($patchPackageMetadata.packageKind)"
-        }
-        if ($patchPackageMetadata.releaseChannel -ne 'ci-smoke') {
-            throw "Patch package metadata releaseChannel mismatch: $($patchPackageMetadata.releaseChannel)"
-        }
-        if ([string]::IsNullOrWhiteSpace($patchPackageMetadata.sha256)) {
-            throw 'Patch package metadata sha256 must not be empty.'
-        }
-        if ([int64]$patchPackageMetadata.sizeBytes -le 0) {
-            throw "Patch package metadata sizeBytes mismatch: $($patchPackageMetadata.sizeBytes)"
-        }
-        Invoke-SigningSmoke -NamePrefix 'patch' -ArtifactPath (Join-Path $patchRoot 'QuickReplyTool-Patch-v0.0.0-smoke.zip') -MetadataPath (Join-Path $patchRoot 'patch-package-info.json') | Out-Null
-        Invoke-RollbackSmoke -NamePrefix 'patch' -ArtifactPath (Join-Path $patchRoot 'QuickReplyTool-Patch-v0.0.0-smoke.zip') -MetadataPath (Join-Path $patchRoot 'patch-package-info.json') -BaselineVersion '0.0.0-smoke-baseline' -RollbackVersion '0.0.0-smoke-rollback' | Out-Null
-
-        $otaRoot = Join-Path $outputRoot 'app-update-smoke'
-        Invoke-LoggedCommand -Name 'package-app-update' -Command @(
-            'powershell.exe',
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', (Join-Path $repoRoot 'scripts\build-app-update-package.ps1'),
-            '-Configuration', $Configuration,
-            '-SelfContained:$false',
-            '-AppVersion', '0.0.0-smoke',
-            '-ReleaseChannel', 'ci-smoke',
-            '-ReleaseNotes', 'smoke test ota package',
-            '-OutputRoot', $otaRoot)
-        Assert-PathExists -Path (Join-Path $otaRoot 'package\app\QuickReplyTool.exe') -Description 'App update executable'
-        Assert-PathExists -Path (Join-Path $otaRoot 'package\app\LocalCloudService\QuickReply.CloudService.exe') -Description 'App update local cloud-service executable'
-        Assert-PathExists -Path (Join-Path $otaRoot 'package\app-update-info.json') -Description 'App update metadata'
-        Assert-PathExists -Path (Join-Path $otaRoot 'release-manifest.snippet.json') -Description 'App update release manifest snippet'
-        Assert-PathExists -Path (Join-Path $otaRoot 'QuickReplyTool-AppUpdate-v0.0.0-smoke.zip') -Description 'App update zip artifact'
-        $otaMetadata = Read-JsonFile -Path (Join-Path $otaRoot 'package\app-update-info.json')
-        if ($otaMetadata.packageKind -ne 'zip_ota') {
-            throw "App update metadata packageKind mismatch: $($otaMetadata.packageKind)"
-        }
-        $otaManifest = Read-JsonFile -Path (Join-Path $otaRoot 'release-manifest.snippet.json')
-        if ($otaManifest.latestAppPackageKind -ne 'zip_ota') {
-            throw "App update manifest latestAppPackageKind mismatch: $($otaManifest.latestAppPackageKind)"
-        }
-        if ($otaManifest.latestAppReleaseChannel -ne 'ci-smoke') {
-            throw "App update manifest latestAppReleaseChannel mismatch: $($otaManifest.latestAppReleaseChannel)"
-        }
-        if ([string]::IsNullOrWhiteSpace($otaManifest.latestAppSha256)) {
-            throw 'App update manifest latestAppSha256 must not be empty.'
-        }
-        if ([int64]$otaManifest.latestAppSizeBytes -le 0) {
-            throw "App update manifest latestAppSizeBytes mismatch: $($otaManifest.latestAppSizeBytes)"
-        }
-        Invoke-SigningSmoke -NamePrefix 'app-update' -ArtifactPath (Join-Path $otaRoot 'QuickReplyTool-AppUpdate-v0.0.0-smoke.zip') -MetadataPath (Join-Path $otaRoot 'package\app-update-info.json') | Out-Null
-        Invoke-RollbackSmoke -NamePrefix 'app-update' -ArtifactPath (Join-Path $otaRoot 'QuickReplyTool-AppUpdate-v0.0.0-smoke.zip') -MetadataPath (Join-Path $otaRoot 'package\app-update-info.json') -BaselineVersion '0.0.0-smoke-baseline' -RollbackVersion '0.0.0-smoke-rollback' | Out-Null
-
-        $otaPublishRoot = Join-Path $outputRoot 'ota-publish-smoke'
-        Invoke-LoggedCommand -Name 'publish-app-update-release' -Command @(
-            'powershell.exe',
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', (Join-Path $repoRoot 'scripts\publish-app-update-release.ps1'),
-            '-Configuration', $Configuration,
-            '-Runtime', 'win-x64',
-            '-SelfContained:$false',
-            '-PackageOutputRoot', $otaRoot,
-            '-PublishRoot', $otaPublishRoot,
-            '-AppVersion', '0.0.0-smoke',
-            '-ReleaseChannel', 'ci-smoke',
-            '-ReleaseNotes', 'smoke test ota package',
-            '-PublicDownloadBaseUrl', 'https://ci.example.test/downloads/ota')
-        Assert-PathExists -Path (Join-Path $otaPublishRoot 'downloads\ota\QuickReplyTool-AppUpdate-v0.0.0-smoke.zip') -Description 'Published OTA zip'
-        $publishedManifest = Read-JsonFile -Path (Join-Path $otaPublishRoot 'update-manifest.json')
-        if ($publishedManifest.latestAppDownloadUrl -ne 'https://ci.example.test/downloads/ota/QuickReplyTool-AppUpdate-v0.0.0-smoke.zip') {
-            throw "Published OTA manifest downloadUrl mismatch: $($publishedManifest.latestAppDownloadUrl)"
-        }
-
         if ($IncludeInstallerCheck) {
             if (Test-IsccAvailable) {
                 $installerRoot = Join-Path $outputRoot 'installer-smoke'
@@ -606,7 +498,6 @@ try {
                     '-ReleaseChannel', 'ci-smoke',
                     '-OutputRoot', $installerRoot)
                 Assert-PathExists -Path (Join-Path $installerRoot 'app\QuickReplyTool.exe') -Description 'Installer publish executable'
-                Assert-PathExists -Path (Join-Path $installerRoot 'app\LocalCloudService\QuickReply.CloudService.exe') -Description 'Installer local cloud-service executable'
                 $installerExe = Get-ChildItem -Path (Join-Path $installerRoot 'installer') -Filter *.exe -File | Select-Object -First 1
                 if (-not $installerExe) {
                     throw "Installer executable was not generated under $installerRoot\installer"

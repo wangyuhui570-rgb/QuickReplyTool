@@ -1,3 +1,5 @@
+<!-- CloudService / ReplayEval / OTA suites removed; local Desktop tests only. -->
+
 # QuickReplyTool 测试策略
 
 ## 目标
@@ -47,10 +49,10 @@
 优先覆盖真实数据结构与序列化边界：
 
 - `SqliteAppDataStore` 初始化、设置持久化、文件项回写
-- `UpdateCheckService` 清单解析与时间戳落盘
-- `KnowledgeSyncService` 知识增量与相对路径生成
+- `(removed UpdateCheckService)` 清单解析与时间戳落盘
+- `(removed KnowledgeSyncService)` 知识增量与相对路径生成
 - `IssueReportService` 问题包生成、脱敏、状态刷新
-- `SelfUpdateService` 下载、SHA256/zip 结构校验、计划文件生成
+- `(removed SelfUpdateService)` 下载、SHA256/zip 结构校验、计划文件生成
 
 ### L3 受控副作用测试
 
@@ -178,7 +180,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-test-gates.ps1
 脚本默认执行：
 
 1. 以 `Release` 配置执行解决方案构建
-2. 运行 `QuickReply.Desktop.Tests`、`QuickReply.ReplayEval.Tests`、`QuickReply.CloudService.Tests`
+2. 运行 `QuickReply.Desktop.Tests`、`(removed ReplayEval.Tests)`、`(removed CloudService.Tests)`
 3. 采集每个测试套件的 Cobertura 覆盖率，并校验基础 line coverage 门槛
 4. 如果传入 `-LogHealthInputPath`，再额外执行日志健康检查
 5. 如果传入 `-IncludePackagingChecks`，再额外校验 portable / OTA / patch 的产物结构和侧车元数据
@@ -242,7 +244,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\new-release-eviden
 
 ## 后续扩展方向
 
-- 为 `KnowledgeSyncService` 增补非 2xx 与半成功分支
+- 为 `(removed KnowledgeSyncService)` 增补非 2xx 与半成功分支
 - 为 `IssueReportService` 增补重试上传与安装标记测试
 - 为 `MessageComposeService` 增补更多焦点恢复与剪贴板恢复场景
 - 在自动化稳定后，再考虑 WinAppDriver/FlaUI 一类的桌面 UI 自动化

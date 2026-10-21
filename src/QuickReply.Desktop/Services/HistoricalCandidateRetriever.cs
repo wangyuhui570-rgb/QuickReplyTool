@@ -6,16 +6,13 @@ public sealed class HistoricalCandidateRetriever : ICandidateRetriever
 {
     private readonly IRecommendationQueryService _recommendationQueryService;
     private readonly IRecommendationPhraseCatalog _phraseCatalog;
-    private readonly IPublishedKnowledgeCardCatalog _knowledgeCardCatalog;
 
     public HistoricalCandidateRetriever(
         IRecommendationQueryService recommendationQueryService,
-        IRecommendationPhraseCatalog phraseCatalog,
-        IPublishedKnowledgeCardCatalog knowledgeCardCatalog)
+        IRecommendationPhraseCatalog phraseCatalog)
     {
         _recommendationQueryService = recommendationQueryService;
         _phraseCatalog = phraseCatalog;
-        _knowledgeCardCatalog = knowledgeCardCatalog;
     }
 
     public async Task<CandidateRetrievalResult> RetrieveCandidatesAsync(
@@ -94,163 +91,11 @@ public sealed class HistoricalCandidateRetriever : ICandidateRetriever
             suggestions = BuildCatalogFallbackSuggestions(snapshot, displayCount, rankingReferenceTime);
         }
 
-        var knowledgeCards = BuildKnowledgeCardSuggestions(snapshot, displayCount, rankingReferenceTime);
-
         return new CandidateRetrievalResult
         {
             Suggestions = suggestions,
-            KnowledgeCards = knowledgeCards,
             SimilarReplyGroups = similarReplyGroups
         };
-    }
-
-    private IReadOnlyList<KnowledgeCardSuggestion> BuildKnowledgeCardSuggestions(
-        ConversationRecommendationSnapshot snapshot,
-        int displayCount,
-        DateTimeOffset rankingReferenceTime)
-    {
-        var keywords = snapshot.Keywords
-            .Where(keyword => !string.IsNullOrWhiteSpace(keyword))
-            .Take(12)
-            .ToArray();
-        if (keywords.Length == 0)
-        {
-            return [];
-        }
-
-        var platformHint = NormalizeCatalogText(snapshot.PlatformHint);
-        var productKeySource = string.Join(
-            " ",
-            new[]
-            {
-                NormalizeCatalogText(snapshot.RecognizedProductId),
-                NormalizeCatalogText(snapshot.RecognizedProductName),
-                NormalizeCatalogText(snapshot.RecognizedContextText),
-                NormalizeCatalogText(snapshot.RecognizedCustomerText)
-            }.Where(value => !string.IsNullOrWhiteSpace(value)));
-
-        return _knowledgeCardCatalog
-            .GetAllPublishedKnowledgeCards()
-            .Select(card => BuildKnowledgeCardEntry(card, platformHint, productKeySource, keywords, rankingReferenceTime))
-            .Where(entry => entry is not null)
-            .Select(entry => entry!)
-            .OrderByDescending(entry => entry.Score)
-            .ThenByDescending(entry => entry.MatchCount)
-            .ThenByDescending(entry => entry.Card.UpdatedAt)
-            .Take(displayCount)
-            .Select((entry, index) => new KnowledgeCardSuggestion
-            {
-                Card = entry.Card,
-                DisplayRank = index + 1,
-                MatchedKeyword = entry.PrimaryKeyword,
-                MatchCount = entry.MatchCount,
-                Confidence = entry.Confidence
-            })
-            .ToArray();
-    }
-
-    private CatalogKnowledgeCardEntry? BuildKnowledgeCardEntry(
-        PublishedKnowledgeCard card,
-        string platformHint,
-        string productKeySource,
-        IReadOnlyList<string> keywords,
-        DateTimeOffset rankingReferenceTime)
-    {
-        if (!IsKnowledgeCardPlatformMatch(card.Platform, platformHint))
-        {
-            return null;
-        }
-
-        var normalizedQuestion = NormalizeCatalogText(card.Question);
-        var normalizedAnswer = NormalizeCatalogText(card.Answer);
-        var normalizedUsageNotes = NormalizeCatalogText(card.UsageNotes);
-        var normalizedTags = string.Join(" ", card.Tags.Select(NormalizeCatalogText));
-        var normalizedSynonyms = string.Join(" ", card.Synonyms.Select(NormalizeCatalogText));
-
-        var score = 0d;
-        var matchCount = 0;
-        var primaryKeyword = string.Empty;
-
-        foreach (var keyword in keywords)
-        {
-            var keywordScore = 0d;
-            if (ContainsCatalogKeyword(normalizedQuestion, keyword))
-            {
-                keywordScore += 1.8d;
-            }
-
-            if (ContainsCatalogKeyword(normalizedSynonyms, keyword))
-            {
-                keywordScore += 1.4d;
-            }
-
-            if (ContainsCatalogKeyword(normalizedTags, keyword))
-            {
-                keywordScore += 1.2d;
-            }
-
-            if (ContainsCatalogKeyword(normalizedAnswer, keyword))
-            {
-                keywordScore += 0.8d;
-            }
-
-            if (ContainsCatalogKeyword(normalizedUsageNotes, keyword))
-            {
-                keywordScore += 0.5d;
-            }
-
-            if (keywordScore <= 0d)
-            {
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(primaryKeyword))
-            {
-                primaryKeyword = keyword;
-            }
-
-            matchCount++;
-            score += keywordScore;
-        }
-
-        if (matchCount == 0)
-        {
-            return null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(card.ProductKey) &&
-            !string.IsNullOrWhiteSpace(productKeySource) &&
-            productKeySource.Contains(card.ProductKey, StringComparison.OrdinalIgnoreCase))
-        {
-            score += 1.8d;
-        }
-
-        var recencyBoost = Math.Max(0d, (14d - Math.Max(0d, (rankingReferenceTime - card.UpdatedAt).TotalDays)) * 0.02d);
-        score += recencyBoost;
-
-        var confidence = Math.Min(0.92d, 0.32d + score * 0.10d);
-        if (confidence < 0.40d)
-        {
-            return null;
-        }
-
-        return new CatalogKnowledgeCardEntry(card, primaryKeyword, matchCount, confidence, score);
-    }
-
-    private static bool IsKnowledgeCardPlatformMatch(string cardPlatform, string requestPlatform)
-    {
-        var normalizedCardPlatform = NormalizeCatalogText(cardPlatform);
-        if (string.IsNullOrWhiteSpace(normalizedCardPlatform))
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(requestPlatform) || string.Equals(requestPlatform, "unknown", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return string.Equals(normalizedCardPlatform, requestPlatform, StringComparison.OrdinalIgnoreCase);
     }
 
     private static double ComputePhraseRecommendationRecentBoost(
@@ -400,10 +245,4 @@ public sealed class HistoricalCandidateRetriever : ICandidateRetriever
         double Confidence,
         double Score);
 
-    private sealed record CatalogKnowledgeCardEntry(
-        PublishedKnowledgeCard Card,
-        string PrimaryKeyword,
-        int MatchCount,
-        double Confidence,
-        double Score);
 }

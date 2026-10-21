@@ -415,33 +415,7 @@ public sealed class ConversationLoggingService :
             _capturesRootPath);
     }
 
-    public async Task<ConversationSyncPayload> ExportSyncPayloadAsync(
-        string clientId,
-        DateTimeOffset? since,
-        bool includeRawConversationData = false)
-    {
-        await InitializeSchemaAsync().ConfigureAwait(false);
 
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync().ConfigureAwait(false);
-
-        var generatedAt = DateTimeOffset.Now;
-        var conversationLogs = await LoadConversationSyncItemsAsync(connection, since, includeRawConversationData).ConfigureAwait(false);
-        var recommendationEvents = await LoadRecommendationEventSyncItemsAsync(connection, since, includeRawConversationData).ConfigureAwait(false);
-        var recognitionCorrections = await LoadRecognitionCorrectionSyncItemsAsync(connection, since, includeRawConversationData).ConfigureAwait(false);
-
-        return new ConversationSyncPayload
-        {
-            ClientId = clientId,
-            AppVersion = AppIdentity.Version,
-            GeneratedAt = generatedAt,
-            Since = since,
-            IsFullSync = since is null,
-            ConversationLogs = conversationLogs,
-            RecommendationEvents = recommendationEvents,
-            RecognitionCorrections = recognitionCorrections
-        };
-    }
 
     public async Task<CapturedConversationContext> CaptureConversationContextAsync(
         IntPtr targetWindowHandle,
@@ -569,230 +543,11 @@ public sealed class ConversationLoggingService :
         };
     }
 
-    private static async Task<IReadOnlyList<ConversationLogSyncItem>> LoadConversationSyncItemsAsync(
-        SqliteConnection connection,
-        DateTimeOffset? since,
-        bool includeRawConversationData)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT id,
-                   occurred_at,
-                   trigger_source,
-                   action_mode,
-                   payload_type,
-                   search_keyword,
-                   result_success,
-                   result_message,
-                   platform_hint,
-                   target_window_title,
-                   target_process_name,
-                   capture_status,
-                   captured_text,
-                   phrase_id,
-                   phrase_title,
-                   phrase_tags,
-                   phrase_category_name,
-                   file_item_id,
-                   file_display_name,
-                   payload_text,
-                   recognition_status,
-                   recognition_confidence,
-                   recognized_customer_text,
-                   recognized_context_text,
-                   recognized_product_id,
-                   recognized_product_name,
-                   recognized_messages_json,
-                   reply_group_id,
-                   reply_group_index,
-                   data_quality_grade,
-                   app_version,
-                   recommendation_rule_version
-            FROM conversation_logs
-            WHERE $since = '' OR occurred_at > $since
-            ORDER BY occurred_at ASC;
-            """;
-        command.Parameters.AddWithValue("$since", since.HasValue ? since.Value.ToString("O", CultureInfo.InvariantCulture) : string.Empty);
 
-        var items = new List<ConversationLogSyncItem>();
-        await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-        while (await reader.ReadAsync().ConfigureAwait(false))
-        {
-            items.Add(new ConversationLogSyncItem
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                OccurredAt = ParseSyncDateTime(reader.GetString(1)),
-                TriggerSource = reader.GetString(2),
-                ActionMode = reader.GetString(3),
-                PayloadType = reader.GetString(4),
-                SearchKeyword = SanitizeRemoteTextIfNeeded(reader.GetString(5), includeRawConversationData, 64),
-                ResultSuccess = reader.GetInt32(6) == 1,
-                ResultMessage = SanitizeRemoteTextIfNeeded(reader.GetString(7), includeRawConversationData, 160),
-                PlatformHint = reader.GetString(8),
-                TargetWindowTitle = includeRawConversationData ? reader.GetString(9) : string.Empty,
-                TargetProcessName = reader.GetString(10),
-                CaptureStatus = reader.GetString(11),
-                CapturedText = SanitizeRemoteTextIfNeeded(reader.GetString(12), includeRawConversationData, 220),
-                PhraseId = reader.GetString(13),
-                PhraseTitle = reader.GetString(14),
-                PhraseTags = reader.GetString(15),
-                PhraseCategoryName = reader.GetString(16),
-                FileItemId = reader.GetString(17),
-                FileDisplayName = reader.GetString(18),
-                PayloadText = includeRawConversationData ? reader.GetString(19) : string.Empty,
-                RecognitionStatus = reader.GetString(20),
-                RecognitionConfidence = reader.GetDouble(21),
-                RecognizedCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(22), includeRawConversationData, 180),
-                RecognizedContextText = SanitizeRemoteTextIfNeeded(reader.GetString(23), includeRawConversationData, 220),
-                RecognizedProductId = SanitizeRemoteTextIfNeeded(reader.GetString(24), includeRawConversationData, 64),
-                RecognizedProductName = SanitizeRemoteTextIfNeeded(reader.GetString(25), includeRawConversationData, 80),
-                RecognizedMessagesJson = includeRawConversationData ? reader.GetString(26) : string.Empty,
-                ReplyGroupId = reader.GetString(27),
-                ReplyGroupIndex = reader.GetInt32(28),
-                DataQualityGrade = reader.GetString(29),
-                AppVersion = reader.GetString(30),
-                RecommendationRuleVersion = reader.GetString(31)
-            });
-        }
 
-        return items;
-    }
 
-    private static async Task<IReadOnlyList<RecommendationEventSyncItem>> LoadRecommendationEventSyncItemsAsync(
-        SqliteConnection connection,
-        DateTimeOffset? since,
-        bool includeRawConversationData)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT id,
-                   occurred_at,
-                   recommendation_session_id,
-                   event_type,
-                   search_mode,
-                   search_keyword,
-                   action_mode,
-                   result_success,
-                   phrase_id,
-                   phrase_title,
-                   phrase_category_name,
-                   display_rank,
-                   matched_keyword,
-                   match_count,
-                   sample_count,
-                   confidence,
-                   recognized_customer_text,
-                   platform_hint,
-                   window_title,
-                   actual_payload_text,
-                   grounding_phrase_count,
-                   grounding_knowledge_count,
-                   grounding_knowledge_ids_json,
-                   knowledge_hit,
-                   app_version,
-                   recommendation_rule_version
-            FROM recommendation_events
-            WHERE $since = '' OR occurred_at > $since
-            ORDER BY occurred_at ASC;
-            """;
-        command.Parameters.AddWithValue("$since", since.HasValue ? since.Value.ToString("O", CultureInfo.InvariantCulture) : string.Empty);
 
-        var items = new List<RecommendationEventSyncItem>();
-        await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-        while (await reader.ReadAsync().ConfigureAwait(false))
-        {
-            items.Add(new RecommendationEventSyncItem
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                OccurredAt = ParseSyncDateTime(reader.GetString(1)),
-                RecommendationSessionId = reader.GetString(2),
-                EventType = reader.GetString(3),
-                SearchMode = reader.GetString(4),
-                SearchKeyword = SanitizeRemoteTextIfNeeded(reader.GetString(5), includeRawConversationData, 64),
-                ActionMode = reader.GetString(6),
-                ResultSuccess = reader.GetInt32(7) == 1,
-                PhraseId = reader.GetString(8),
-                PhraseTitle = reader.GetString(9),
-                PhraseCategoryName = reader.GetString(10),
-                DisplayRank = reader.GetInt32(11),
-                MatchedKeyword = SanitizeRemoteTextIfNeeded(reader.GetString(12), includeRawConversationData, 48),
-                MatchCount = reader.GetInt32(13),
-                SampleCount = reader.GetInt32(14),
-                Confidence = reader.GetDouble(15),
-                RecognizedCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(16), includeRawConversationData, 180),
-                PlatformHint = reader.GetString(17),
-                WindowTitle = includeRawConversationData ? reader.GetString(18) : string.Empty,
-                ActualPayloadText = includeRawConversationData ? reader.GetString(19) : string.Empty,
-                GroundingPhraseCount = reader.GetInt32(20),
-                GroundingKnowledgeCount = reader.GetInt32(21),
-                GroundingKnowledgeIdsJson = reader.GetString(22),
-                KnowledgeHit = reader.GetInt32(23) == 1,
-                AppVersion = reader.GetString(24),
-                RecommendationRuleVersion = reader.GetString(25)
-            });
-        }
 
-        return items;
-    }
-
-    private static async Task<IReadOnlyList<RecognitionCorrectionSyncItem>> LoadRecognitionCorrectionSyncItemsAsync(
-        SqliteConnection connection,
-        DateTimeOffset? since,
-        bool includeRawConversationData)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT id,
-                   occurred_at,
-                   recommendation_session_id,
-                   platform_hint,
-                   window_title,
-                   source_customer_text,
-                   corrected_customer_text,
-                   source_context_text,
-                   source_product_id,
-                   source_product_name,
-                   source_messages_json,
-                   corrected_context_text,
-                   corrected_product_id,
-                   corrected_product_name,
-                   corrected_messages_json,
-                   recognition_method,
-                   app_version
-            FROM recognition_corrections
-            WHERE $since = '' OR occurred_at > $since
-            ORDER BY occurred_at ASC;
-            """;
-        command.Parameters.AddWithValue("$since", since.HasValue ? since.Value.ToString("O", CultureInfo.InvariantCulture) : string.Empty);
-
-        var items = new List<RecognitionCorrectionSyncItem>();
-        await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-        while (await reader.ReadAsync().ConfigureAwait(false))
-        {
-            items.Add(new RecognitionCorrectionSyncItem
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                OccurredAt = ParseSyncDateTime(reader.GetString(1)),
-                RecommendationSessionId = reader.GetString(2),
-                PlatformHint = reader.GetString(3),
-                WindowTitle = includeRawConversationData ? reader.GetString(4) : string.Empty,
-                SourceCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(5), includeRawConversationData, 180),
-                CorrectedCustomerText = SanitizeRemoteTextIfNeeded(reader.GetString(6), includeRawConversationData, 180),
-                SourceContextText = SanitizeRemoteTextIfNeeded(reader.GetString(7), includeRawConversationData, 220),
-                SourceProductId = SanitizeRemoteTextIfNeeded(reader.GetString(8), includeRawConversationData, 64),
-                SourceProductName = SanitizeRemoteTextIfNeeded(reader.GetString(9), includeRawConversationData, 80),
-                SourceMessagesJson = includeRawConversationData ? reader.GetString(10) : string.Empty,
-                CorrectedContextText = SanitizeRemoteTextIfNeeded(reader.GetString(11), includeRawConversationData, 220),
-                CorrectedProductId = SanitizeRemoteTextIfNeeded(reader.GetString(12), includeRawConversationData, 64),
-                CorrectedProductName = SanitizeRemoteTextIfNeeded(reader.GetString(13), includeRawConversationData, 80),
-                CorrectedMessagesJson = includeRawConversationData ? reader.GetString(14) : string.Empty,
-                RecognitionMethod = reader.GetString(15),
-                AppVersion = reader.GetString(16)
-            });
-        }
-
-        return items;
-    }
 
     private static DateTimeOffset ParseSyncDateTime(string value)
     {
@@ -995,48 +750,9 @@ public sealed class ConversationLoggingService :
             resultSuccess));
     }
 
-    public Guid LogKnowledgeCardsShown(
-        ConversationRecommendationSnapshot snapshot,
-        IReadOnlyList<KnowledgeCardSuggestion> knowledgeCards,
-        SearchOverlayMode mode,
-        string? searchKeyword)
-    {
-        if (snapshot is null || knowledgeCards is null || knowledgeCards.Count == 0)
-        {
-            return Guid.Empty;
-        }
 
-        var sessionId = Guid.NewGuid();
-        _ = PersistRecommendationEventsSafeAsync(() => PersistKnowledgeCardsShownAsync(
-            sessionId,
-            snapshot,
-            knowledgeCards,
-            mode,
-            searchKeyword));
-        return sessionId;
-    }
 
-    public void LogKnowledgeCardAccepted(
-        KnowledgeCardSuggestion knowledgeCard,
-        Guid sessionId,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        ComposeActionMode actionMode,
-        bool resultSuccess)
-    {
-        if (knowledgeCard is null || sessionId == Guid.Empty)
-        {
-            return;
-        }
 
-        _ = PersistRecommendationEventsSafeAsync(() => PersistKnowledgeCardAcceptedAsync(
-            sessionId,
-            knowledgeCard,
-            mode,
-            searchKeyword,
-            actionMode,
-            resultSuccess));
-    }
 
     public async Task SaveRecognitionCorrectionAsync(
         Guid sessionId,
@@ -3135,55 +2851,9 @@ public sealed class ConversationLoggingService :
             suggestion: suggestion).ConfigureAwait(false);
     }
 
-    private async Task PersistKnowledgeCardsShownAsync(
-        Guid sessionId,
-        ConversationRecommendationSnapshot snapshot,
-        IReadOnlyList<KnowledgeCardSuggestion> knowledgeCards,
-        SearchOverlayMode mode,
-        string? searchKeyword)
-    {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
 
-        foreach (var knowledgeCard in knowledgeCards)
-        {
-            await InsertRecommendationEventAsync(
-                connection,
-                sessionId,
-                "shown",
-                snapshot,
-                mode,
-                searchKeyword,
-                ComposeActionMode.Copy,
-                true,
-                recommendationKind: knowledgeCard.RecommendationKind,
-                knowledgeCard: knowledgeCard).ConfigureAwait(false);
-        }
-    }
 
-    private async Task PersistKnowledgeCardAcceptedAsync(
-        Guid sessionId,
-        KnowledgeCardSuggestion knowledgeCard,
-        SearchOverlayMode mode,
-        string? searchKeyword,
-        ComposeActionMode actionMode,
-        bool resultSuccess)
-    {
-        var snapshot = new ConversationRecommendationSnapshot();
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-        await InsertRecommendationEventAsync(
-            connection,
-            sessionId,
-            "accepted",
-            snapshot,
-            mode,
-            searchKeyword,
-            actionMode,
-            resultSuccess,
-            recommendationKind: knowledgeCard.RecommendationKind,
-            knowledgeCard: knowledgeCard).ConfigureAwait(false);
-    }
+
 
     private async Task InsertRecommendationEventAsync(
         SqliteConnection connection,
@@ -3196,7 +2866,6 @@ public sealed class ConversationLoggingService :
         bool resultSuccess,
         string recommendationKind,
         PhraseRecommendationSuggestion? suggestion = null,
-        KnowledgeCardSuggestion? knowledgeCard = null,
         long latencyMs = 0,
         int groundingPhraseCount = 0,
         int groundingKnowledgeCount = 0,
@@ -3295,27 +2964,16 @@ public sealed class ConversationLoggingService :
         command.Parameters.AddWithValue("$recognizedCustomerText", NormalizeOptionalValue(snapshot.RecognizedCustomerText));
         command.Parameters.AddWithValue("$platformHint", NormalizeOptionalValue(snapshot.PlatformHint));
         command.Parameters.AddWithValue("$windowTitle", NormalizeOptionalValue(snapshot.WindowTitle));
-        command.Parameters.AddWithValue("$knowledgeCardId", NormalizeOptionalValue(knowledgeCard?.Card.Id.ToString()));
-        command.Parameters.AddWithValue("$knowledgeCardQuestion", NormalizeOptionalValue(knowledgeCard?.Card.Question));
-        command.Parameters.AddWithValue("$knowledgeCardCandidateKind", NormalizeOptionalValue(knowledgeCard?.Card.CandidateKind));
-        command.Parameters.AddWithValue("$actualPayloadText", NormalizeOptionalValue(phrase?.Content ?? knowledgeCard?.Card.Answer));
+        command.Parameters.AddWithValue("$knowledgeCardId", NormalizeOptionalValue(null));
+        command.Parameters.AddWithValue("$knowledgeCardQuestion", NormalizeOptionalValue(null));
+        command.Parameters.AddWithValue("$knowledgeCardCandidateKind", NormalizeOptionalValue(null));
+        command.Parameters.AddWithValue("$actualPayloadText", NormalizeOptionalValue(phrase?.Content));
         command.Parameters.AddWithValue("$recommendationKind", NormalizeOptionalValue(recommendationKind));
         command.Parameters.AddWithValue("$latencyMs", Math.Max(0, latencyMs));
         command.Parameters.AddWithValue("$groundingPhraseCount", Math.Max(0, groundingPhraseCount));
         var effectiveGroundingKnowledgeCount = Math.Max(0, groundingKnowledgeCount);
-        if (knowledgeCard is not null)
-        {
-            effectiveGroundingKnowledgeCount = Math.Max(effectiveGroundingKnowledgeCount, 1);
-        }
-
-        var effectiveGroundingKnowledgeIdsJson = groundingKnowledgeIdsJson;
-        if (knowledgeCard is not null)
-        {
-            effectiveGroundingKnowledgeIdsJson = JsonSerializer.Serialize(new[] { knowledgeCard.Card.Id });
-        }
-
         command.Parameters.AddWithValue("$groundingKnowledgeCount", effectiveGroundingKnowledgeCount);
-        command.Parameters.AddWithValue("$groundingKnowledgeIdsJson", NormalizeOptionalValue(effectiveGroundingKnowledgeIdsJson));
+        command.Parameters.AddWithValue("$groundingKnowledgeIdsJson", NormalizeOptionalValue(groundingKnowledgeIdsJson));
         command.Parameters.AddWithValue("$knowledgeHit", effectiveGroundingKnowledgeCount > 0 ? 1 : 0);
         command.Parameters.AddWithValue("$fallbackReason", NormalizeOptionalValue(fallbackReason));
         command.Parameters.AddWithValue("$appVersion", GetAppVersion());

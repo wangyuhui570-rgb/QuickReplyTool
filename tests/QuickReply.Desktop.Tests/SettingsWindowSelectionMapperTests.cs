@@ -76,8 +76,8 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(settings.SidebarWorkMode, selections.SelectedSidebarWorkMode);
         Assert.Equal(settings.ScreenshotToolHotkey, selections.SelectedScreenshotToolHotkey);
         Assert.Equal(settings.ServerBaseUrl, selections.SelectedServerBaseUrl);
-        Assert.Equal(settings.AllowRawConversationCloudSync, selections.SelectedAllowRawConversationCloudSync);
-        Assert.Equal(settings.AllowAutomaticIssueReportUpload, selections.SelectedAllowAutomaticIssueReportUpload);
+        Assert.False(selections.SelectedAllowRawConversationCloudSync);
+        Assert.False(selections.SelectedAllowAutomaticIssueReportUpload);
         Assert.Equal(settings.PhraseImageSendMode, selections.SelectedPhraseImageSendMode);
         Assert.Equal(settings.SearchOverlayWidthPercent, selections.SelectedSearchOverlayWidthPercent);
         Assert.Equal(settings.SidebarWidth, selections.SelectedSidebarWidth);
@@ -155,8 +155,8 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(selections.SelectedRunAsAdministrator, settings.RunAsAdministrator);
         Assert.Equal(selections.SelectedLaunchAtStartup, settings.LaunchAtStartup);
         Assert.Equal(selections.SelectedIssueReportDirectory, settings.IssueReportDirectory);
-        Assert.Equal(selections.SelectedAllowRawConversationCloudSync, settings.AllowRawConversationCloudSync);
-        Assert.Equal(selections.SelectedAllowAutomaticIssueReportUpload, settings.AllowAutomaticIssueReportUpload);
+        Assert.False(settings.AllowRawConversationCloudSync);
+        Assert.False(settings.AllowAutomaticIssueReportUpload);
         Assert.Equal(selections.SelectedSyncApiToken, settings.SyncApiToken);
         Assert.Equal(selections.SelectedDefaultSearchOverlayMode, settings.DefaultSearchOverlayMode);
         Assert.Equal(selections.SelectedSendHotkeyMode, settings.SendHotkeyMode);

@@ -1,3 +1,5 @@
+> Historical roadmap. CloudService / ReplayEval references are obsolete after the local-only refactor.
+
 # QuickReplyTool 90 天优化路线图
 
 ## 总原则

@@ -1,4 +1,4 @@
-﻿Microsoft Visual Studio Solution File, Format Version 12.00
+Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -6,17 +6,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.Desktop", "src\QuickReply.Desktop\QuickReply.Desktop.csproj", "{18C183C7-605C-27E0-B4AE-82A12FCBCDC0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.ReplayEval", "src\QuickReply.ReplayEval\QuickReply.ReplayEval.csproj", "{A0C18B1F-7B71-4B4A-8F1B-9D4D5F2C0E91}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{1B40FE9B-CB36-4A5C-B826-F21165E549FF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.Desktop.Tests", "tests\QuickReply.Desktop.Tests\QuickReply.Desktop.Tests.csproj", "{A02C7AF3-6DA7-432D-AD67-83A585C18C4C}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.ReplayEval.Tests", "tests\QuickReply.ReplayEval.Tests\QuickReply.ReplayEval.Tests.csproj", "{9496FBB1-48C7-4D1C-B301-8E32051469C9}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.CloudService", "src\QuickReply.CloudService\QuickReply.CloudService.csproj", "{57908560-8810-4AF7-8986-11FBC07913C3}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.CloudService.Tests", "tests\QuickReply.CloudService.Tests\QuickReply.CloudService.Tests.csproj", "{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuickReply.Core", "src\QuickReply.Core\QuickReply.Core.csproj", "{695EF5E6-6D56-4CF7-872B-55335E5BF351}"
 EndProject
@@ -30,26 +22,10 @@ Global
 		{18C183C7-605C-27E0-B4AE-82A12FCBCDC0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{18C183C7-605C-27E0-B4AE-82A12FCBCDC0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{18C183C7-605C-27E0-B4AE-82A12FCBCDC0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A0C18B1F-7B71-4B4A-8F1B-9D4D5F2C0E91}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A0C18B1F-7B71-4B4A-8F1B-9D4D5F2C0E91}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A0C18B1F-7B71-4B4A-8F1B-9D4D5F2C0E91}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A0C18B1F-7B71-4B4A-8F1B-9D4D5F2C0E91}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A02C7AF3-6DA7-432D-AD67-83A585C18C4C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A02C7AF3-6DA7-432D-AD67-83A585C18C4C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A02C7AF3-6DA7-432D-AD67-83A585C18C4C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A02C7AF3-6DA7-432D-AD67-83A585C18C4C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9496FBB1-48C7-4D1C-B301-8E32051469C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9496FBB1-48C7-4D1C-B301-8E32051469C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9496FBB1-48C7-4D1C-B301-8E32051469C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9496FBB1-48C7-4D1C-B301-8E32051469C9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{57908560-8810-4AF7-8986-11FBC07913C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{57908560-8810-4AF7-8986-11FBC07913C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{57908560-8810-4AF7-8986-11FBC07913C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{57908560-8810-4AF7-8986-11FBC07913C3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0}.Release|Any CPU.Build.0 = Release|Any CPU
 		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{695EF5E6-6D56-4CF7-872B-55335E5BF351}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -60,11 +36,7 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{18C183C7-605C-27E0-B4AE-82A12FCBCDC0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{A0C18B1F-7B71-4B4A-8F1B-9D4D5F2C0E91} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{A02C7AF3-6DA7-432D-AD67-83A585C18C4C} = {1B40FE9B-CB36-4A5C-B826-F21165E549FF}
-		{9496FBB1-48C7-4D1C-B301-8E32051469C9} = {1B40FE9B-CB36-4A5C-B826-F21165E549FF}
-		{57908560-8810-4AF7-8986-11FBC07913C3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{087C1EE8-C7D5-4722-A7A6-DB8A3DA471E0} = {1B40FE9B-CB36-4A5C-B826-F21165E549FF}
 		{695EF5E6-6D56-4CF7-872B-55335E5BF351} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution

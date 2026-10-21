@@ -88,124 +88,11 @@ public sealed class SqliteAppDataStore
         }
     }
 
-    public async Task<IReadOnlyList<PublishedKnowledgeCard>> LoadPublishedKnowledgeCardsAsync()
-    {
-        if (!File.Exists(_databasePath))
-        {
-            return [];
-        }
 
-        await using var connection = await OpenConnectionAsync();
-        await InitializeSchemaAsync(connection);
-        return await LoadPublishedKnowledgeCardsAsync(connection);
-    }
 
-    public async Task UpsertPublishedKnowledgeCardsAsync(IReadOnlyCollection<PublishedKnowledgeCard> cards)
-    {
-        if (cards.Count == 0)
-        {
-            return;
-        }
 
-        await using var connection = await OpenConnectionAsync();
-        await InitializeSchemaAsync(connection);
-        using var transaction = connection.BeginTransaction();
 
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO knowledge_cards (
-                id,
-                candidate_kind,
-                platform,
-                product_key,
-                question,
-                answer,
-                synonyms_json,
-                tags_json,
-                usage_notes,
-                version,
-                updated_at)
-            VALUES (
-                $id,
-                $candidateKind,
-                $platform,
-                $productKey,
-                $question,
-                $answer,
-                $synonymsJson,
-                $tagsJson,
-                $usageNotes,
-                $version,
-                $updatedAt)
-            ON CONFLICT(id) DO UPDATE SET
-                candidate_kind = excluded.candidate_kind,
-                platform = excluded.platform,
-                product_key = excluded.product_key,
-                question = excluded.question,
-                answer = excluded.answer,
-                synonyms_json = excluded.synonyms_json,
-                tags_json = excluded.tags_json,
-                usage_notes = excluded.usage_notes,
-                version = excluded.version,
-                updated_at = excluded.updated_at;
-            """;
 
-        var idParameter = command.Parameters.Add("$id", SqliteType.Text);
-        var candidateKindParameter = command.Parameters.Add("$candidateKind", SqliteType.Text);
-        var platformParameter = command.Parameters.Add("$platform", SqliteType.Text);
-        var productKeyParameter = command.Parameters.Add("$productKey", SqliteType.Text);
-        var questionParameter = command.Parameters.Add("$question", SqliteType.Text);
-        var answerParameter = command.Parameters.Add("$answer", SqliteType.Text);
-        var synonymsJsonParameter = command.Parameters.Add("$synonymsJson", SqliteType.Text);
-        var tagsJsonParameter = command.Parameters.Add("$tagsJson", SqliteType.Text);
-        var usageNotesParameter = command.Parameters.Add("$usageNotes", SqliteType.Text);
-        var versionParameter = command.Parameters.Add("$version", SqliteType.Text);
-        var updatedAtParameter = command.Parameters.Add("$updatedAt", SqliteType.Text);
-
-        foreach (var card in cards)
-        {
-            idParameter.Value = card.Id.ToString();
-            candidateKindParameter.Value = string.IsNullOrWhiteSpace(card.CandidateKind) ? "qa" : card.CandidateKind.Trim();
-            platformParameter.Value = card.Platform;
-            productKeyParameter.Value = card.ProductKey;
-            questionParameter.Value = card.Question;
-            answerParameter.Value = card.Answer;
-            synonymsJsonParameter.Value = JsonSerializer.Serialize(card.Synonyms);
-            tagsJsonParameter.Value = JsonSerializer.Serialize(card.Tags);
-            usageNotesParameter.Value = card.UsageNotes;
-            versionParameter.Value = card.Version;
-            updatedAtParameter.Value = ToDbDateTime(card.UpdatedAt);
-            await command.ExecuteNonQueryAsync();
-        }
-
-        await transaction.CommitAsync();
-    }
-
-    public async Task DeletePublishedKnowledgeCardsAsync(IReadOnlyCollection<Guid> ids)
-    {
-        if (ids.Count == 0)
-        {
-            return;
-        }
-
-        await using var connection = await OpenConnectionAsync();
-        await InitializeSchemaAsync(connection);
-        using var transaction = connection.BeginTransaction();
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "DELETE FROM knowledge_cards WHERE id = $id;";
-        var idParameter = command.Parameters.Add("$id", SqliteType.Text);
-
-        foreach (var id in ids)
-        {
-            idParameter.Value = id.ToString();
-            await command.ExecuteNonQueryAsync();
-        }
-
-        await transaction.CommitAsync();
-    }
 
     public async Task InsertCategoryAsync(ReplyCategory category)
     {
@@ -1412,48 +1299,7 @@ public sealed class SqliteAppDataStore
         return fileItems;
     }
 
-    private static async Task<IReadOnlyList<PublishedKnowledgeCard>> LoadPublishedKnowledgeCardsAsync(SqliteConnection connection)
-    {
-        var cards = new List<PublishedKnowledgeCard>();
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT id,
-                   candidate_kind,
-                   platform,
-                   product_key,
-                   question,
-                   answer,
-                   synonyms_json,
-                   tags_json,
-                   usage_notes,
-                   version,
-                   updated_at
-            FROM knowledge_cards
-            ORDER BY updated_at DESC, question ASC;
-            """;
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            cards.Add(new PublishedKnowledgeCard
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                CandidateKind = reader.GetString(1),
-                Platform = reader.GetString(2),
-                ProductKey = reader.GetString(3),
-                Question = reader.GetString(4),
-                Answer = reader.GetString(5),
-                Synonyms = DeserializeStringList(reader.GetString(6)),
-                Tags = DeserializeStringList(reader.GetString(7)),
-                UsageNotes = reader.GetString(8),
-                Version = reader.GetString(9),
-                UpdatedAt = ParseDbDateTime(reader.GetString(10))
-            });
-        }
-
-        return cards;
-    }
 
     private async Task<AppSettings> LoadSettingsAsync(SqliteConnection connection)
     {
