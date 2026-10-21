@@ -51,6 +51,16 @@ MIN_SELECTION = 10
 HOVER_CLICK_TOLERANCE = 6
 HOTKEY_ID = 0xB100
 SINGLE_INSTANCE_PORT = 47625
+LOG_DIR = APPDATA_ROOT / "QuickReplyTool" / "logs" / "screenshot"
+WM_POWERBROADCAST = 0x0218
+PBT_APMRESUMEAUTOMATIC = 0x0012
+PBT_APMRESUMESUSPEND = 0x0007
+WM_WTSSESSION_CHANGE = 0x02B1
+WTS_SESSION_UNLOCK = 0x8
+WTS_CONSOLE_CONNECT = 0x1
+HOTKEY_SELF_HEAL_INTERVAL_MS = 30_000
+HEARTBEAT_INTERVAL_MS = 2_000
+ERROR_HOTKEY_ALREADY_REGISTERED = 1409
 
 MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
@@ -95,6 +105,27 @@ KERNEL32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
 KERNEL32.GlobalUnlock.restype = wintypes.BOOL
 KERNEL32.GlobalFree.argtypes = [wintypes.HGLOBAL]
 KERNEL32.GlobalFree.restype = wintypes.HGLOBAL
+
+
+def log_event(event: str, **fields) -> None:
+    """Append one JSON line to logs/screenshot/liteshot-YYYYMMDD.jsonl. Never raises."""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "source": "lite_shot", "pid": os.getpid(), "event": event}
+        record.update(fields)
+        path = LOG_DIR / f"liteshot-{time.strftime('%Y%m%d')}.jsonl"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def install_exception_logging() -> None:
+    def hook(exc_type, exc, tb):
+        import traceback
+        log_event("unhandled_exception", error=f"{exc_type.__name__}: {exc}", traceback="".join(traceback.format_exception(exc_type, exc, tb))[-4000:])
+    sys.excepthook = hook
+    threading.excepthook = lambda args: hook(args.exc_type, args.exc_value, args.exc_traceback)
 
 
 def default_save_dir() -> str:
@@ -292,10 +323,11 @@ def wait_for_existing_instance_shutdown(timeout_sec: float = 3.0) -> None:
 
 
 class SingleInstanceServer(threading.Thread):
-    def __init__(self, on_shutdown, on_reload):
+    def __init__(self, on_shutdown, on_reload, on_status=None):
         super().__init__(daemon=True)
         self.on_shutdown = on_shutdown
         self.on_reload = on_reload
+        self.on_status = on_status
         self.stop_event = threading.Event()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -323,6 +355,8 @@ class SingleInstanceServer(threading.Thread):
                     if command == b"reload":
                         conn.sendall(b"ok")
                         self.on_reload()
+                    elif command == b"status" and self.on_status is not None:
+                        conn.sendall(json.dumps(self.on_status(), ensure_ascii=False).encode("utf-8"))
                     elif command:
                         conn.sendall(b"unsupported")
                 except OSError:
@@ -349,6 +383,7 @@ class SingleInstanceServer(threading.Thread):
 
 class HotkeyWindow(QWidget):
     hotkey_pressed = Signal()
+    refresh_requested = Signal(str)
 
     def __init__(self):
         super().__init__(None)
@@ -357,14 +392,46 @@ class HotkeyWindow(QWidget):
         self.hide()
         self.winId()
         self.registered = False
+        self.registered_hotkey = ""
+        self.last_error = ""
+        self.last_error_code = 0
+        try:
+            # Receive WM_WTSSESSION_CHANGE (lock/unlock, RDP reconnect) for this window.
+            ctypes.windll.wtsapi32.WTSRegisterSessionNotification(int(self.winId()), 0)
+        except Exception:
+            pass
 
     def register_hotkey(self, hotkey: str) -> None:
-        self.unregister_hotkey()
+        """Register `hotkey`. On failure the previously working hotkey is restored, so a failed
+        reload never leaves the tool without any hotkey."""
         modifiers, vk = parse_hotkey(hotkey)
+        previous = self.registered_hotkey if self.registered else ""
+        self.unregister_hotkey()
+        ctypes.windll.kernel32.SetLastError(0)
         ok = ctypes.windll.user32.RegisterHotKey(int(self.winId()), HOTKEY_ID, modifiers, vk)
-        if not ok:
-            raise RuntimeError(f"注册快捷键失败：{hotkey}")
-        self.registered = True
+        if ok:
+            self.registered = True
+            self.registered_hotkey = hotkey
+            self.last_error = ""
+            self.last_error_code = 0
+            log_event("hotkey_registered", hotkey=hotkey)
+            return
+
+        code = ctypes.windll.kernel32.GetLastError()
+        self.last_error_code = int(code)
+        if code == ERROR_HOTKEY_ALREADY_REGISTERED:
+            self.last_error = f"快捷键 {hotkey} 已被其他软件占用（如微信/企业微信/QQ 的截图快捷键）"
+        else:
+            self.last_error = f"注册快捷键失败：{hotkey}（错误码 {code}）"
+        log_event("hotkey_register_failed", hotkey=hotkey, error_code=int(code), error=self.last_error)
+        self.registered_hotkey = hotkey
+        if previous and previous != hotkey:
+            prev_mod, prev_vk = parse_hotkey(previous)
+            if ctypes.windll.user32.RegisterHotKey(int(self.winId()), HOTKEY_ID, prev_mod, prev_vk):
+                self.registered = True
+                self.registered_hotkey = previous
+                log_event("hotkey_restored_previous", hotkey=previous)
+        raise RuntimeError(self.last_error)
 
     def unregister_hotkey(self) -> None:
         if self.registered:
@@ -376,6 +443,10 @@ class HotkeyWindow(QWidget):
         if msg.message == WM_HOTKEY and msg.wParam == HOTKEY_ID:
             self.hotkey_pressed.emit()
             return True, 0
+        if msg.message == WM_POWERBROADCAST and msg.wParam in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
+            self.refresh_requested.emit("resume")
+        elif msg.message == WM_WTSSESSION_CHANGE and msg.wParam in (WTS_SESSION_UNLOCK, WTS_CONSOLE_CONNECT):
+            self.refresh_requested.emit("session_unlock")
         return False, 0
 
 
@@ -1251,8 +1322,19 @@ class TrayController(QObject):
         self.reload_requested.connect(self.reload_settings_from_disk)
         self.hotkey_window = HotkeyWindow()
         self.hotkey_window.hotkey_pressed.connect(self.queue_capture)
-        self.instance_server = SingleInstanceServer(self.takeover_requested.emit, self.reload_requested.emit)
+        self.hotkey_window.refresh_requested.connect(self.refresh_hotkey)
+        self.last_heartbeat = time.monotonic()
+        self.instance_server = SingleInstanceServer(self.takeover_requested.emit, self.reload_requested.emit, self.status_snapshot)
         self.instance_server.start()
+        # Main-thread heartbeat: the host app reads it via "status" to detect a hung UI thread.
+        self.heartbeat_timer = QTimer(self)
+        self.heartbeat_timer.timeout.connect(self.beat)
+        self.heartbeat_timer.start(HEARTBEAT_INTERVAL_MS)
+        # Self-heal: retry registration periodically if another app held the hotkey at startup.
+        self.self_heal_timer = QTimer(self)
+        self.self_heal_timer.timeout.connect(self.self_heal)
+        self.self_heal_timer.start(HOTKEY_SELF_HEAL_INTERVAL_MS)
+        log_event("started", managed=managed_mode, hotkey=self.settings.get("hotkey"))
 
         self.icon = create_app_icon()
         self.tray = None
@@ -1284,10 +1366,44 @@ class TrayController(QObject):
             if self.tray is not None:
                 self.tray.showMessage(APP_TITLE, f"已在后台运行，快捷键：{self.settings['hotkey']}", QSystemTrayIcon.Information, 2400)
         except Exception as exc:
+            # Do not exit in managed mode: stay alive, report via "status", and keep retrying.
             if self.tray is not None:
                 self.tray.showMessage(APP_TITLE, f"{exc}，请右键托盘图标修改。", QSystemTrayIcon.Warning, 3200)
-            else:
-                raise
+
+    def beat(self) -> None:
+        self.last_heartbeat = time.monotonic()
+
+    def status_snapshot(self) -> dict:
+        window = self.hotkey_window
+        return {
+            "hotkey": self.settings.get("hotkey") or DEFAULT_HOTKEY,
+            "registered": bool(window.registered),
+            "registered_hotkey": window.registered_hotkey if window.registered else "",
+            "error": window.last_error,
+            "error_code": window.last_error_code,
+            "heartbeat_age_ms": int((time.monotonic() - self.last_heartbeat) * 1000),
+            "pid": os.getpid(),
+        }
+
+    def self_heal(self) -> None:
+        desired = self.settings.get("hotkey") or DEFAULT_HOTKEY
+        window = self.hotkey_window
+        if window.registered and window.registered_hotkey == desired:
+            return
+        try:
+            self.register_hotkey(desired)
+            log_event("hotkey_self_healed", hotkey=desired)
+        except Exception:
+            pass
+
+    def refresh_hotkey(self, reason: str) -> None:
+        """Re-register after resume/unlock: some systems silently drop hotkeys across these."""
+        desired = self.settings.get("hotkey") or DEFAULT_HOTKEY
+        log_event("hotkey_refresh", reason=reason, hotkey=desired)
+        try:
+            self.register_hotkey(desired)
+        except Exception:
+            pass
 
     def on_tray_activated(self, reason):
         if self.tray is not None and reason == QSystemTrayIcon.Trigger:
@@ -1310,6 +1426,7 @@ class TrayController(QObject):
             self.overlay.finished.connect(self.clear_overlay)
         except Exception as exc:
             self.overlay = None
+            log_event("capture_failed", error=f"{type(exc).__name__}: {exc}")
             if self.tray is not None:
                 self.tray.showMessage(APP_TITLE, f"截图启动失败：{exc}", QSystemTrayIcon.Warning, 3500)
             else:
@@ -1339,8 +1456,12 @@ class TrayController(QObject):
     def reload_settings_from_disk(self) -> None:
         settings = load_settings()
         hotkey = settings.get("hotkey") or DEFAULT_HOTKEY
-        self.register_hotkey(hotkey)
         self.settings = settings
+        try:
+            self.register_hotkey(hotkey)
+        except Exception as exc:
+            # Previously this raised inside a Qt slot and left no hotkey registered at all.
+            log_event("reload_register_failed", hotkey=hotkey, error=str(exc))
 
     def quit(self) -> None:
         self.cleanup()
@@ -1360,6 +1481,7 @@ class TrayController(QObject):
 
 
 def main() -> None:
+    install_exception_logging()
     enable_dpi_awareness()
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
     if request_existing_instance_shutdown():
