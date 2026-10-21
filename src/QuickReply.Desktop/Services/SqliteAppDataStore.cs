@@ -513,6 +513,8 @@ public sealed class SqliteAppDataStore
             ["clipboard_restore_delay_ms"] = settings.ClipboardRestoreDelayMs.ToString(CultureInfo.InvariantCulture),
             ["text_paste_delay_ms"] = settings.TextPasteDelayMs.ToString(CultureInfo.InvariantCulture),
             ["image_paste_delay_ms"] = settings.ImagePasteDelayMs.ToString(CultureInfo.InvariantCulture),
+            ["trigger_app_filter_enabled"] = settings.TriggerAppFilterEnabled ? "1" : "0",
+            ["trigger_app_rules"] = JsonSerializer.Serialize(settings.TriggerAppRules ?? []),
             ["rich_image_send_delay_ms"] = settings.RichImageSendDelayMs.ToString(CultureInfo.InvariantCulture),
             ["rich_image_clipboard_restore_delay_ms"] = settings.RichImageClipboardRestoreDelayMs.ToString(CultureInfo.InvariantCulture),
             ["phrase_hover_preview_delay_ms"] = settings.PhraseHoverPreviewDelayMs.ToString(CultureInfo.InvariantCulture),
@@ -1544,6 +1546,19 @@ public sealed class SqliteAppDataStore
                     if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var textPasteDelayMs))
                     {
                         settings.TextPasteDelayMs = textPasteDelayMs;
+                    }
+                    break;
+                case "trigger_app_filter_enabled":
+                    settings.TriggerAppFilterEnabled = value is "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                    break;
+                case "trigger_app_rules":
+                    try
+                    {
+                        settings.TriggerAppRules = JsonSerializer.Deserialize<List<TriggerAppRule>>(value) ?? [];
+                    }
+                    catch (JsonException)
+                    {
+                        settings.TriggerAppRules = [];
                     }
                     break;
                 case "image_paste_delay_ms":

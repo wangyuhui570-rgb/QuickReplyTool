@@ -10,6 +10,8 @@ public sealed class AppSettings : ObservableObject
     private SearchTextSendShortcutMode _searchTextSendShortcutMode = SearchTextSendShortcutMode.CtrlEnter;
     private SidebarWorkMode _sidebarWorkMode = SidebarWorkMode.Standard;
     private bool _launchAtStartup;
+    private bool _triggerAppFilterEnabled;
+    private List<TriggerAppRule> _triggerAppRules = [];
     private bool _launchScreenshotToolWithApp = true;
     private string _screenshotToolHotkey = ScreenshotHotkeyBinding.DefaultHotkey;
     private int _screenshotToolHotkeyMigrationVersion = ScreenshotHotkeyBinding.CurrentMigrationVersion;
@@ -96,6 +98,19 @@ public sealed class AppSettings : ObservableObject
     {
         get => _sidebarWorkMode;
         set => SetProperty(ref _sidebarWorkMode, value);
+    }
+
+    /// <summary>When true, the search hotkey only fires while one of <see cref="TriggerAppRules"/> is in the foreground.</summary>
+    public bool TriggerAppFilterEnabled
+    {
+        get => _triggerAppFilterEnabled;
+        set => SetProperty(ref _triggerAppFilterEnabled, value);
+    }
+
+    public List<TriggerAppRule> TriggerAppRules
+    {
+        get => _triggerAppRules;
+        set => SetProperty(ref _triggerAppRules, value ?? []);
     }
 
     public bool LaunchAtStartup

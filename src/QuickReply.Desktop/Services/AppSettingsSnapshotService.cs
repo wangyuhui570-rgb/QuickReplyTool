@@ -19,6 +19,8 @@ internal static class AppSettingsSnapshotService
         target.SidebarWorkMode = source.SidebarWorkMode;
         target.RunAsAdministrator = source.RunAsAdministrator;
         target.LaunchAtStartup = source.LaunchAtStartup;
+        target.TriggerAppFilterEnabled = source.TriggerAppFilterEnabled;
+        target.TriggerAppRules = (source.TriggerAppRules ?? []).Select(rule => rule.Clone()).ToList();
         target.LaunchScreenshotToolWithApp = source.LaunchScreenshotToolWithApp;
         target.ScreenshotToolHotkey = source.ScreenshotToolHotkey;
         target.ScreenshotToolHotkeyMigrationVersion = source.ScreenshotToolHotkeyMigrationVersion;
