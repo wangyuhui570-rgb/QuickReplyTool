@@ -37,11 +37,11 @@ public sealed class AppSettings : ObservableObject
     private string _phraseImageFolderPath = string.Empty;
     private int _restoreFocusDelayMs = 120;
     private int _activationRetryDelayMs = 90;
-    private int _sendDelayMs = 160;
+    private int _sendDelayMs = 80;
     private int _clipboardRestoreDelayMs = 120;
     private int _textPasteDelayMs = 120;
-    private int _imagePasteDelayMs = 900;
-    private int _richImageSendDelayMs = 450;
+    private int _imagePasteDelayMs = 300;
+    private int _richImageSendDelayMs = 200;
     private int _richImageClipboardRestoreDelayMs = 2000;
     private int _phraseHoverPreviewDelayMs = 500;
     private SearchOverlayMode _defaultSearchOverlayMode = SearchOverlayMode.Phrase;
@@ -269,7 +269,7 @@ public sealed class AppSettings : ObservableObject
     public int SendDelayMs
     {
         get => _sendDelayMs;
-        set => SetProperty(ref _sendDelayMs, ClampDelay(value, 50, 2000, 160));
+        set => SetProperty(ref _sendDelayMs, ClampDelay(value, 50, 2000, 80));
     }
 
     public int ClipboardRestoreDelayMs
@@ -287,13 +287,13 @@ public sealed class AppSettings : ObservableObject
     public int ImagePasteDelayMs
     {
         get => _imagePasteDelayMs;
-        set => SetProperty(ref _imagePasteDelayMs, ClampDelay(value, 50, 2000, 900));
+        set => SetProperty(ref _imagePasteDelayMs, ClampDelay(value, 50, 2000, 300));
     }
 
     public int RichImageSendDelayMs
     {
         get => _richImageSendDelayMs;
-        set => SetProperty(ref _richImageSendDelayMs, ClampDelay(value, 50, 2000, 450));
+        set => SetProperty(ref _richImageSendDelayMs, ClampDelay(value, 50, 2000, 200));
     }
 
     public int RichImageClipboardRestoreDelayMs

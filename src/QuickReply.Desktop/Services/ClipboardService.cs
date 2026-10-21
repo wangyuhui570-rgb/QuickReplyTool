@@ -568,7 +568,8 @@ public sealed class ClipboardService : IClipboardService
         TryCloneTextFormat(System.Windows.TextDataFormat.Rtf, System.Windows.DataFormats.Rtf, dataObject, ref hasSupportedContent);
         TryCloneTextFormat(System.Windows.TextDataFormat.Html, System.Windows.DataFormats.Html, dataObject, ref hasSupportedContent);
         TryCloneFileDropList(dataObject, ref hasSupportedContent);
-        TryCloneImage(dataObject, ref hasSupportedContent);
+        // Image formats are intentionally not cloned: decoding/re-encoding a large bitmap on every
+        // send cost 100-500 ms. Text and file-drop content is still backed up and restored.
 
         return hasSupportedContent ? dataObject : null;
     }

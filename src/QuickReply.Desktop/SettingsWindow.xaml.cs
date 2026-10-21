@@ -197,11 +197,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private SendHotkeyMode _selectedSendHotkeyMode;
     private int _selectedRestoreFocusDelayMs = 120;
     private int _selectedActivationRetryDelayMs = 90;
-    private int _selectedSendDelayMs = 160;
+    private int _selectedSendDelayMs = 80;
     private int _selectedClipboardRestoreDelayMs = 120;
     private int _selectedTextPasteDelayMs = 120;
-    private int _selectedImagePasteDelayMs = 900;
-    private int _selectedRichImageSendDelayMs = 450;
+    private int _selectedImagePasteDelayMs = 300;
+    private int _selectedRichImageSendDelayMs = 200;
     private int _selectedRichImageClipboardRestoreDelayMs = 2000;
     private int _selectedPhraseHoverPreviewDelayMs = 500;
     private int _selectedLogScreenshotRetentionDays = 7;
@@ -500,7 +500,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public int SelectedSendDelayMs
     {
         get => _selectedSendDelayMs;
-        set => SetField(ref _selectedSendDelayMs, NormalizeDelaySelection(value, 160));
+        set => SetField(ref _selectedSendDelayMs, NormalizeDelaySelection(value, 80));
     }
 
     public int SelectedClipboardRestoreDelayMs
@@ -518,13 +518,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public int SelectedImagePasteDelayMs
     {
         get => _selectedImagePasteDelayMs;
-        set => SetField(ref _selectedImagePasteDelayMs, NormalizeDelaySelection(value, 900));
+        set => SetField(ref _selectedImagePasteDelayMs, NormalizeDelaySelection(value, 300));
     }
 
     public int SelectedRichImageSendDelayMs
     {
         get => _selectedRichImageSendDelayMs;
-        set => SetField(ref _selectedRichImageSendDelayMs, NormalizeDelaySelection(value, 450));
+        set => SetField(ref _selectedRichImageSendDelayMs, NormalizeDelaySelection(value, 200));
     }
 
     public int SelectedRichImageClipboardRestoreDelayMs

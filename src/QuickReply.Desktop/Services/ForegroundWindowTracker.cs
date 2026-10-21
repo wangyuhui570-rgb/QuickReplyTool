@@ -39,13 +39,54 @@ public sealed class ForegroundWindowTracker : IExternalWorkbenchService
             return false;
         }
 
-        if (NativeMethods.IsIconic(_lastExternalWindow))
+        return ActivateWindowWithInputAttach(_lastExternalWindow);
+    }
+
+    /// <summary>
+    /// Brings a window to the foreground. Attaches to the current foreground thread's input queue
+    /// (same technique as the search overlay) so Windows does not reject SetForegroundWindow after
+    /// our own overlay was just hidden.
+    /// </summary>
+    internal static bool ActivateWindowWithInputAttach(IntPtr targetWindow)
+    {
+        if (targetWindow == IntPtr.Zero || !NativeMethods.IsWindow(targetWindow))
         {
-            NativeMethods.ShowWindow(_lastExternalWindow, NativeMethods.SwRestore);
+            return false;
         }
 
-        NativeMethods.BringWindowToTop(_lastExternalWindow);
-        return NativeMethods.SetForegroundWindow(_lastExternalWindow);
+        if (NativeMethods.IsIconic(targetWindow))
+        {
+            NativeMethods.ShowWindow(targetWindow, NativeMethods.SwRestore);
+        }
+
+        var foregroundWindow = NativeMethods.GetForegroundWindow();
+        if (foregroundWindow != IntPtr.Zero && NormalizeTopLevelWindow(foregroundWindow) == NormalizeTopLevelWindow(targetWindow))
+        {
+            return true;
+        }
+
+        var currentThreadId = NativeMethods.GetCurrentThreadId();
+        var foregroundThreadId = foregroundWindow != IntPtr.Zero
+            ? NativeMethods.GetWindowThreadProcessId(foregroundWindow, IntPtr.Zero)
+            : 0;
+        var attached = false;
+        try
+        {
+            if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+            {
+                attached = NativeMethods.AttachThreadInput(foregroundThreadId, currentThreadId, true);
+            }
+
+            NativeMethods.BringWindowToTop(targetWindow);
+            return NativeMethods.SetForegroundWindow(targetWindow);
+        }
+        finally
+        {
+            if (attached)
+            {
+                NativeMethods.AttachThreadInput(foregroundThreadId, currentThreadId, false);
+            }
+        }
     }
 
     public bool TryGetLastExternalWindowInfo(out WindowDockTargetInfo? windowInfo)

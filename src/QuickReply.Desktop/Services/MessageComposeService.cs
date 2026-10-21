@@ -6,7 +6,7 @@ namespace QuickReply.Desktop.Services;
 
 public sealed class MessageComposeService : IMessageComposeService
 {
-    private const int TargetActivationAttemptCount = 4;
+    private const int TargetActivationAttemptCount = 2;
     private const int MaximumComposeAttempts = 2;
 
     private readonly IExternalWorkbenchService _externalWorkbenchService;
@@ -646,157 +646,6 @@ public sealed class MessageComposeService : IMessageComposeService
         return BuildTextResult(mode, clipboardSnapshot, restoreDeferred: willRestoreClipboard);
     }
 
-    private async Task<ClipboardFingerprint?> ExecutePhraseWithImagesAsync(
-        string text,
-        IReadOnlyList<string> imagePaths,
-        AppSettings settings,
-        ComposeActionMode mode,
-        bool hasText,
-        IntPtr targetWindowHandle,
-        Dictionary<string, object?> diagnostics,
-        Stopwatch stopwatch)
-    {
-        var effectiveSendDelayMs = GetEffectiveRichSendDelayMs(settings, hasImages: imagePaths.Count > 0);
-        ClipboardFingerprint? lastClipboardPayloadFingerprint = null;
-        var effectiveImageSendMode = ResolveEffectivePhraseImageSendMode(settings.PhraseImageSendMode, hasText, imagePaths.Count);
-        diagnostics["hasText"] = hasText;
-        diagnostics["imageCount"] = imagePaths.Count;
-        diagnostics["phraseImageSendMode"] = settings.PhraseImageSendMode.ToString();
-        diagnostics["effectivePhraseImageSendMode"] = effectiveImageSendMode.ToString();
-        diagnostics["effectiveRichSendDelayMs"] = effectiveSendDelayMs;
-
-        switch (effectiveImageSendMode)
-        {
-            case PhraseImageSendMode.ImageThenTextThenSend:
-                foreach (var imagePath in imagePaths)
-                {
-                    var pasteResult = await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch);
-                    if (pasteResult.FailureResult is not null)
-                    {
-                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
-                    }
-
-                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
-                }
-
-                if (hasText)
-                {
-                    var pasteResult = await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch);
-                    if (pasteResult.FailureResult is not null)
-                    {
-                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
-                    }
-
-                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
-                }
-
-                if (mode == ComposeActionMode.Send)
-                {
-                    EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
-                    await Task.Delay(effectiveSendDelayMs);
-                    SendConfiguredHotkey(settings.SendHotkeyMode);
-                }
-                break;
-
-            case PhraseImageSendMode.ImageImmediateThenTextSend:
-                foreach (var imagePath in imagePaths)
-                {
-                    var pasteResult = await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch);
-                    if (pasteResult.FailureResult is not null)
-                    {
-                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
-                    }
-
-                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
-                    if (mode == ComposeActionMode.Send)
-                    {
-                        EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
-                        await Task.Delay(effectiveSendDelayMs);
-                        SendConfiguredHotkey(settings.SendHotkeyMode);
-                        await Task.Delay(GetEffectiveRichRestoreFocusDelayMs(settings));
-                    }
-                }
-
-                if (hasText)
-                {
-                    var pasteResult = await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch);
-                    if (pasteResult.FailureResult is not null)
-                    {
-                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
-                    }
-
-                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
-                    if (mode == ComposeActionMode.Send)
-                    {
-                        EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
-                        await Task.Delay(effectiveSendDelayMs);
-                        SendConfiguredHotkey(settings.SendHotkeyMode);
-                    }
-                }
-                break;
-
-            default:
-                if (hasText)
-                {
-                    var pasteResult = await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch);
-                    if (pasteResult.FailureResult is not null)
-                    {
-                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
-                    }
-
-                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
-                }
-
-                foreach (var imagePath in imagePaths)
-                {
-                    var pasteResult = await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch);
-                    if (pasteResult.FailureResult is not null)
-                    {
-                        throw new InvalidOperationException(pasteResult.FailureResult.Value.Message);
-                    }
-
-                    lastClipboardPayloadFingerprint = pasteResult.Fingerprint;
-                }
-
-                if (mode == ComposeActionMode.Send)
-                {
-                    EnsureTargetWindowStillForegroundOrThrow(targetWindowHandle);
-                    await Task.Delay(effectiveSendDelayMs);
-                    SendConfiguredHotkey(settings.SendHotkeyMode);
-                }
-                break;
-        }
-
-        return lastClipboardPayloadFingerprint;
-    }
-
-    private static PhraseImageSendMode ResolveEffectivePhraseImageSendMode(
-        PhraseImageSendMode configuredMode,
-        bool hasText,
-        int imageCount)
-    {
-        if (hasText &&
-            imageCount > 0 &&
-            configuredMode == PhraseImageSendMode.TextThenImageThenSend)
-        {
-            // Mixed text+image content is more reliable when the image clipboard write
-            // happens before the target app has a chance to hold the clipboard after text paste.
-            return PhraseImageSendMode.ImageThenTextThenSend;
-        }
-
-        return configuredMode;
-    }
-
-    private async Task<ClipboardStepResult> PasteTextAsync(
-        string text,
-        AppSettings settings,
-        IntPtr targetWindowHandle,
-        Dictionary<string, object?> diagnostics,
-        Stopwatch stopwatch)
-    {
-        return await PasteTextAsync(text, settings, targetWindowHandle, diagnostics, stopwatch, SendHostProfile.GenericDesktopInput);
-    }
-
     private async Task<ClipboardStepResult> PasteTextAsync(
         string text,
         AppSettings settings,
@@ -827,57 +676,6 @@ public sealed class MessageComposeService : IMessageComposeService
             diagnostics,
             stopwatch,
             settleMsDiagnosticKey: "effectiveTextSettleDelayMs");
-        if (pasteFailure is not null)
-        {
-            return new ClipboardStepResult(pasteFailure.Value, clipboardPayloadFingerprint);
-        }
-
-        return new ClipboardStepResult(null, clipboardPayloadFingerprint);
-    }
-
-    private async Task<ClipboardStepResult> PasteImageAsync(
-        string imagePath,
-        AppSettings settings,
-        IntPtr targetWindowHandle,
-        Dictionary<string, object?> diagnostics,
-        Stopwatch stopwatch)
-    {
-        return await PasteImageAsync(imagePath, settings, targetWindowHandle, diagnostics, stopwatch, SendHostProfile.GenericDesktopInput);
-    }
-
-    private async Task<ClipboardStepResult> PasteImageAsync(
-        string imagePath,
-        AppSettings settings,
-        IntPtr targetWindowHandle,
-        Dictionary<string, object?> diagnostics,
-        Stopwatch stopwatch,
-        SendHostProfile hostProfile)
-    {
-        var writeResult = await TryWriteClipboardPayloadAsync(
-            () => _clipboardService.SetImageAsync(imagePath, persist: false),
-            "image",
-            diagnostics,
-            stopwatch,
-            ReplyActionFailureKind.ClipboardBusy,
-            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
-            imagePath);
-        if (writeResult.FailureResult is not null)
-        {
-            return new ClipboardStepResult(writeResult.FailureResult.Value, null);
-        }
-
-        diagnostics["imageClipboardPersisted"] = false;
-        diagnostics["lastImageClipboardWriteDurationMs"] = diagnostics["lastClipboardWriteDurationMs"];
-        var clipboardPayloadFingerprint = writeResult.Fingerprint;
-        var pasteFailure = await TryPasteClipboardPayloadAsync(
-            targetWindowHandle,
-            "image",
-            hostProfile.FilePasteStableMs,
-            GetEffectiveImagePasteDelayMs(settings, hostProfile),
-            hostProfile.PollIntervalMs,
-            diagnostics,
-            stopwatch,
-            settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
         if (pasteFailure is not null)
         {
             return new ClipboardStepResult(pasteFailure.Value, clipboardPayloadFingerprint);
@@ -932,25 +730,23 @@ public sealed class MessageComposeService : IMessageComposeService
     private async Task<ReplyActionResult?> TryPasteClipboardPayloadAsync(
         IntPtr targetWindowHandle,
         string clipboardKind,
-        int requiredStableMs,
-        int timeoutMs,
+        int settleMs,
+        int recoveryTimeoutMs,
         int pollIntervalMs,
         IDictionary<string, object?> diagnostics,
         Stopwatch stopwatch,
         string settleMsDiagnosticKey)
     {
-        var stableForeground = await WaitForTargetForegroundStabilityAsync(
+        // Pre-paste: no settle; only wait (up to the recovery timeout) if focus is not already there.
+        var stableForeground = await WaitForTargetForegroundFastAsync(
             targetWindowHandle,
-            requiredStableMs,
-            timeoutMs,
+            requiredStableMs: 0,
+            recoveryTimeoutMs,
             pollIntervalMs).ConfigureAwait(false);
         diagnostics["pasteForegroundWaitMs"] = stableForeground.ElapsedMs;
         if (!stableForeground.Success)
         {
-            return CreateFailureResult(
-                ReplyActionFailureKind.FocusLost,
-                "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
-                "请先重新点击聊天输入框，再执行发送。");
+            return CreateFocusLostResult();
         }
 
         _keyboardInputSimulator.SendPasteShortcut();
@@ -958,19 +754,17 @@ public sealed class MessageComposeService : IMessageComposeService
         diagnostics["lastPasteIssuedAtMs"] = stopwatch.ElapsedMilliseconds;
         diagnostics["pasteMs"] = stopwatch.ElapsedMilliseconds;
 
-        var settleResult = await WaitForTargetForegroundStabilityAsync(
+        // Post-paste: short fixed settle so the host can consume the clipboard, then a focus check.
+        var settleResult = await SettleThenEnsureForegroundAsync(
             targetWindowHandle,
-            requiredStableMs,
-            timeoutMs,
+            settleMs,
+            recoveryTimeoutMs,
             pollIntervalMs).ConfigureAwait(false);
         diagnostics[settleMsDiagnosticKey] = settleResult.ElapsedMs;
         diagnostics["pasteSettleMs"] = settleResult.ElapsedMs;
         if (!settleResult.Success)
         {
-            return CreateFailureResult(
-                ReplyActionFailureKind.FocusLost,
-                "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
-                "请先重新点击聊天输入框，再执行发送。");
+            return CreateFocusLostResult();
         }
 
         return null;
@@ -979,31 +773,78 @@ public sealed class MessageComposeService : IMessageComposeService
     private async Task<ReplyActionResult?> TrySendConfiguredHotkeyAsync(
         IntPtr targetWindowHandle,
         SendHotkeyMode mode,
-        int requiredStableMs,
-        int timeoutMs,
+        int settleMs,
+        int recoveryTimeoutMs,
         int pollIntervalMs,
         IDictionary<string, object?> diagnostics,
         Stopwatch stopwatch,
         string delayMsDiagnosticKey)
     {
-        var stableForeground = await WaitForTargetForegroundStabilityAsync(
+        var stableForeground = await SettleThenEnsureForegroundAsync(
             targetWindowHandle,
-            requiredStableMs,
-            timeoutMs,
+            settleMs,
+            recoveryTimeoutMs,
             pollIntervalMs).ConfigureAwait(false);
         diagnostics["sendForegroundWaitMs"] = stableForeground.ElapsedMs;
         diagnostics[delayMsDiagnosticKey] = stableForeground.ElapsedMs;
         if (!stableForeground.Success)
         {
-            return CreateFailureResult(
-                ReplyActionFailureKind.FocusLost,
-                "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
-                "请先重新点击聊天输入框，再执行发送。");
+            return CreateFocusLostResult();
         }
 
         SendConfiguredHotkey(mode);
         diagnostics["sendHotkeyMs"] = stopwatch.ElapsedMilliseconds;
         return null;
+    }
+
+    private static ReplyActionResult CreateFocusLostResult()
+    {
+        return CreateFailureResult(
+            ReplyActionFailureKind.FocusLost,
+            "目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。",
+            "请先重新点击聊天输入框，再执行发送。");
+    }
+
+    private async Task<(bool Success, int ElapsedMs)> SettleThenEnsureForegroundAsync(
+        IntPtr targetWindowHandle,
+        int settleMs,
+        int recoveryTimeoutMs,
+        int pollIntervalMs)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        if (settleMs > 0)
+        {
+            await Task.Delay(settleMs).ConfigureAwait(false);
+        }
+
+        var result = await WaitForTargetForegroundFastAsync(
+            targetWindowHandle,
+            requiredStableMs: 0,
+            recoveryTimeoutMs,
+            pollIntervalMs).ConfigureAwait(false);
+        return (result.Success, (int)stopwatch.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// Returns immediately when the target already owns the foreground. Only when it does not,
+    /// falls back to the slower stability wait bounded by the recovery timeout.
+    /// </summary>
+    private async Task<(bool Success, int ElapsedMs)> WaitForTargetForegroundFastAsync(
+        IntPtr targetWindowHandle,
+        int requiredStableMs,
+        int recoveryTimeoutMs,
+        int pollIntervalMs)
+    {
+        if (IsTargetWindowForeground(targetWindowHandle) && requiredStableMs <= 0)
+        {
+            return (true, 0);
+        }
+
+        return await WaitForTargetForegroundStabilityAsync(
+            targetWindowHandle,
+            Math.Max(requiredStableMs, 0),
+            recoveryTimeoutMs,
+            pollIntervalMs).ConfigureAwait(false);
     }
 
     private void SendConfiguredHotkey(SendHotkeyMode mode)
@@ -1071,19 +912,9 @@ public sealed class MessageComposeService : IMessageComposeService
         });
     }
 
-    private static int GetEffectiveTextOnlyRestoreFocusDelayMs(AppSettings settings)
-    {
-        return GetEffectiveTextOnlyRestoreFocusDelayMs(settings, SendHostProfile.GenericDesktopInput);
-    }
-
     private static int GetEffectiveTextOnlyRestoreFocusDelayMs(AppSettings settings, SendHostProfile hostProfile)
     {
         return Math.Max(hostProfile.ActivationTimeoutMs, settings.RestoreFocusDelayMs);
-    }
-
-    private static int GetEffectiveTextOnlySendDelayMs(AppSettings settings)
-    {
-        return GetEffectiveTextOnlySendDelayMs(settings, SendHostProfile.GenericDesktopInput);
     }
 
     private static int GetEffectiveTextOnlySendDelayMs(AppSettings settings, SendHostProfile hostProfile)
@@ -1091,29 +922,14 @@ public sealed class MessageComposeService : IMessageComposeService
         return Math.Max(hostProfile.TextSendTimeoutMs, settings.SendDelayMs);
     }
 
-    private static int GetEffectiveTextOnlyClipboardRestoreDelayMs(AppSettings settings)
-    {
-        return GetEffectiveTextOnlyClipboardRestoreDelayMs(settings, SendHostProfile.GenericDesktopInput);
-    }
-
     private static int GetEffectiveTextOnlyClipboardRestoreDelayMs(AppSettings settings, SendHostProfile hostProfile)
     {
         return Math.Max(hostProfile.ClipboardRestoreDelayMs, settings.ClipboardRestoreDelayMs);
     }
 
-    private static int GetEffectiveRichRestoreFocusDelayMs(AppSettings settings)
-    {
-        return GetEffectiveRichRestoreFocusDelayMs(settings, SendHostProfile.GenericDesktopInput);
-    }
-
     private static int GetEffectiveRichRestoreFocusDelayMs(AppSettings settings, SendHostProfile hostProfile)
     {
         return Math.Max(hostProfile.ActivationTimeoutMs, settings.RestoreFocusDelayMs);
-    }
-
-    private static int GetEffectiveRichSendDelayMs(AppSettings settings, bool hasImages)
-    {
-        return GetEffectiveRichSendDelayMs(settings, SendHostProfile.GenericDesktopInput, hasImages);
     }
 
     private static int GetEffectiveRichSendDelayMs(AppSettings settings, SendHostProfile hostProfile, bool hasImages)
@@ -1122,29 +938,14 @@ public sealed class MessageComposeService : IMessageComposeService
         return Math.Max(hostProfile.RichSendTimeoutMs, fallback);
     }
 
-    private static int GetEffectiveRichImageClipboardRestoreDelayMs(AppSettings settings)
-    {
-        return GetEffectiveRichImageClipboardRestoreDelayMs(settings, SendHostProfile.GenericDesktopInput);
-    }
-
     private static int GetEffectiveRichImageClipboardRestoreDelayMs(AppSettings settings, SendHostProfile hostProfile)
     {
         return Math.Max(hostProfile.ClipboardRestoreDelayMs, settings.RichImageClipboardRestoreDelayMs);
     }
 
-    private static int GetEffectiveTextPasteDelayMs(AppSettings settings)
-    {
-        return GetEffectiveTextPasteDelayMs(settings, SendHostProfile.GenericDesktopInput);
-    }
-
     private static int GetEffectiveTextPasteDelayMs(AppSettings settings, SendHostProfile hostProfile)
     {
         return Math.Max(hostProfile.TextPasteTimeoutMs, settings.TextPasteDelayMs);
-    }
-
-    private static int GetEffectiveImagePasteDelayMs(AppSettings settings)
-    {
-        return GetEffectiveImagePasteDelayMs(settings, SendHostProfile.GenericDesktopInput);
     }
 
     private static int GetEffectiveImagePasteDelayMs(AppSettings settings, SendHostProfile hostProfile)
@@ -1208,6 +1009,15 @@ public sealed class MessageComposeService : IMessageComposeService
                 diagnostics["targetWindowHandle"] = SearchOverlayDiagnostics.FormatHandle(targetWindowHandle);
             }
 
+            if (IsTargetWindowForeground(targetWindowHandle))
+            {
+                diagnostics["windowActivated"] = true;
+                diagnostics["activationAttempt"] = attempt;
+                diagnostics["activationSkippedAlreadyForeground"] = true;
+                diagnostics["activationWaitMs"] = 0;
+                return (true, targetWindowHandle, string.Empty, string.Empty);
+            }
+
             var activated = _externalWorkbenchService.TryActivateLastExternalWindow();
             diagnostics["windowActivated"] = activated;
             diagnostics["activationAttempt"] = attempt;
@@ -1217,7 +1027,7 @@ public sealed class MessageComposeService : IMessageComposeService
                 continue;
             }
 
-            var activationWaitResult = await WaitForTargetForegroundStabilityAsync(
+            var activationWaitResult = await WaitForTargetForegroundFastAsync(
                 targetWindowHandle,
                 attemptContext.HostProfile.ActivationStableMs,
                 attempt == 1
@@ -1241,11 +1051,6 @@ public sealed class MessageComposeService : IMessageComposeService
     private static ReplyActionResult CreateTargetWindowUnavailableResult(string message)
     {
         return CreateFailureResult(InferFailureKind(message), message, InferFailureGuidance(message));
-    }
-
-    private static int GetEffectiveClipboardRestoreDelayMs(AppSettings settings)
-    {
-        return GetEffectiveClipboardRestoreDelayMs(settings, SendHostProfile.GenericDesktopInput);
     }
 
     private static int GetEffectiveClipboardRestoreDelayMs(AppSettings settings, SendHostProfile hostProfile)
@@ -1398,14 +1203,6 @@ public sealed class MessageComposeService : IMessageComposeService
         return targetWindowHandle != IntPtr.Zero &&
                NormalizeTargetWindowHandle(_windowFocusService.GetForegroundWindow()) ==
                NormalizeTargetWindowHandle(targetWindowHandle);
-    }
-
-    private void EnsureTargetWindowStillForegroundOrThrow(IntPtr targetWindowHandle)
-    {
-        if (!IsTargetWindowForeground(targetWindowHandle))
-        {
-            throw new InvalidOperationException("目标输入窗口焦点已丢失，请先点一下聊天输入框，再重试。");
-        }
     }
 
     private static string[] NormalizePaths(IEnumerable<string> filePaths)
