@@ -448,6 +448,24 @@ public sealed class ConversationLoggingServiceTests
                 RecognizedCustomerText = "客户问发货"
             });
         await service.LogOperationEventAsync("maintenance_probe", "capture", success: true, skipped: false, durationMs: 10, message: "ok");
+        service.LogRecommendationsShown(
+            new ConversationRecommendationSnapshot
+            {
+                PlatformHint = "wecom",
+                RecognizedCustomerText = "客户问发货"
+            },
+            [
+                new PhraseRecommendationSuggestion
+                {
+                    Phrase = new ReplyPhrase { Id = Guid.NewGuid(), Title = "发货答复", Content = "今天发货" },
+                    DisplayRank = 1,
+                    MatchedKeyword = "发货",
+                    MatchCount = 1,
+                    Confidence = 0.8d
+                }
+            ],
+            SearchOverlayMode.Phrase,
+            "发货");
         var sessionId = Guid.NewGuid();
         await service.SaveRecognitionCorrectionAsync(
             sessionId,
