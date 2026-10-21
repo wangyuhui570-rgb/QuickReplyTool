@@ -129,6 +129,33 @@ public sealed class MessageComposeServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_TextOnlySend_SkipsActivationWhenTargetAlreadyForeground()
+    {
+        var service = CreateService(out _, out var keyboard, out var workbench, out var windowFocus);
+        var handle = new IntPtr(120);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "微信", "WeChatMainWndForPC", "WeChat");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+        var activationCalls = 0;
+        workbench.OnTryActivateLastExternalWindow = () =>
+        {
+            activationCalls++;
+            return true;
+        };
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await service.ExecuteAsync("hello", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send);
+        stopwatch.Stop();
+
+        Assert.True(result.Success);
+        Assert.Equal(0, activationCalls);
+        Assert.Equal(1, keyboard.PasteShortcutCount);
+        Assert.Equal(1, keyboard.EnterCount);
+        Assert.True(stopwatch.ElapsedMilliseconds < 1000, $"happy-path text send took {stopwatch.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_TextOnlySend_PastesThenUsesConfiguredHotkey()
     {
         var service = CreateService(out var clipboard, out var keyboard, out var workbench, out var windowFocus);
