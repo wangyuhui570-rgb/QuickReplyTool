@@ -411,7 +411,7 @@ public sealed class IssueReportService
 
             return string.Equals(uploadResult.Message, "当前内置服务未启用问题上报接口。", StringComparison.Ordinal)
                 ? "问题反馈文件和问题包已生成。当前内置服务未启用问题上报接口，已保留本地问题包。"
-                : "问题反馈文件和问题包已生成。本次未上传到服务器，后续可手动重试。";
+                : "问题反馈文件和问题包已生成，已保存在本地。";
         }
 
         return uploadResult.Success

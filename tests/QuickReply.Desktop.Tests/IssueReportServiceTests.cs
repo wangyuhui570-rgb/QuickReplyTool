@@ -56,50 +56,31 @@ public sealed class IssueReportServiceTests
         Assert.True(result.Success);
         Assert.False(result.UploadAttempted);
         Assert.False(result.UploadSucceeded);
-        Assert.Equal("srv-123", result.ServerIssueId);
+        Assert.Equal(string.Empty, result.ServerIssueId);
+        Assert.Equal("问题反馈文件和问题包已生成，已保存在本地。", result.Message);
         Assert.True(File.Exists(result.FilePath));
         Assert.True(File.Exists(result.PackagePath));
-        Assert.Single(handler.Requests);
+        Assert.Empty(handler.Requests);
         Assert.DoesNotContain("sensitive-token-6789", packageJson, StringComparison.Ordinal);
         Assert.Contains("6789", packageJson, StringComparison.Ordinal);
         Assert.Contains("***", packageJson, StringComparison.Ordinal);
-        Assert.DoesNotContain(scope.FeedbackRootPath, handler.Requests[0].Body, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task CreateReportAsync_FallsBackToBuiltInServerWhenConfiguredServerIsUnsupported()
+    public async Task RefreshAndRetry_AreNoOpsForLocalOnlyTool()
     {
         using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
-        await store.UpdateSettingsAsync(new AppSettings
-        {
-            ServerBaseUrl = "ftp://invalid-service",
-            AllowAutomaticIssueReportUpload = true,
-            IssueReportDirectory = scope.FeedbackRootPath
-        });
-
-        var handler = new RecordingHttpMessageHandler((request, _) =>
-        {
-            Assert.StartsWith($"{QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl}/api/quickreply/issues/report", request.RequestUri?.ToString(), StringComparison.Ordinal);
-            return Task.FromResult(HttpResponseFactory.Json("""{"success":true,"issueId":"srv-ftp-fallback","message":"ok"}"""));
-        });
-
+        var handler = new RecordingHttpMessageHandler((_, _) => Task.FromResult(HttpResponseFactory.Json("{}")));
         var service = new IssueReportService(
-            store,
-            (baseUri, _, _) => new HttpClient(handler)
-            {
-                BaseAddress = baseUri
-            });
+            scope.CreateDataStore(),
+            (baseUri, _, _) => new HttpClient(handler) { BaseAddress = baseUri });
 
-        var result = await service.CreateReportAsync("服务地址无效时也要保留本地问题包");
+        var refresh = await service.RefreshIssueStatusesAsync();
+        var retry = await service.RetryPendingUploadsAsync();
 
-        Assert.True(result.Success);
-        Assert.False(result.UploadAttempted);
-        Assert.False(result.UploadSucceeded);
-        Assert.True(File.Exists(result.FilePath));
-        Assert.True(File.Exists(result.PackagePath));
-        Assert.Equal("srv-ftp-fallback", result.ServerIssueId);
+        Assert.Equal("问题状态刷新已移除：当前为本地工具，不再连接服务器。", refresh.Message);
+        Assert.Equal("问题上传已移除：反馈包仅保存在本地目录。", retry.Message);
+        Assert.Empty(handler.Requests);
     }
 
     [Fact]
@@ -146,66 +127,6 @@ public sealed class IssueReportServiceTests
     }
 
     [Fact]
-    public async Task CreateReportAsync_SkipsUploadWhenBuiltInServiceDoesNotProvideIssueEndpoint()
-    {
-        using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
-        await store.UpdateSettingsAsync(new AppSettings
-        {
-            ServerBaseUrl = string.Empty,
-            IssueReportDirectory = scope.FeedbackRootPath
-        });
-
-        var service = new IssueReportService(
-            store,
-            (baseUri, _, _) => new HttpClient(new RecordingHttpMessageHandler((_, _) =>
-                Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound))))
-            {
-                BaseAddress = baseUri
-            });
-
-        var result = await service.CreateReportAsync("内置服务没有问题上报接口时也要保留本地问题包");
-
-        Assert.True(result.Success);
-        Assert.False(result.UploadAttempted);
-        Assert.False(result.UploadSucceeded);
-        Assert.True(File.Exists(result.FilePath));
-        Assert.True(File.Exists(result.PackagePath));
-        Assert.Contains("当前内置服务未启用问题上报接口", result.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task CreateReportAsync_SkipsUploadWhenAutomaticUploadIsDisabled()
-    {
-        using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
-        await store.UpdateSettingsAsync(new AppSettings
-        {
-            ServerBaseUrl = "https://issues.example.com/",
-            AllowAutomaticIssueReportUpload = false,
-            IssueReportDirectory = scope.FeedbackRootPath
-        });
-
-        var handler = new RecordingHttpMessageHandler((_, _) => Task.FromResult(HttpResponseFactory.Json("{}")));
-        var service = new IssueReportService(
-            store,
-            (baseUri, _, _) => new HttpClient(handler)
-            {
-                BaseAddress = baseUri
-            });
-
-        var result = await service.CreateReportAsync("先只保留本地问题包");
-
-        Assert.True(result.Success);
-        Assert.False(result.UploadAttempted);
-        Assert.False(result.UploadSucceeded);
-        Assert.Empty(handler.Requests);
-        Assert.Contains("未自动上传", result.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task CreateReportAsync_WritesOperationEvent()
     {
         using var scope = new TestAppDataScope();
@@ -241,183 +162,6 @@ public sealed class IssueReportServiceTests
 
         var count = Convert.ToInt32(await command.ExecuteScalarAsync());
         Assert.Equal(1, count);
-    }
-
-    [Fact]
-    public async Task RefreshIssueStatusesAsync_UpdatesPatchFieldsFromServerResponse()
-    {
-        using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
-        await store.UpdateSettingsAsync(new AppSettings
-        {
-            ServerBaseUrl = "https://issues.example.com/",
-            SyncClientId = "client-001",
-            AllowAutomaticIssueReportUpload = true,
-            IssueReportDirectory = scope.FeedbackRootPath
-        });
-
-        var indexPath = Path.Combine(scope.FeedbackRootPath, "issue-report-index.json");
-        await File.WriteAllTextAsync(
-            indexPath,
-            JsonSerializer.Serialize(
-                new[]
-                {
-                    new IssueReportIndexEntry
-                    {
-                        IssueId = "local-001",
-                        ServerIssueId = "srv-001",
-                        CreatedAt = DateTimeOffset.Now.AddMinutes(-5),
-                        UserDescription = "sample"
-                    }
-                }));
-
-        var handler = new RecordingHttpMessageHandler((_, _) => Task.FromResult(
-            HttpResponseFactory.Json(
-                """
-                {
-                  "success": true,
-                  "items": [
-                    {
-                      "issueId": "srv-001",
-                      "serverIssueId": "srv-001",
-                      "remoteStatus": "resolved",
-                      "analysisStatus": "ready",
-                      "patchVersion": "2.1.10",
-                      "downloadUrl": "https://issues.example.com/patch.zip",
-                      "releaseNotes": "fix",
-                      "message": "done"
-                    }
-                  ],
-                  "message": "ok"
-                }
-                """)));
-
-        var service = new IssueReportService(
-            store,
-            (baseUri, _, _) => new HttpClient(handler)
-            {
-                BaseAddress = baseUri
-            });
-
-        var refreshResult = await service.RefreshIssueStatusesAsync();
-        var entries = await service.LoadRecentIssueEntriesAsync();
-
-        Assert.True(refreshResult.Success);
-        Assert.Equal(1, refreshResult.UpdatedCount);
-        Assert.Single(entries);
-        Assert.Equal("resolved", entries[0].RemoteStatus);
-        Assert.Equal("2.1.10", entries[0].PatchVersion);
-        Assert.Equal("https://issues.example.com/patch.zip", entries[0].PatchDownloadUrl);
-    }
-
-    [Fact]
-    public async Task RefreshIssueStatusesAsync_SkipsWhenBuiltInServiceDoesNotProvideIssueStatusEndpoint()
-    {
-        using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
-        await store.UpdateSettingsAsync(new AppSettings
-        {
-            ServerBaseUrl = string.Empty,
-            IssueReportDirectory = scope.FeedbackRootPath
-        });
-
-        var createdAt = DateTimeOffset.Parse("2026-04-18T12:00:00+08:00", null, System.Globalization.DateTimeStyles.RoundtripKind);
-        var feedbackRootPath = scope.FeedbackRootPath;
-        Directory.CreateDirectory(feedbackRootPath);
-        var indexPath = Path.Combine(feedbackRootPath, "issue-report-index.json");
-        await File.WriteAllTextAsync(
-            indexPath,
-            JsonSerializer.Serialize<IReadOnlyList<IssueReportIndexEntry>>(
-            [
-                new IssueReportIndexEntry
-                {
-                    IssueId = "issue-001",
-                    CreatedAt = createdAt,
-                    FilePath = Path.Combine(feedbackRootPath, "issue-001.md"),
-                    PackagePath = Path.Combine(feedbackRootPath, "issue-001.json"),
-                    UploadAttempted = true,
-                    UploadSucceeded = true,
-                    ServerIssueId = "srv-issue-001"
-                }
-            ]));
-
-        var service = new IssueReportService(
-            store,
-            (baseUri, _, _) => new HttpClient(new RecordingHttpMessageHandler((_, _) =>
-                Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound))))
-            {
-                BaseAddress = baseUri
-            });
-
-        var result = await service.RefreshIssueStatusesAsync();
-
-        Assert.True(result.Success);
-        Assert.Equal(0, result.UpdatedCount);
-        Assert.Contains("已跳过本次自动刷新", result.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RetryPendingUploadsAsync_RetriesSavedPackageAndUpdatesIndex()
-    {
-        using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
-        await store.UpdateSettingsAsync(new AppSettings
-        {
-            ServerBaseUrl = "https://issues.example.com/",
-            SyncClientId = "client-001",
-            AllowAutomaticIssueReportUpload = true,
-            IssueReportDirectory = scope.FeedbackRootPath
-        });
-
-        var packagePath = Path.Combine(scope.FeedbackRootPath, "issue-package.json");
-        await File.WriteAllTextAsync(
-            packagePath,
-            JsonSerializer.Serialize(new IssueReportPackage
-            {
-                IssueId = "local-002",
-                CreatedAt = DateTimeOffset.Now,
-                ClientId = "client-001",
-                UserDescription = "发送失败"
-            }));
-
-        var indexPath = Path.Combine(scope.FeedbackRootPath, "issue-report-index.json");
-        await File.WriteAllTextAsync(
-            indexPath,
-            JsonSerializer.Serialize(
-                new[]
-                {
-                    new IssueReportIndexEntry
-                    {
-                        IssueId = "local-002",
-                        CreatedAt = DateTimeOffset.Now,
-                        UserDescription = "发送失败",
-                        PackagePath = packagePath,
-                        UploadSucceeded = false
-                    }
-                }));
-
-        var handler = new RecordingHttpMessageHandler((_, _) => Task.FromResult(
-            HttpResponseFactory.Json("""{"success":true,"issueId":"srv-222","message":"ok"}""")));
-
-        var service = new IssueReportService(
-            store,
-            (baseUri, _, _) => new HttpClient(handler)
-            {
-                BaseAddress = baseUri
-            });
-
-        var retryResult = await service.RetryPendingUploadsAsync();
-        var entries = await service.LoadRecentIssueEntriesAsync();
-
-        Assert.True(retryResult.Success);
-        Assert.Equal(1, retryResult.RetriedCount);
-        Assert.Equal(1, retryResult.SucceededCount);
-        Assert.Single(entries);
-        Assert.True(entries[0].UploadSucceeded);
-        Assert.Equal("srv-222", entries[0].ServerIssueId);
     }
 
     [Fact]

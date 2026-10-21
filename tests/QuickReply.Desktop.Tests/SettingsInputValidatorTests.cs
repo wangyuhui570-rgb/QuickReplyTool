@@ -101,21 +101,6 @@ public sealed class SettingsInputValidatorTests
         Assert.Equal("资料文件夹需要填写完整的本地文件夹路径。", error);
     }
 
-    [Theory]
-    [InlineData("https://sync.example.com/", true)]
-    [InlineData("http://sync.example.com/api", true)]
-    [InlineData("http://localhost:5128/", true)]
-    [InlineData("http://127.0.0.1:5128/", true)]
-    [InlineData("ftp://sync.example.com/", true)]
-    [InlineData("not-a-url", true)]
-    [InlineData("", true)]
-    public void CanRunCloudSyncActions_RequiresHttpsOrLocalHttpBaseUrl(string serverBaseUrl, bool expected)
-    {
-        var canRun = SettingsInputValidator.CanRunCloudSyncActions(serverBaseUrl);
-
-        Assert.Equal(expected, canRun);
-    }
-
     [Fact]
     public void ResolveConfiguredServerBaseUrl_UsesBuiltInDefaultWhenEmpty()
     {
