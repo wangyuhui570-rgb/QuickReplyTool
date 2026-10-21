@@ -144,7 +144,7 @@ public sealed class UpdateCheckService : IUpdateCheckStateService
 
     private static HttpClient CreateHttpClient(Uri baseUri, AppSettings settingsSnapshot)
     {
-        var client = new HttpClient
+        var client = new HttpClient(SharedHttpMessageHandler.Instance, disposeHandler: false)
         {
             BaseAddress = baseUri,
             Timeout = TimeSpan.FromSeconds(15)

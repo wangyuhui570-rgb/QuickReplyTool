@@ -199,11 +199,21 @@ public sealed class TrayIconService : IDisposable
         ExitApplication();
     }
 
-    private void RetryPendingIssueUploads()
+    // 网络操作期间防止重复点击；托盘菜单事件运行在 UI 线程，原来同步等待网络会让整个界面卡死。
+    private bool _issueNetworkOperationRunning;
+
+    private async void RetryPendingIssueUploads()
     {
+        if (_issueNetworkOperationRunning)
+        {
+            ShowNotification("问题记录", "上一个问题记录操作仍在进行，请稍候。", Forms.ToolTipIcon.Info, 2000);
+            return;
+        }
+
+        _issueNetworkOperationRunning = true;
         try
         {
-            var result = _issueReportService.RetryPendingUploadsAsync().GetAwaiter().GetResult();
+            var result = await _issueReportService.RetryPendingUploadsAsync();
             ShowNotification("问题记录", result.Message, result.Success ? Forms.ToolTipIcon.Info : Forms.ToolTipIcon.Warning, 2600);
             if (!result.Success)
             {
@@ -215,6 +225,10 @@ public sealed class TrayIconService : IDisposable
             var message = $"重试问题包上传失败：{ex.Message}";
             ShowNotification("问题记录", message, Forms.ToolTipIcon.Warning, 2600);
             Forms.MessageBox.Show(message, "问题记录", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _issueNetworkOperationRunning = false;
         }
     }
 
@@ -332,9 +346,20 @@ public sealed class TrayIconService : IDisposable
             Enabled = false
         };
         openPatchButton.FlatAppearance.BorderSize = 0;
-        openPatchButton.Click += (_, _) =>
+        var patchOperationRunning = false;
+        dialog.FormClosing += (_, args) =>
         {
-            if (listView.SelectedItems.Count == 0 || listView.SelectedItems[0].Tag is not IssueReportIndexEntry entry)
+            // 补丁下载进行中时不允许关闭对话框，避免回调访问已释放的窗口。
+            if (patchOperationRunning)
+            {
+                args.Cancel = true;
+            }
+        };
+        openPatchButton.Click += async (_, _) =>
+        {
+            if (patchOperationRunning ||
+                listView.SelectedItems.Count == 0 ||
+                listView.SelectedItems[0].Tag is not IssueReportIndexEntry entry)
             {
                 return;
             }
@@ -343,13 +368,39 @@ public sealed class TrayIconService : IDisposable
             {
                 if (App.Instance is not null && !string.Equals(entry.PatchVersion, entry.InstalledPatchVersion, StringComparison.OrdinalIgnoreCase))
                 {
-                    var result = App.Instance.ApplyIssuePatchUpdateAsync(entry).GetAwaiter().GetResult();
+                    PackageUpdateLaunchResult result;
+                    patchOperationRunning = true;
+                    openPatchButton.Enabled = false;
+                    var originalText = openPatchButton.Text;
+                    openPatchButton.Text = "下载中...";
+                    try
+                    {
+                        result = await App.Instance.ApplyIssuePatchUpdateAsync(entry);
+                    }
+                    catch (Exception ex)
+                    {
+                        result = new PackageUpdateLaunchResult(false, false, $"应用补丁失败：{ex.Message}", string.Empty, string.Empty);
+                    }
+                    finally
+                    {
+                        patchOperationRunning = false;
+                        if (!openPatchButton.IsDisposed)
+                        {
+                            openPatchButton.Text = originalText;
+                            openPatchButton.Enabled = true;
+                        }
+                    }
+
+                    if (dialog.IsDisposed)
+                    {
+                        return;
+                    }
+
                     if (!result.Success)
                     {
                         Forms.MessageBox.Show(dialog, result.Message, "问题修复", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
                     }
-
-                    if (result.Success)
+                    else
                     {
                         dialog.Close();
                     }
@@ -464,11 +515,18 @@ public sealed class TrayIconService : IDisposable
         dialog.ShowDialog();
     }
 
-    private void RefreshIssueStatuses()
+    private async void RefreshIssueStatuses()
     {
+        if (_issueNetworkOperationRunning)
+        {
+            ShowNotification("问题记录", "上一个问题记录操作仍在进行，请稍候。", Forms.ToolTipIcon.Info, 2000);
+            return;
+        }
+
+        _issueNetworkOperationRunning = true;
         try
         {
-            var result = _issueReportService.RefreshIssueStatusesAsync().GetAwaiter().GetResult();
+            var result = await _issueReportService.RefreshIssueStatusesAsync();
             ShowNotification("问题记录", result.Message, result.Success ? Forms.ToolTipIcon.Info : Forms.ToolTipIcon.Warning, 2600);
             if (!result.Success)
             {
@@ -480,6 +538,10 @@ public sealed class TrayIconService : IDisposable
             var message = $"刷新问题状态失败：{ex.Message}";
             ShowNotification("问题记录", message, Forms.ToolTipIcon.Warning, 2600);
             Forms.MessageBox.Show(message, "问题记录", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _issueNetworkOperationRunning = false;
         }
     }
 
@@ -551,13 +613,46 @@ public sealed class TrayIconService : IDisposable
         };
         cancelButton.FlatAppearance.BorderSize = 0;
 
-        cancelButton.Click += (_, _) => dialog.Close();
-        generateButton.Click += (_, _) =>
+        var reportOperationRunning = false;
+        dialog.FormClosing += (_, args) =>
         {
+            // 打包/上传进行中时不允许关闭对话框，避免回调访问已释放的窗口。
+            if (reportOperationRunning)
+            {
+                args.Cancel = true;
+            }
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+        generateButton.Click += async (_, _) =>
+        {
+            if (reportOperationRunning)
+            {
+                return;
+            }
+
+            reportOperationRunning = true;
             generateButton.Enabled = false;
+            cancelButton.Enabled = false;
+            issueTextBox.ReadOnly = true;
+            var originalText = generateButton.Text;
+            generateButton.Text = "生成中...";
             try
             {
-                var result = _issueReportService.CreateReportAsync(issueTextBox.Text).GetAwaiter().GetResult();
+                IssueReportResult result;
+                try
+                {
+                    result = await _issueReportService.CreateReportAsync(issueTextBox.Text);
+                }
+                finally
+                {
+                    reportOperationRunning = false;
+                }
+
+                if (dialog.IsDisposed)
+                {
+                    return;
+                }
+
                 if (!result.Success)
                 {
                     Forms.MessageBox.Show(dialog, result.Message, "问题记录", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
@@ -573,9 +668,23 @@ public sealed class TrayIconService : IDisposable
                 dialog.DialogResult = Forms.DialogResult.OK;
                 dialog.Close();
             }
+            catch (Exception ex)
+            {
+                if (!dialog.IsDisposed)
+                {
+                    Forms.MessageBox.Show(dialog, $"生成问题记录失败：{ex.Message}", "问题记录", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
+                }
+            }
             finally
             {
-                generateButton.Enabled = true;
+                reportOperationRunning = false;
+                if (!generateButton.IsDisposed)
+                {
+                    generateButton.Text = originalText;
+                    generateButton.Enabled = true;
+                    cancelButton.Enabled = true;
+                    issueTextBox.ReadOnly = false;
+                }
             }
         };
 

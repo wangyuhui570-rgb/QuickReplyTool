@@ -357,7 +357,7 @@ public sealed class SelfUpdateService : IPackageUpdateService
 
     private static HttpClient CreateDefaultHttpClient()
     {
-        return new HttpClient
+        return new HttpClient(SharedHttpMessageHandler.Instance, disposeHandler: false)
         {
             Timeout = TimeSpan.FromMinutes(10)
         };

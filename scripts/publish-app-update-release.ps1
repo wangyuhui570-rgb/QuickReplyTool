@@ -13,7 +13,9 @@ param(
     [string]$PublicDownloadBaseUrl,
     [string]$ManifestFileName = "update-manifest.json",
     [string]$ReleaseEvidenceVersion = "",
-    [string]$ReleaseEvidenceOutputRoot = ""
+    [string]$ReleaseEvidenceOutputRoot = "",
+    # Private key from scripts/new-update-signing-key.ps1. Required once the client embeds a trusted public key.
+    [string]$SigningKeyPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -124,6 +126,16 @@ $manifest.latestAppDownloadUrl = "$publicDownloadBaseUrl/$($zipFile.Name)"
 New-Item -ItemType Directory -Path $publishRootFullPath -Force | Out-Null
 $manifestOutputPath = Join-Path $publishRootFullPath $ManifestFileName
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestOutputPath -Encoding UTF8
+
+if (-not [string]::IsNullOrWhiteSpace($SigningKeyPath)) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\sign-update-manifest.ps1') -ManifestPath $manifestOutputPath -PrivateKeyPath $SigningKeyPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "sign-update-manifest.ps1 failed with exit code $LASTEXITCODE"
+    }
+}
+else {
+    Write-Warning "No -SigningKeyPath provided; update manifest is NOT signed. Clients with a trusted public key will reject it."
+}
 Copy-Item -Path $manifestSnippetPath -Destination (Join-Path $publishRootFullPath 'release-manifest.snippet.json') -Force
 
 if (-not [string]::IsNullOrWhiteSpace($ReleaseEvidenceVersion)) {

@@ -333,7 +333,7 @@ public sealed class KnowledgeReviewClientService
 
     private static HttpClient CreateDefaultHttpClient(Uri baseUri, string? apiToken)
     {
-        var client = new HttpClient
+        var client = new HttpClient(SharedHttpMessageHandler.Instance, disposeHandler: false)
         {
             BaseAddress = baseUri
         };

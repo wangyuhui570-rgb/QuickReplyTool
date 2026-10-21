@@ -624,7 +624,7 @@ public sealed class IssueReportService : IPatchInstallationStateService
 
     private static HttpClient CreateHttpClient(Uri baseUri, AppSettings settings, string clientId)
     {
-        var client = new HttpClient
+        var client = new HttpClient(SharedHttpMessageHandler.Instance, disposeHandler: false)
         {
             BaseAddress = baseUri,
             Timeout = TimeSpan.FromSeconds(20)

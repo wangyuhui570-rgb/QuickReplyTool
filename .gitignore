@@ -24,3 +24,16 @@ manual-knowledge-review-batch-*.md
 *.log
 
 .DS_Store
+
+# Local databases (created automatically at runtime)
+*.db
+*.db-wal
+*.db-shm
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Update signing private keys - never commit
+*.signing-key.xml
+update-signing-key*.xml

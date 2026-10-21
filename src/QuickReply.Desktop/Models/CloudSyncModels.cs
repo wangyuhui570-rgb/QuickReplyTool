@@ -269,6 +269,9 @@ public sealed class CloudUpdateManifest
 
     public string LatestAppSha256 { get; init; } = string.Empty;
 
+    /// <summary>更新清单签名（Base64，RSA-SHA256），由 scripts/sign-update-manifest.ps1 生成。</summary>
+    public string LatestAppSignature { get; init; } = string.Empty;
+
     public long? LatestAppSizeBytes { get; init; }
 
     public string LatestAppReleaseChannel { get; init; } = string.Empty;

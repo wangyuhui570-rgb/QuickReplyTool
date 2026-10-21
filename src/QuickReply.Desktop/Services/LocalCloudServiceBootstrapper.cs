@@ -52,7 +52,7 @@ internal static class LocalCloudServiceBootstrapper
     {
         try
         {
-            using var client = new HttpClient
+            using var client = new HttpClient(SharedHttpMessageHandler.Instance, disposeHandler: false)
             {
                 BaseAddress = new Uri($"{DefaultLocalServiceBaseUrl}/", UriKind.Absolute),
                 Timeout = TimeSpan.FromSeconds(2)

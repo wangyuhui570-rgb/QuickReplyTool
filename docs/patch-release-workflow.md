@@ -111,7 +111,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\invoke-rollback-drill.ps1 `
 
 ```bash
 curl -X POST http://127.0.0.1:18080/api/quickreply/issues/patch/register \
-  -H 'Authorization: Bearer aWyh1314' \
+  -H 'Authorization: Bearer <你的 ManagementApiToken>' \
   -H 'X-QuickReply-ClientId: test-client' \
   -H 'Content-Type: application/json' \
   --data '{

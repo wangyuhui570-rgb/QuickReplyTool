@@ -78,6 +78,17 @@ internal sealed class AppUpdateWorkflowCoordinator
 
         if (updateResult.HasAppUpdate)
         {
+            var signatureStatus = UpdateManifestSignatureVerifier.Verify(updateResult.Manifest);
+            if (signatureStatus is UpdateManifestSignatureStatus.Missing or UpdateManifestSignatureStatus.Invalid)
+            {
+                await _workflowUi.ShowWarningAsync(
+                    "程序更新",
+                    signatureStatus == UpdateManifestSignatureStatus.Missing
+                        ? "服务器返回的更新信息没有签名，为了安全已拒绝本次更新。请联系管理员。"
+                        : "更新信息签名校验失败，可能被篡改，已拒绝本次更新。请联系管理员。").ConfigureAwait(false);
+                return;
+            }
+
             var packageDescriptor = UpdateCheckService.ResolveAppUpdatePackage(updateResult.Manifest);
             var downloadUrl = packageDescriptor.DownloadUrl;
             var releaseNotes = updateResult.Manifest.LatestAppReleaseNotes?.Trim() ?? string.Empty;
@@ -166,6 +177,14 @@ internal sealed class AppUpdateWorkflowCoordinator
         {
             await _workflowUi.OpenExternalUrlAsync(normalizedUrl).ConfigureAwait(false);
             return new PackageUpdateLaunchResult(true, false, "当前更新地址不支持一键 OTA，已改为打开更新下载页。", string.Empty, string.Empty);
+        }
+
+        if (string.Equals(sourceKind, "app_update", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(packageDescriptor.ExpectedSha256))
+        {
+            var message = "服务器未提供更新包的 SHA256 校验值，为了安全已拒绝自动安装。请联系管理员。";
+            await _workflowUi.ShowWarningAsync(title, message).ConfigureAwait(false);
+            return new PackageUpdateLaunchResult(false, false, message, string.Empty, string.Empty);
         }
 
         await _workflowUi.ShowBackgroundNotificationAsync(title, "正在下载更新包，请稍候。").ConfigureAwait(false);

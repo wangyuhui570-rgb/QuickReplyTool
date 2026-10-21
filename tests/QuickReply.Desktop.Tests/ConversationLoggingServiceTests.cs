@@ -452,6 +452,7 @@ public sealed class ConversationLoggingServiceTests
 
         var sessionId = service.LogKnowledgeCardsShown(snapshot, [knowledgeCard], SearchOverlayMode.Phrase, "安装");
         service.LogKnowledgeCardAccepted(knowledgeCard, sessionId, SearchOverlayMode.Phrase, "安装", ComposeActionMode.Send, resultSuccess: true);
+        await WaitForTableCountAsync(databasePath, "recommendation_events", minimumCount: 2);
 
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
         await connection.OpenAsync();
@@ -665,14 +666,21 @@ public sealed class ConversationLoggingServiceTests
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
         await connection.OpenAsync();
 
-        for (var attempt = 0; attempt < 30; attempt++)
+        // 日志在后台线程写入，建表也在后台完成；表还没建好时继续等待，而不是直接失败。
+        for (var attempt = 0; attempt < 100; attempt++)
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT COUNT(1) FROM {tableName};";
-            var count = Convert.ToInt32(await command.ExecuteScalarAsync());
-            if (count >= minimumCount)
+            try
             {
-                return;
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"SELECT COUNT(1) FROM {tableName};";
+                var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+                if (count >= minimumCount)
+                {
+                    return;
+                }
+            }
+            catch (SqliteException ex) when (ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
+            {
             }
 
             await Task.Delay(50);

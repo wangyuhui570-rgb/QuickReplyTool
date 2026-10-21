@@ -2,7 +2,10 @@ using System.Net.Http.Json;
 using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using QuickReply.CloudService;
@@ -61,6 +64,46 @@ public sealed class KnowledgeCloudApiTests
         Assert.True(authorizedResponse!.DatabaseReady);
         Assert.True(authorizedResponse.ManagementApiTokenConfigured);
         Assert.False(authorizedResponse.LoopbackBypassEnabled);
+    }
+
+    [Fact]
+    public async Task ManagementEndpoints_AllowLoopbackClient_WithoutToken()
+    {
+        await using var factory = new CloudServiceFactory(remoteIpAddress: IPAddress.Loopback);
+
+        var client = factory.CreateClient();
+        using var response = await client.GetAsync("/info");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ManagementEndpoints_RejectRemoteClient_SpoofingLocalhostHostHeader()
+    {
+        await using var factory = new CloudServiceFactory(remoteIpAddress: IPAddress.Parse("203.0.113.10"));
+
+        var client = factory.CreateClient();
+        foreach (var spoofedHost in new[] { "localhost", "127.0.0.1", "[::1]" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/info");
+            request.Headers.Host = spoofedHost;
+            using var response = await client.SendAsync(request);
+
+            Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable });
+        }
+    }
+
+    [Fact]
+    public async Task ManagementEndpoints_RejectForwardedRequest_EvenFromLoopbackProxy()
+    {
+        await using var factory = new CloudServiceFactory(remoteIpAddress: IPAddress.Loopback);
+
+        var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/info");
+        request.Headers.Add("X-Forwarded-For", "198.51.100.7");
+        using var response = await client.SendAsync(request);
+
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable });
     }
 
     [Fact]
@@ -422,14 +465,17 @@ public sealed class KnowledgeCloudApiTests
         private readonly string _databaseDirectory = Path.Combine(Path.GetTempPath(), "QuickReplyCloudTests", Guid.NewGuid().ToString("N"));
         private readonly bool _allowLoopbackWithoutAuth;
         private readonly string _managementApiToken;
+        private readonly IPAddress _remoteIpAddress;
         private string DatabasePath => Path.Combine(_databaseDirectory, "quickreply-cloud.db");
 
         public CloudServiceFactory(
             bool allowLoopbackWithoutAuth = true,
-            string managementApiToken = "")
+            string managementApiToken = "",
+            IPAddress? remoteIpAddress = null)
         {
             _allowLoopbackWithoutAuth = allowLoopbackWithoutAuth;
             _managementApiToken = managementApiToken;
+            _remoteIpAddress = remoteIpAddress ?? IPAddress.Loopback;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -437,6 +483,8 @@ public sealed class KnowledgeCloudApiTests
             builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:DatabasePath", DatabasePath);
             builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:AllowLoopbackWithoutAuth", _allowLoopbackWithoutAuth.ToString());
             builder.UseSetting($"{KnowledgeCloudOptions.SectionName}:ManagementApiToken", _managementApiToken);
+            builder.ConfigureServices(services =>
+                services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(_remoteIpAddress)));
         }
 
         public async Task SeedCandidateAsync(KnowledgeCandidateRecord candidate)
@@ -667,6 +715,23 @@ public sealed class KnowledgeCloudApiTests
                     // ignore cleanup issues in tests
                 }
             }
+        }
+    }
+
+    private sealed class RemoteIpStartupFilter(IPAddress remoteIpAddress) : IStartupFilter
+    {
+        // TestServer 默认不设置 RemoteIpAddress，这里显式模拟 TCP 对端地址。
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+        {
+            return app =>
+            {
+                app.Use(async (context, nextMiddleware) =>
+                {
+                    context.Connection.RemoteIpAddress = remoteIpAddress;
+                    await nextMiddleware(context);
+                });
+                next(app);
+            };
         }
     }
 }

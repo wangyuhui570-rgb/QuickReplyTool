@@ -51,6 +51,39 @@ public sealed class AppUpdateWorkflowCoordinatorTests
     }
 
     [Fact]
+    public async Task HandleUpdateCheckResultAsync_RefusesZipOtaWithoutSha256()
+    {
+        var packageService = new FakePackageUpdateService
+        {
+            CanSelfApply = true,
+            LaunchResult = new PackageUpdateLaunchResult(true, true, "ok", string.Empty, string.Empty)
+        };
+        var ui = new FakeAppUpdateWorkflowUi
+        {
+            ConfirmResult = true
+        };
+        var coordinator = new AppUpdateWorkflowCoordinator(
+            new FakeUpdateCheckStateService(),
+            packageService,
+            new FakePatchInstallationStateService(),
+            ui);
+        var manifest = new CloudUpdateManifest
+        {
+            LatestAppVersion = "2.2.0",
+            LatestAppDownloadUrl = "http://updates.example.com/QuickReplyTool-AppUpdate-v2.2.0.zip",
+            LatestAppPackageKind = AppUpdatePackageResolver.ZipOtaKind
+        };
+
+        await coordinator.HandleUpdateCheckResultAsync(
+            new AppSettings(),
+            new UpdateCheckResult(true, false, "发现可用更新。", true, false, manifest));
+
+        Assert.False(packageService.DownloadAndLaunchCalled);
+        Assert.False(ui.ShutdownCalled);
+        Assert.Contains(ui.WarningMessages, entry => entry.Message.Contains("SHA256", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task HandleUpdateCheckResultAsync_FallsBackToExternalUrlForInstallerPackage()
     {
         var packageService = new FakePackageUpdateService

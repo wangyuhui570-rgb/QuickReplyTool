@@ -39,27 +39,29 @@ internal static class ManagementApiAccess
         });
     }
 
-    private static bool IsLoopbackAllowed(HttpContext httpContext, KnowledgeCloudOptions options)
+    internal static bool IsLoopbackAllowed(HttpContext httpContext, KnowledgeCloudOptions options)
     {
         if (!options.AllowLoopbackWithoutAuth)
         {
             return false;
         }
 
-        if (httpContext.Connection.RemoteIpAddress is { } remoteAddress &&
-            System.Net.IPAddress.IsLoopback(remoteAddress))
+        // 经过反向代理转发的请求，即使 TCP 对端是 127.0.0.1，真实来源也可能是公网，一律要求 Token。
+        if (IsForwardedRequest(httpContext.Request))
         {
-            return true;
+            return false;
         }
 
-        var host = httpContext.Request.Host.Host;
-        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
+        // 只信任 TCP 连接的真实对端地址。Host 请求头由客户端任意填写，不能作为“本机访问”的依据。
+        return httpContext.Connection.RemoteIpAddress is { } remoteAddress &&
+               System.Net.IPAddress.IsLoopback(remoteAddress);
+    }
 
-        return System.Net.IPAddress.TryParse(host, out var hostAddress) &&
-               System.Net.IPAddress.IsLoopback(hostAddress);
+    private static bool IsForwardedRequest(HttpRequest request)
+    {
+        return request.Headers.ContainsKey("X-Forwarded-For") ||
+               request.Headers.ContainsKey("X-Real-IP") ||
+               request.Headers.ContainsKey("Forwarded");
     }
 
     private static bool TryReadBearerToken(HttpContext httpContext, out string token)

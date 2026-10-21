@@ -1019,7 +1019,8 @@ public sealed class SqliteAppDataStore
         await connection.OpenAsync();
 
         await using var pragma = connection.CreateCommand();
-        pragma.CommandText = "PRAGMA foreign_keys = ON;";
+        // busy_timeout：遇到其他连接短暂持有写锁时等待重试，而不是立即报 "database is locked"。
+        pragma.CommandText = "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;";
         await pragma.ExecuteNonQueryAsync();
 
         return connection;
@@ -1027,6 +1028,18 @@ public sealed class SqliteAppDataStore
 
     private static async Task InitializeSchemaAsync(SqliteConnection connection)
     {
+        // WAL 允许读写并发，并且断电时更不容易损坏数据库。该设置会持久保存在数据库文件中。
+        // 切换需要短暂独占锁，被占用时跳过即可，下次打开会再尝试。
+        try
+        {
+            await using var walCommand = connection.CreateCommand();
+            walCommand.CommandText = "PRAGMA journal_mode=WAL;";
+            await walCommand.ExecuteNonQueryAsync();
+        }
+        catch (SqliteException)
+        {
+        }
+
         const string sql = """
             CREATE TABLE IF NOT EXISTS categories (
                 id TEXT PRIMARY KEY,

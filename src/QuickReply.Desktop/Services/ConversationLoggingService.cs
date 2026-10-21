@@ -1295,7 +1295,15 @@ public sealed class ConversationLoggingService :
 
     private async Task ProcessQueueAsync()
     {
-        await InitializeSchemaAsync().ConfigureAwait(false);
+        try
+        {
+            await InitializeSchemaAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 初始化失败时不能让后台写入循环直接退出，否则之后的日志会全部丢失。
+            // 每次写入前都会再次调用 InitializeSchemaAsync，届时会重试。
+        }
 
         await foreach (var request in _channel.Reader.ReadAllAsync(_cancellationTokenSource.Token).ConfigureAwait(false))
         {
@@ -3323,7 +3331,35 @@ public sealed class ConversationLoggingService :
         await command.ExecuteNonQueryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
     }
 
+    // 建表和 50 多个列迁移检查只需要每个进程执行一次，之前每写一条日志都会全部重跑。
+    private readonly SemaphoreSlim _schemaInitializationLock = new(1, 1);
+    private volatile bool _schemaInitialized;
+
     private async Task InitializeSchemaAsync()
+    {
+        if (_schemaInitialized)
+        {
+            return;
+        }
+
+        await _schemaInitializationLock.WaitAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+        try
+        {
+            if (_schemaInitialized)
+            {
+                return;
+            }
+
+            await InitializeSchemaCoreAsync().ConfigureAwait(false);
+            _schemaInitialized = true;
+        }
+        finally
+        {
+            _schemaInitializationLock.Release();
+        }
+    }
+
+    private async Task InitializeSchemaCoreAsync()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
 
@@ -3475,6 +3511,19 @@ public sealed class ConversationLoggingService :
             """;
 
         await command.ExecuteNonQueryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+
+        // WAL 让界面读取统计和后台写入日志可以并发，减少 "database is locked"。该设置会持久保存在数据库文件中。
+        // 切换 WAL 需要短暂的独占锁；若此刻有其他连接占用，就跳过，下次启动再切换，不影响日志写入。
+        try
+        {
+            await using var walCommand = connection.CreateCommand();
+            walCommand.CommandText = "PRAGMA journal_mode=WAL;";
+            await walCommand.ExecuteNonQueryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+        }
+        catch (SqliteException)
+        {
+        }
+
         await EnsureConversationLogColumnAsync(connection, "recognition_status", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureConversationLogColumnAsync(connection, "recognition_method", "TEXT NOT NULL DEFAULT ''").ConfigureAwait(false);
         await EnsureConversationLogColumnAsync(connection, "recognition_confidence", "REAL NOT NULL DEFAULT 0").ConfigureAwait(false);
