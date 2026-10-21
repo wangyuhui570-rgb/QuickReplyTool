@@ -1,3 +1,5 @@
+> Note: App-update / OTA package scripts were removed with the local-only refactor. Prefer portable zip and installer signing only.
+
 # 发布签名与回滚 Smoke
 
 这套脚本不是生产级证书签名，也不会真的替换安装目录。它解决的是两件事：

@@ -29,10 +29,6 @@
     <ProjectReference Include="..\QuickReply.Core\QuickReply.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="Models\KnowledgeReviewModels.cs" />
-    <Compile Include="..\QuickReply.Core\DesktopCompatibility\DesktopContractAliases.cs" Link="GlobalUsings\DesktopContractAliases.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <Resource Include="Assets\quickreply.ico" />

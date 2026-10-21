@@ -111,41 +111,9 @@ public sealed class SqliteAppDataStoreTests
         verifyCommand.CommandText = "SELECT value FROM app_settings WHERE key = 'server_base_url' LIMIT 1;";
         var persistedValue = (string?)await verifyCommand.ExecuteScalarAsync();
 
-        Assert.Equal(QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl, settings.ServerBaseUrl);
-        Assert.Equal(QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl, persistedValue);
+        Assert.Equal(string.Empty, settings.ServerBaseUrl);
+        Assert.Equal(string.Empty, persistedValue);
     }
 
-    [Fact]
-    public async Task PublishedKnowledgeCards_RoundTripThroughDatabase()
-    {
-        using var scope = new TestAppDataScope();
-        var store = scope.CreateDataStore();
-        await store.LoadAsync();
 
-        var cardId = Guid.NewGuid();
-        await store.UpsertPublishedKnowledgeCardsAsync(
-        [
-            new PublishedKnowledgeCard
-            {
-                Id = cardId,
-                Platform = "wecom",
-                ProductKey = "SKU-1",
-                Question = "这款今天能发吗",
-                Answer = "您好，这款今天可以安排发出。",
-                Synonyms = ["今天发货"],
-                Tags = ["发货"],
-                UsageNotes = "仅限现货",
-                Version = "v1",
-                UpdatedAt = DateTimeOffset.Now
-            }
-        ]);
-
-        var cards = await store.LoadPublishedKnowledgeCardsAsync();
-
-        var card = Assert.Single(cards);
-        Assert.Equal(cardId, card.Id);
-        Assert.Equal("qa", card.CandidateKind);
-        Assert.Equal("这款今天能发吗", card.Question);
-        Assert.Contains("今天发货", card.Synonyms);
-    }
 }

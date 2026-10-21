@@ -18,8 +18,7 @@ public sealed class HistoricalCandidateRetrieverTests
 
         var retriever = new HistoricalCandidateRetriever(
             new FakeRecommendationQueryService(),
-            new FakeRecommendationPhraseCatalog([phrase]),
-            new FakePublishedKnowledgeCardCatalog([]));
+            new FakeRecommendationPhraseCatalog([phrase]));
 
         var result = await retriever.RetrieveCandidatesAsync(
             new ConversationRecommendationSnapshot
@@ -55,8 +54,7 @@ public sealed class HistoricalCandidateRetrieverTests
 
         var retriever = new HistoricalCandidateRetriever(
             new FakeRecommendationQueryService(),
-            new FakeRecommendationPhraseCatalog([phrase]),
-            new FakePublishedKnowledgeCardCatalog([]));
+            new FakeRecommendationPhraseCatalog([phrase]));
 
         var result = await retriever.RetrieveCandidatesAsync(
             new ConversationRecommendationSnapshot
@@ -75,49 +73,6 @@ public sealed class HistoricalCandidateRetrieverTests
         Assert.Single(result.Suggestions);
     }
 
-    [Fact]
-    public async Task RetrieveCandidatesAsync_ReturnsPublishedKnowledgeSuggestions_WhenKnowledgeMatches()
-    {
-        var retriever = new HistoricalCandidateRetriever(
-            new FakeRecommendationQueryService(),
-            new FakeRecommendationPhraseCatalog([]),
-            new FakePublishedKnowledgeCardCatalog(
-            [
-                new PublishedKnowledgeCard
-                {
-                    Id = Guid.NewGuid(),
-                    Platform = "wecom",
-                    ProductKey = "SKU-1",
-                    Question = "这款今天能发吗",
-                    Answer = "您好，这款今天可以安排发出。",
-                    Synonyms = ["发货时效", "今天发货"],
-                    Tags = ["发货", "时效"],
-                    UpdatedAt = DateTimeOffset.Now
-                }
-            ]));
-
-        var result = await retriever.RetrieveCandidatesAsync(
-            new ConversationRecommendationSnapshot
-            {
-                PlatformHint = "wecom",
-                RecognitionConfidence = 0.86d,
-                RecognizedCustomerText = "这款今天能发货吗",
-                Product = new ConversationProductContext
-                {
-                    ProductId = "SKU-1"
-                },
-                Keywords = ["发货", "今天"]
-            },
-            new RecommendationRequest
-            {
-                DisplayCount = 3,
-                MinimumSampleCount = 3
-            });
-
-        var suggestion = Assert.Single(result.KnowledgeCards);
-        Assert.Equal("发货", suggestion.MatchedKeyword);
-        Assert.Equal("这款今天能发吗", suggestion.Card.Question);
-    }
 
     private sealed class FakeRecommendationQueryService : IRecommendationQueryService
     {
@@ -147,8 +102,4 @@ public sealed class HistoricalCandidateRetrieverTests
         public DateTimeOffset? GetPhraseLastSentAt(Guid phraseId) => null;
     }
 
-    private sealed class FakePublishedKnowledgeCardCatalog(IReadOnlyList<PublishedKnowledgeCard> cards) : IPublishedKnowledgeCardCatalog
-    {
-        public IReadOnlyList<PublishedKnowledgeCard> GetAllPublishedKnowledgeCards() => cards;
-    }
 }

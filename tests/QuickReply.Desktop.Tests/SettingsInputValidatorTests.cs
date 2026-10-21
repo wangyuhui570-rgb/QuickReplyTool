@@ -121,7 +121,7 @@ public sealed class SettingsInputValidatorTests
     {
         var resolved = SettingsInputValidator.ResolveConfiguredServerBaseUrl(string.Empty);
 
-        Assert.Equal(QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl, resolved);
+        Assert.Equal(string.Empty, resolved);
     }
 
     [Fact]
@@ -129,27 +129,15 @@ public sealed class SettingsInputValidatorTests
     {
         var resolved = SettingsInputValidator.ResolveOperationalServerBaseUrl("ftp://sync.example.com/");
 
-        Assert.Equal(QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl, resolved);
+        Assert.Equal(string.Empty, resolved);
     }
 
     [Fact]
-    public void GetCloudActionAvailabilitySummary_ExplainsFallbackWhenConfiguredAddressIsInvalid()
+    public void GetCloudActionAvailabilitySummary_StatesLocalOnly()
     {
         var summary = SettingsInputValidator.GetCloudActionAvailabilitySummary("ftp://sync.example.com/");
-
-        Assert.Contains("已自动回退到内置服务地址", summary, StringComparison.Ordinal);
-        Assert.Contains(QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl, summary, StringComparison.Ordinal);
+        Assert.Contains("本地工具", summary, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData("https://sync.example.com/", true)]
-    [InlineData("", true)]
-    [InlineData("ftp://sync.example.com/", false)]
-    [InlineData("not-a-url", false)]
-    public void CanRunUpdateActions_AllowsDefaultUpdateServerWhenEmpty(string serverBaseUrl, bool expected)
-    {
-        var canRun = SettingsInputValidator.CanRunUpdateActions(serverBaseUrl);
 
-        Assert.Equal(expected, canRun);
-    }
 }

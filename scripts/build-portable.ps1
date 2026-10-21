@@ -60,7 +60,6 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
 
 $outputRootFullPath = [System.IO.Path]::GetFullPath($OutputRoot)
 $appOutputPath = Join-Path $outputRootFullPath "app"
-$localCloudOutputPath = Join-Path $appOutputPath "LocalCloudService"
 $templateRoot = Join-Path $repoRoot "packaging\portable"
 $zipPath = Join-Path ([System.IO.Path]::GetDirectoryName($outputRootFullPath)) ((Split-Path $outputRootFullPath -Leaf) + ".zip")
 $metadataPath = Join-Path $outputRootFullPath "portable-package-info.json"
@@ -87,14 +86,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\publish-local-cloud-service.ps1') `
-    -Configuration $Configuration `
-    -Runtime $Runtime `
-    -SelfContained:$SelfContained `
-    -OutputRoot $localCloudOutputPath
-if ($LASTEXITCODE -ne 0) {
-    throw "Local cloud-service publish failed with exit code $LASTEXITCODE"
-}
 
 if (-not (Test-Path $templateRoot)) {
     throw "Portable template folder not found: $templateRoot"

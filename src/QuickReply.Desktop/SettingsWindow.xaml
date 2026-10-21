@@ -160,16 +160,6 @@
                                                         <Button Width="108" Click="UseDefaultIssueReportDirectoryButton_OnClick" Content="恢复默认目录" Style="{StaticResource SubtleButtonStyle}" />
                                                     </StackPanel>
                                                 </StackPanel>
-                                                <TextBlock Grid.Row="9" Style="{StaticResource FieldLabelStyle}" Text="更新检查" />
-                                                <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,6,0,0">
-                                                    <CheckBox IsChecked="{Binding SelectedEnableUpdateChecks}" Content="启动时检查是否有新版本" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。开启后，程序启动时会按当前更新地址检查新版本。" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="10" Style="{StaticResource FieldLabelStyle}" Text="服务地址（默认已内置）" />
-                                                <StackPanel Grid.Row="10" Grid.Column="1" Margin="0,6,0,0">
-                                                    <TextBox Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedServerBaseUrl, UpdateSourceTrigger=PropertyChanged}" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认已绑定内置更新地址。一般不需要修改；只有你要切到私有更新服务时，才手动改这里。" TextWrapping="Wrap" />
-                                                </StackPanel>
                                             </Grid>
                                         </Border>
                                         <Border x:Name="StabilitySection" Tag="search" Style="{StaticResource SectionCardStyle}">
@@ -471,44 +461,6 @@
                                                     <Button Width="132" Click="ExportUsageReportButton_OnClick" Content="导出使用统计报表" Style="{StaticResource PrimaryButtonStyle}" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="5" Grid.Column="1" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会导出累计启动、累计运行，以及全部短语的发送次数和最近使用时间。" TextWrapping="Wrap" />
-                                            </Grid>
-                                        </Border>
-                                        <Border Style="{StaticResource SectionCardStyle}">
-                                            <Grid>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                </Grid.RowDefinitions>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="140" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10">
-                                                    <TextBlock Style="{StaticResource SectionTitleStyle}" Text="更新检查" />
-                                                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="这里只保留版本检查和本地工具相关设置。" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="最近状态" />
-                                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0">
-                                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding CloudUpdateCheckSummary}" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="当前目标" />
-                                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding CloudActionSummary}" TextWrapping="Wrap" />
-                                                <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="手动检查" />
-                                                <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,6,0,0">
-                                                    <Button Width="136" HorizontalAlignment="Left" Click="CheckForUpdatesNowButton_OnClick" Content="立即检查更新" IsEnabled="{Binding CanRunUpdateActions}" Style="{StaticResource PrimaryButtonStyle}" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会主动向服务器拉取更新清单。如果有新版本，会立即弹出提示。" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="8"
-                                                           Grid.Column="1"
-                                                           Margin="0,8,0,0"
-                                                           Foreground="{StaticResource MutedBrush}"
-                                                           Text="当前版本已经简化为本地快捷回复与资料发送工具。"
-                                                           TextWrapping="Wrap" />
                                             </Grid>
                                         </Border>
                                         <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="日志目录" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="快速打开数据库目录和截图目录，方便你排查、备份或手动清理。" TextWrapping="Wrap" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="路径与入口" /><StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"><TextBlock Foreground="{StaticResource TextBrush}" Text="{Binding LogPathSummary}" TextWrapping="Wrap" /><StackPanel Margin="0,10,0,0" Orientation="Horizontal"><Button Width="118" Margin="0,0,10,0" Click="OpenLogFolderButton_OnClick" Content="打开日志目录" Style="{StaticResource SubtleButtonStyle}" /><Button Width="118" Click="OpenCaptureFolderButton_OnClick" Content="打开截图目录" Style="{StaticResource SubtleButtonStyle}" /></StackPanel></StackPanel></Grid></Border>

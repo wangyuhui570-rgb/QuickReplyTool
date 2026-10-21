@@ -1,3 +1,4 @@
+<!-- Local-only: CloudService and ReplayEval projects removed. -->
 # 截图工具源码 Guide
 
 This directory contains an independent Python screenshot utility used by the desktop app.

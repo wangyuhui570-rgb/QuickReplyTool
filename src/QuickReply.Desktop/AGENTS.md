@@ -1,3 +1,4 @@
+<!-- Local-only: CloudService and ReplayEval projects removed. -->
 # QuickReply.Desktop Guide
 
 This guide adds desktop-app-specific rules on top of the repository root `AGENTS.md`.
@@ -22,7 +23,7 @@ This guide adds desktop-app-specific rules on top of the repository root `AGENTS
 
 - Messaging/send behavior depends on clipboard, keyboard simulation, and foreground-window tracking.
 - Search overlay behavior depends on `SearchOverlayViewModel`, manual search services, and clear status text.
-- Sync, update, issue-report, and knowledge-review behavior should stay aligned with `QuickReply.CloudService` and the docs under `docs/`.
+- This app is local-only: no cloud sync, remote knowledge review, or OTA client.
 - The screenshot tool is an external Python utility launched from the desktop app. Keep that boundary explicit.
 
 ## Minimum verification after changes

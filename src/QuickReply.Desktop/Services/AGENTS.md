@@ -1,3 +1,5 @@
+<!-- Local-only desktop services. Cloud sync / OTA / knowledge-review clients removed. -->
+<!-- Local-only: CloudService and ReplayEval projects removed. -->
 # QuickReply.Desktop Services Guide
 
 This directory contains side-effect-heavy code. Follow the root and desktop guides first, then these stricter rules.

@@ -26,7 +26,7 @@ public sealed class IssueReportServiceTests
     }
 
     [Fact]
-    public async Task CreateReportAsync_WritesPackageMasksTokenAndUploadsWhenConfigured()
+    public async Task CreateReportAsync_WritesPackageLocallyWithoutUpload()
     {
         using var scope = new TestAppDataScope();
         var store = scope.CreateDataStore();
@@ -54,8 +54,8 @@ public sealed class IssueReportServiceTests
         var packageJson = await File.ReadAllTextAsync(result.PackagePath);
 
         Assert.True(result.Success);
-        Assert.True(result.UploadAttempted);
-        Assert.True(result.UploadSucceeded);
+        Assert.False(result.UploadAttempted);
+        Assert.False(result.UploadSucceeded);
         Assert.Equal("srv-123", result.ServerIssueId);
         Assert.True(File.Exists(result.FilePath));
         Assert.True(File.Exists(result.PackagePath));
@@ -95,8 +95,8 @@ public sealed class IssueReportServiceTests
         var result = await service.CreateReportAsync("服务地址无效时也要保留本地问题包");
 
         Assert.True(result.Success);
-        Assert.True(result.UploadAttempted);
-        Assert.True(result.UploadSucceeded);
+        Assert.False(result.UploadAttempted);
+        Assert.False(result.UploadSucceeded);
         Assert.True(File.Exists(result.FilePath));
         Assert.True(File.Exists(result.PackagePath));
         Assert.Equal("srv-ftp-fallback", result.ServerIssueId);

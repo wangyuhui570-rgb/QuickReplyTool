@@ -75,7 +75,6 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
 
 $outputRootFullPath = [System.IO.Path]::GetFullPath($OutputRoot)
 $publishDir = Join-Path $outputRootFullPath "app"
-$localCloudOutputPath = Join-Path $publishDir "LocalCloudService"
 $installerOutputDir = Join-Path $outputRootFullPath "installer"
 $installerScriptPath = Join-Path $repoRoot "packaging\installer\QuickReplyTool.iss"
 $isccPath = Resolve-IsccPath
@@ -106,14 +105,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\publish-local-cloud-service.ps1') `
-    -Configuration $Configuration `
-    -Runtime $Runtime `
-    -SelfContained:$SelfContained `
-    -OutputRoot $localCloudOutputPath
-if ($LASTEXITCODE -ne 0) {
-    throw "Local cloud-service publish failed with exit code $LASTEXITCODE"
-}
 
 Get-ChildItem -Path $publishDir -Recurse -File -Include *.pdb |
     Remove-Item -Force -ErrorAction SilentlyContinue

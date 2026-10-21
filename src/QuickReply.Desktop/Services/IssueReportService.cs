@@ -50,7 +50,7 @@ internal sealed class IssueReportUploadResponse
     public string Message { get; init; } = string.Empty;
 }
 
-public sealed class IssueReportService : IPatchInstallationStateService
+public sealed class IssueReportService
 {
     private const string IssueReportUploadPath = "/api/quickreply/issues/report";
     private const string IssueReportStatusBatchPath = "/api/quickreply/issues/status/batch";
@@ -203,240 +203,14 @@ public sealed class IssueReportService : IPatchInstallationStateService
 
     public async Task<IssueReportStatusRefreshResult> RefreshIssueStatusesAsync()
     {
-        var stopwatch = Stopwatch.StartNew();
-        var stage = "load_settings";
-
-        try
-        {
-            var settings = await _dataStore.LoadSettingsOnlyAsync().ConfigureAwait(false);
-            var feedbackRootPath = GetFeedbackRootPath(settings);
-            Directory.CreateDirectory(feedbackRootPath);
-
-            var entries = await LoadIssueIndexAsync(feedbackRootPath).ConfigureAwait(false);
-            var issueIds = entries
-                .Select(entry => !string.IsNullOrWhiteSpace(entry.ServerIssueId) ? entry.ServerIssueId : entry.IssueId)
-                .Where(issueId => !string.IsNullOrWhiteSpace(issueId))
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-
-            if (issueIds.Length == 0)
-            {
-                return await CompleteStatusRefreshAsync(
-                    new IssueReportStatusRefreshResult(true, 0, 0, "当前没有可刷新状态的问题记录。"),
-                    "validation",
-                    stopwatch).ConfigureAwait(false);
-            }
-
-            if (!TryBuildBaseUri(settings.ServerBaseUrl, out var baseUri))
-            {
-                return await CompleteStatusRefreshAsync(
-                    new IssueReportStatusRefreshResult(false, issueIds.Length, 0, "未配置可用的服务器地址。"),
-                    "validation",
-                    stopwatch).ConfigureAwait(false);
-            }
-
-            stage = "status_request";
-            using var httpClient = _httpClientFactory(baseUri, settings, settings.SyncClientId);
-            using var response = await httpClient
-                .PostAsJsonAsync(IssueReportStatusBatchPath, new IssueStatusBatchRequest
-                {
-                    IssueIds = issueIds
-                })
-                .ConfigureAwait(false);
-
-            if (IsUnsupportedBuiltInIssueEndpoint(settings, response.StatusCode))
-            {
-                return await CompleteStatusRefreshAsync(
-                    new IssueReportStatusRefreshResult(true, issueIds.Length, 0, "当前内置服务未启用问题状态刷新，已跳过本次自动刷新。"),
-                    "status_endpoint_unsupported",
-                    stopwatch).ConfigureAwait(false);
-            }
-
-            response.EnsureSuccessStatusCode();
-            var responseBody = await response.Content.ReadFromJsonAsync<IssueStatusBatchResponse>().ConfigureAwait(false);
-            if (responseBody is null)
-            {
-                return await CompleteStatusRefreshAsync(
-                    new IssueReportStatusRefreshResult(false, issueIds.Length, 0, "服务器没有返回有效的问题状态结果。"),
-                    "status_response",
-                    stopwatch).ConfigureAwait(false);
-            }
-
-            var statusById = responseBody.Items
-                .Where(item => !string.IsNullOrWhiteSpace(item.IssueId))
-                .ToDictionary(item => item.IssueId, StringComparer.Ordinal);
-
-            var updatedCount = 0;
-            var updatedEntries = entries
-                .Select(entry =>
-                {
-                    var keys = new[]
-                    {
-                        entry.ServerIssueId,
-                        entry.IssueId
-                    };
-
-                    foreach (var key in keys.Where(key => !string.IsNullOrWhiteSpace(key)))
-                    {
-                        if (!statusById.TryGetValue(key, out var status))
-                        {
-                            continue;
-                        }
-
-                        var updatedEntry = entry with
-                        {
-                            ServerIssueId = string.IsNullOrWhiteSpace(status.ServerIssueId) ? entry.ServerIssueId : status.ServerIssueId,
-                            RemoteStatus = string.IsNullOrWhiteSpace(status.RemoteStatus) ? entry.RemoteStatus : status.RemoteStatus,
-                            AnalysisStatus = string.IsNullOrWhiteSpace(status.AnalysisStatus) ? entry.AnalysisStatus : status.AnalysisStatus,
-                            PatchVersion = string.IsNullOrWhiteSpace(status.PatchVersion) ? entry.PatchVersion : status.PatchVersion,
-                            PatchDownloadUrl = string.IsNullOrWhiteSpace(status.DownloadUrl) ? entry.PatchDownloadUrl : status.DownloadUrl,
-                            PatchReleaseNotes = string.IsNullOrWhiteSpace(status.ReleaseNotes) ? entry.PatchReleaseNotes : status.ReleaseNotes,
-                            UploadMessage = string.IsNullOrWhiteSpace(status.Message) ? entry.UploadMessage : status.Message
-                        };
-
-                        if (!Equals(updatedEntry, entry))
-                        {
-                            updatedCount++;
-                        }
-
-                        return updatedEntry;
-                    }
-
-                    return entry;
-                })
-                .OrderByDescending(entry => entry.CreatedAt)
-                .ToArray();
-
-            stage = "persist_index";
-            await SaveIssueIndexAsync(feedbackRootPath, updatedEntries).ConfigureAwait(false);
-            var message = updatedCount == 0
-                ? "服务器已响应，但没有新的问题状态变化。"
-                : $"已刷新 {updatedCount} 条问题记录状态。";
-            return await CompleteStatusRefreshAsync(
-                new IssueReportStatusRefreshResult(true, issueIds.Length, updatedCount, message),
-                "completed",
-                stopwatch,
-                new
-                {
-                    requestedCount = issueIds.Length,
-                    updatedCount
-                }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            return await CompleteStatusRefreshAsync(
-                new IssueReportStatusRefreshResult(false, 0, 0, $"刷新问题状态失败：{ex.Message}"),
-                stage,
-                stopwatch).ConfigureAwait(false);
-        }
+        await Task.CompletedTask.ConfigureAwait(false);
+        return new IssueReportStatusRefreshResult(true, 0, 0, "问题状态刷新已移除：当前为本地工具，不再连接服务器。");
     }
 
     public async Task<IssueReportRetryResult> RetryPendingUploadsAsync()
     {
-        var stopwatch = Stopwatch.StartNew();
-        var stage = "load_settings";
-
-        try
-        {
-            var settings = await _dataStore.LoadSettingsOnlyAsync().ConfigureAwait(false);
-            var feedbackRootPath = GetFeedbackRootPath(settings);
-            Directory.CreateDirectory(feedbackRootPath);
-
-            var entries = await LoadIssueIndexAsync(feedbackRootPath).ConfigureAwait(false);
-            var pendingEntries = entries
-                .Where(entry => !entry.UploadSucceeded && !string.IsNullOrWhiteSpace(entry.PackagePath) && File.Exists(entry.PackagePath))
-                .OrderBy(entry => entry.CreatedAt)
-                .ToArray();
-
-            if (pendingEntries.Length == 0)
-            {
-                return await CompleteRetryResultAsync(
-                    new IssueReportRetryResult(true, 0, 0, "当前没有待重试上传的问题包。"),
-                    "validation",
-                    stopwatch).ConfigureAwait(false);
-            }
-
-            var updatedEntries = entries.ToDictionary(entry => entry.IssueId, StringComparer.Ordinal);
-            var retriedCount = 0;
-            var succeededCount = 0;
-
-            foreach (var entry in pendingEntries)
-            {
-                retriedCount++;
-
-                IssueReportPackage? reportPackage;
-                try
-                {
-                    stage = "read_package";
-                    var json = await File.ReadAllTextAsync(entry.PackagePath).ConfigureAwait(false);
-                    reportPackage = JsonSerializer.Deserialize<IssueReportPackage>(json);
-                }
-                catch (Exception ex)
-                {
-                    updatedEntries[entry.IssueId] = entry with
-                    {
-                        UploadAttempted = true,
-                        UploadSucceeded = false,
-                        LastUploadAttemptAt = DateTimeOffset.Now,
-                        UploadMessage = $"读取问题包失败：{ex.Message}",
-                        RemoteStatus = string.Empty
-                    };
-                    continue;
-                }
-
-                if (reportPackage is null)
-                {
-                    updatedEntries[entry.IssueId] = entry with
-                    {
-                        UploadAttempted = true,
-                        UploadSucceeded = false,
-                        LastUploadAttemptAt = DateTimeOffset.Now,
-                        UploadMessage = "读取问题包失败：文件内容为空。",
-                        RemoteStatus = string.Empty
-                    };
-                    continue;
-                }
-
-                stage = "upload";
-                var uploadResult = await TryUploadReportAsync(settings, reportPackage, uploadAllowed: true).ConfigureAwait(false);
-                if (uploadResult.Success)
-                {
-                    succeededCount++;
-                }
-
-                updatedEntries[entry.IssueId] = entry with
-                {
-                    UploadAttempted = uploadResult.Attempted,
-                    UploadSucceeded = uploadResult.Success,
-                    LastUploadAttemptAt = uploadResult.Attempted ? DateTimeOffset.Now : entry.LastUploadAttemptAt,
-                    UploadMessage = uploadResult.Message,
-                    ServerIssueId = string.IsNullOrWhiteSpace(uploadResult.ServerIssueId) ? entry.ServerIssueId : uploadResult.ServerIssueId,
-                    RemoteStatus = uploadResult.Success ? "reported" : entry.RemoteStatus
-                };
-            }
-
-            stage = "persist_index";
-            await SaveIssueIndexAsync(feedbackRootPath, updatedEntries.Values.OrderByDescending(entry => entry.CreatedAt).ToArray()).ConfigureAwait(false);
-            var message = succeededCount == retriedCount
-                ? $"已成功重试上传 {succeededCount} 个问题包。"
-                : $"共重试 {retriedCount} 个问题包，成功 {succeededCount} 个。";
-            return await CompleteRetryResultAsync(
-                new IssueReportRetryResult(true, retriedCount, succeededCount, message),
-                "completed",
-                stopwatch,
-                new
-                {
-                    retriedCount,
-                    succeededCount
-                }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            return await CompleteRetryResultAsync(
-                new IssueReportRetryResult(false, 0, 0, $"重试问题包上传失败：{ex.Message}"),
-                stage,
-                stopwatch).ConfigureAwait(false);
-        }
+        await Task.CompletedTask.ConfigureAwait(false);
+        return new IssueReportRetryResult(true, 0, 0, "问题上传已移除：反馈包仅保存在本地目录。");
     }
 
     public async Task MarkPatchVersionInstalledAsync(string patchVersion)
@@ -585,41 +359,8 @@ public sealed class IssueReportService : IPatchInstallationStateService
         IssueReportPackage reportPackage,
         bool uploadAllowed)
     {
-        if (!uploadAllowed)
-        {
-            return new IssueReportUploadAttemptResult(false, false, "自动上传未开启，已保留本地问题包。", string.Empty);
-        }
-
-        if (!TryBuildBaseUri(settings.ServerBaseUrl, out var baseUri))
-        {
-            return new IssueReportUploadAttemptResult(false, false, "未配置可用的服务器地址。", string.Empty);
-        }
-
-        try
-        {
-            var uploadPackage = BuildUploadPackage(reportPackage);
-            using var httpClient = _httpClientFactory(baseUri, settings, reportPackage.ClientId);
-            using var response = await httpClient
-                .PostAsJsonAsync(IssueReportUploadPath, uploadPackage)
-                .ConfigureAwait(false);
-
-            if (IsUnsupportedBuiltInIssueEndpoint(settings, response.StatusCode))
-            {
-                return new IssueReportUploadAttemptResult(false, false, "当前内置服务未启用问题上报接口。", string.Empty);
-            }
-
-            response.EnsureSuccessStatusCode();
-            var responseBody = await response.Content.ReadFromJsonAsync<IssueReportUploadResponse>().ConfigureAwait(false);
-            var serverIssueId = responseBody?.IssueId?.Trim() ?? string.Empty;
-            var message = string.IsNullOrWhiteSpace(responseBody?.Message)
-                ? "问题包已上传到服务器。"
-                : responseBody!.Message.Trim();
-            return new IssueReportUploadAttemptResult(true, true, message, serverIssueId);
-        }
-        catch (Exception ex)
-        {
-            return new IssueReportUploadAttemptResult(true, false, ex.Message, string.Empty);
-        }
+        await Task.CompletedTask.ConfigureAwait(false);
+        return new IssueReportUploadAttemptResult(false, false, "已生成本地问题包（云端上传已移除）。", string.Empty);
     }
 
     private static HttpClient CreateHttpClient(Uri baseUri, AppSettings settings, string clientId)

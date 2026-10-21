@@ -1910,96 +1910,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         }
     }
 
-    private async void RunCloudSyncNowButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (IsRunningCloudAction)
-        {
-            return;
-        }
 
-        IsRunningCloudAction = true;
-        CloudActionSummary = "正在执行云同步...";
 
-        try
-        {
-            var app = App.Instance;
-            if (app is null)
-            {
-                throw new InvalidOperationException("应用程序实例不可用。");
-            }
 
-            var settingsSnapshot = CreatePendingSettingsSnapshot();
-            var result = await app.RunCloudSyncNowAsync(settingsSnapshot, force: true);
-            ApplyCloudStatusSnapshot(settingsSnapshot);
-            RefreshCloudStatusSummary();
-
-            CloudActionSummary = result.Message;
-            if (result.Success)
-            {
-                var detail = $"知识分类 {result.CategoryCount} 条，短语 {result.PhraseCount} 条，快捷标签 {result.QuickTagCount} 条，素材 {result.FileItemCount} 条。{Environment.NewLine}问题日志 {result.ConversationLogCount} 条，推荐事件 {result.RecommendationEventCount} 条，识别纠正 {result.RecognitionCorrectionCount} 条。";
-                System.Windows.MessageBox.Show(this, detail, "云同步", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            else
-            {
-                System.Windows.MessageBox.Show(this, result.Message, "云同步", MessageBoxButton.OK, result.Skipped ? MessageBoxImage.Information : MessageBoxImage.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            CloudActionSummary = $"云同步失败：{ex.Message}";
-            System.Windows.MessageBox.Show(this, ex.Message, "云同步", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        finally
-        {
-            IsRunningCloudAction = false;
-        }
-    }
-
-    private async void CheckForUpdatesNowButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (IsRunningCloudAction)
-        {
-            return;
-        }
-
-        IsRunningCloudAction = true;
-        CloudActionSummary = "正在检查更新...";
-
-        try
-        {
-            var app = App.Instance;
-            if (app is null)
-            {
-                throw new InvalidOperationException("应用程序实例不可用。");
-            }
-
-            var settingsSnapshot = CreatePendingSettingsSnapshot();
-            var result = await app.CheckForUpdatesNowAsync(settingsSnapshot, force: true, showUpdatePrompt: true);
-            ApplyCloudStatusSnapshot(settingsSnapshot);
-            RefreshCloudStatusSummary();
-
-            CloudActionSummary = result.Message;
-            if (!result.Success)
-            {
-                System.Windows.MessageBox.Show(this, result.Message, "更新检查", MessageBoxButton.OK, result.Skipped ? MessageBoxImage.Information : MessageBoxImage.Warning);
-                return;
-            }
-
-            if (!result.HasAppUpdate && !result.HasKnowledgeUpdate)
-            {
-                System.Windows.MessageBox.Show(this, "当前没有检测到新版本或新的知识分析结果。", "更新检查", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        }
-        catch (Exception ex)
-        {
-            CloudActionSummary = $"更新检查失败：{ex.Message}";
-            System.Windows.MessageBox.Show(this, ex.Message, "更新检查", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        finally
-        {
-            IsRunningCloudAction = false;
-        }
-    }
 
     private AppSettings CreatePendingSettingsSnapshot()
     {
@@ -2016,16 +1929,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         _viewModel.Settings.LastKnownCloudKnowledgeVersion = settingsSnapshot.LastKnownCloudKnowledgeVersion;
     }
 
-    private void OpenKnowledgeReviewWindowButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        var window = new KnowledgeReviewWindow(SelectedServerBaseUrl, SelectedSyncApiToken)
-        {
-            Owner = this
-        };
 
-        window.Show();
-        window.Activate();
-    }
 
     private void ManageFilesButton_OnClick(object sender, RoutedEventArgs e)
     {
