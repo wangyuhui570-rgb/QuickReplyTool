@@ -169,6 +169,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private SearchTextSendShortcutMode _selectedSearchTextSendShortcutMode = SearchTextSendShortcutMode.CtrlEnter;
     private SidebarWorkMode _selectedSidebarWorkMode = SidebarWorkMode.Standard;
     private bool _selectedLaunchAtStartup;
+    private bool _selectedTriggerAppFilterEnabled;
+    private TriggerAppRule? _selectedTriggerAppPreset;
     private bool _selectedLaunchScreenshotToolWithApp = true;
     private string _selectedScreenshotToolHotkey = ScreenshotHotkeyBinding.DefaultHotkey;
     private string _selectedScreenshotToolSaveDirectory = string.Empty;
@@ -233,6 +235,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         WindowTransitionService.Attach(this);
         _viewModel = viewModel;
         SettingsWindowSelectionMapper.ApplySettingsToSelections(initialSettings, this);
+        LoadTriggerAppFilterSelections(initialSettings);
         DataContext = this;
         RefreshValidationState();
         ConfigureQuickActionsSection();
@@ -275,6 +278,124 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     {
         get => _selectedSidebarWorkMode;
         set => SetField(ref _selectedSidebarWorkMode, value);
+    }
+
+    public bool SelectedTriggerAppFilterEnabled
+    {
+        get => _selectedTriggerAppFilterEnabled;
+        set => SetField(ref _selectedTriggerAppFilterEnabled, value);
+    }
+
+    public ObservableCollection<TriggerAppRule> TriggerAppRuleRows { get; } = [];
+
+    public IReadOnlyList<TriggerAppRule> TriggerAppPresetOptions => TriggerAppFilterMatcher.Presets;
+
+    public TriggerAppRule? SelectedTriggerAppPreset
+    {
+        get => _selectedTriggerAppPreset;
+        set => SetField(ref _selectedTriggerAppPreset, value);
+    }
+
+    private void LoadTriggerAppFilterSelections(AppSettings settings)
+    {
+        SelectedTriggerAppFilterEnabled = settings.TriggerAppFilterEnabled;
+        TriggerAppRuleRows.Clear();
+        foreach (var rule in settings.TriggerAppRules ?? [])
+        {
+            TriggerAppRuleRows.Add(rule.Clone());
+        }
+    }
+
+    private void ApplyTriggerAppFilterSelections(AppSettings settings)
+    {
+        settings.TriggerAppFilterEnabled = SelectedTriggerAppFilterEnabled;
+        settings.TriggerAppRules = TriggerAppRuleRows
+            .Where(rule => !string.IsNullOrWhiteSpace(rule.ProcessName) ||
+                           !string.IsNullOrWhiteSpace(rule.TitleKeyword) ||
+                           !string.IsNullOrWhiteSpace(rule.WindowClassKeyword))
+            .Select(rule => rule.Clone())
+            .ToList();
+    }
+
+    private void AddTriggerAppRule(TriggerAppRule rule)
+    {
+        var exists = TriggerAppRuleRows.Any(existing =>
+            string.Equals(TriggerAppFilterMatcher.NormalizeProcessName(existing.ProcessName), TriggerAppFilterMatcher.NormalizeProcessName(rule.ProcessName), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(existing.TitleKeyword?.Trim(), rule.TitleKeyword?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (!exists)
+        {
+            TriggerAppRuleRows.Add(rule.Clone());
+        }
+    }
+
+    private void AddPresetTriggerAppButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (SelectedTriggerAppPreset is { } preset)
+        {
+            AddTriggerAppRule(preset);
+        }
+    }
+
+    private void AddCustomTriggerAppButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        TriggerAppRuleRows.Add(new TriggerAppRule { DisplayName = "自定义" });
+    }
+
+    private void RemoveTriggerAppButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is TriggerAppRule rule)
+        {
+            TriggerAppRuleRows.Remove(rule);
+        }
+    }
+
+    private void PickRunningTriggerAppButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var apps = TriggerAppFilterGate.ListRunningWindowedApps();
+        var listBox = new System.Windows.Controls.ListBox
+        {
+            Margin = new Thickness(0, 0, 0, 10),
+            SelectionMode = System.Windows.Controls.SelectionMode.Extended,
+            ItemsSource = apps.Select(app => $"{app.ProcessName}    —    {app.Title}").ToList()
+        };
+        var okButton = new System.Windows.Controls.Button { Content = "添加选中", Width = 96, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var cancelButton = new System.Windows.Controls.Button { Content = "取消", Width = 80, IsCancel = true };
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+        var hint = new TextBlock { Text = "选择要允许触发的软件（可多选）。只按进程名匹配；如需区分窗口，可在列表里再填写“标题包含”。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+        var root = new DockPanel { Margin = new Thickness(12) };
+        DockPanel.SetDock(hint, Dock.Top);
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(hint);
+        root.Children.Add(buttons);
+        root.Children.Add(listBox);
+        var dialog = new Window
+        {
+            Title = "从正在运行的软件中选择",
+            Owner = this,
+            Width = 560,
+            Height = 460,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = root
+        };
+        okButton.Click += (_, _) => dialog.DialogResult = true;
+        listBox.MouseDoubleClick += (_, _) => dialog.DialogResult = listBox.SelectedItems.Count > 0;
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var labels = listBox.ItemsSource.Cast<string>().ToList();
+        foreach (var selected in listBox.SelectedItems.Cast<string>())
+        {
+            var app = apps[labels.IndexOf(selected)];
+            AddTriggerAppRule(new TriggerAppRule
+            {
+                DisplayName = app.Title.Length > 24 ? app.Title[..24] : app.Title,
+                ProcessName = app.ProcessName
+            });
+        }
     }
 
     public bool SelectedLaunchAtStartup
@@ -2332,6 +2453,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     public void ApplySelectionsTo(AppSettings settings)
     {
         SettingsWindowSelectionMapper.ApplySelectionsToSettings(this, settings);
+        ApplyTriggerAppFilterSelections(settings);
     }
 
     private void RefreshValidationState()
@@ -2359,6 +2481,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private void SyncSelectionsFromViewModel()
     {
         SettingsWindowSelectionMapper.ApplySettingsToSelections(_viewModel.Settings, this);
+        LoadTriggerAppFilterSelections(_viewModel.Settings);
         RefreshValidationState();
         OnPropertyChanged(string.Empty);
     }

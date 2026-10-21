@@ -160,6 +160,50 @@
                                                         <Button Width="108" Click="UseDefaultIssueReportDirectoryButton_OnClick" Content="恢复默认目录" Style="{StaticResource SubtleButtonStyle}" />
                                                     </StackPanel>
                                                 </StackPanel>
+                                                <TextBlock Grid.Row="8" Style="{StaticResource FieldLabelStyle}" Text="触发软件" />
+                                                <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,6,0,0">
+                                                    <CheckBox IsChecked="{Binding SelectedTriggerAppFilterEnabled}" Content="只在指定软件中触发" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="开启后，搜索唤起快捷键只在下面列表里的软件处于前台时生效；其他软件里按键会照常传给该软件。进程名不区分大小写，.exe 可省略；“标题包含”留空表示不限制。" TextWrapping="Wrap" />
+                                                    <Border Margin="0,10,0,0" Padding="10,8" Style="{StaticResource AppleInsetCardStyle}">
+                                                        <StackPanel>
+                                                            <Grid Margin="0,0,0,4">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="110" />
+                                                                    <ColumnDefinition Width="150" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="56" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Grid.Column="0" Foreground="{StaticResource MutedBrush}" Text="名称" />
+                                                                <TextBlock Grid.Column="1" Foreground="{StaticResource MutedBrush}" Text="进程名" />
+                                                                <TextBlock Grid.Column="2" Foreground="{StaticResource MutedBrush}" Text="标题包含（可选）" />
+                                                            </Grid>
+                                                            <ItemsControl ItemsSource="{Binding TriggerAppRuleRows}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid Margin="0,2">
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="110" />
+                                                                                <ColumnDefinition Width="150" />
+                                                                                <ColumnDefinition Width="*" />
+                                                                                <ColumnDefinition Width="56" />
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <TextBox Grid.Column="0" Margin="0,0,6,0" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" />
+                                                                            <TextBox Grid.Column="1" Margin="0,0,6,0" Text="{Binding ProcessName, UpdateSourceTrigger=PropertyChanged}" />
+                                                                            <TextBox Grid.Column="2" Margin="0,0,6,0" Text="{Binding TitleKeyword, UpdateSourceTrigger=PropertyChanged}" />
+                                                                            <Button Grid.Column="3" Content="删除" Tag="{Binding}" Click="RemoveTriggerAppButton_OnClick" Style="{StaticResource SubtleButtonStyle}" />
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                                        <ComboBox Width="160" Margin="0,0,8,0" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding TriggerAppPresetOptions}" DisplayMemberPath="DisplayName" SelectedItem="{Binding SelectedTriggerAppPreset}" />
+                                                        <Button Width="96" Margin="0,0,8,0" Click="AddPresetTriggerAppButton_OnClick" Content="添加常用" Style="{StaticResource SubtleButtonStyle}" />
+                                                        <Button Width="96" Margin="0,0,8,0" Click="AddCustomTriggerAppButton_OnClick" Content="手动添加" Style="{StaticResource SubtleButtonStyle}" />
+                                                        <Button Width="170" Click="PickRunningTriggerAppButton_OnClick" Content="从正在运行的软件中选择" Style="{StaticResource SubtleButtonStyle}" />
+                                                    </StackPanel>
+                                                </StackPanel>
                                             </Grid>
                                         </Border>
                                         <Border x:Name="StabilitySection" Tag="search" Style="{StaticResource SectionCardStyle}">

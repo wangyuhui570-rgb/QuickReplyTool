@@ -117,7 +117,8 @@ public partial class MainWindow : Window
 
         if (foregroundWindowHandle != new WindowInteropHelper(this).Handle)
         {
-            return true;
+            // "只在指定软件中触发": returning false lets the keystroke pass through to the app.
+            return TriggerAppFilterGate.IsForegroundAllowed(ViewModel?.Settings, foregroundWindowHandle);
         }
 
         return !IsInlineEditingActive() && !HasEditableKeyboardFocus();
