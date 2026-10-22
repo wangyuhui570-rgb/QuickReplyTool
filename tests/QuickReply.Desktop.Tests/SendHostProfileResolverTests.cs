@@ -7,7 +7,12 @@ public sealed class SendHostProfileResolverTests
     [Theory]
     [InlineData("拼多多商家工作台", "Chrome_WidgetWin_1", "PDDWorkbench", "pdd_workbench")]
     [InlineData("千牛接待台", "Qt5152QWindowIcon", "AliWorkbench", "qianniu")]
+    [InlineData("飞鸽客服", "Chrome_WidgetWin_1", "msedge", "douyin_workbench")]
+    [InlineData("抖店客服工作台", "Chrome_WidgetWin_1", "msedge", "douyin_workbench")]
+    [InlineData("抖音商家工作台", "Chrome_WidgetWin_1", "chrome", "douyin_workbench")]
+    [InlineData("Douyin Feige Workbench", "Chrome_WidgetWin_1", "msedge", "douyin_workbench")]
     [InlineData("Microsoft Edge", "Chrome_WidgetWin_1", "msedge", "browser_hosted_input")]
+    [InlineData("Douyin video search - Microsoft Edge", "Chrome_WidgetWin_1", "msedge", "browser_hosted_input")]
     [InlineData("记事本", "Notepad", "notepad", "generic_desktop_input")]
     public void Resolve_ReturnsExpectedProfile(string title, string className, string processName, string expectedProfileName)
     {
@@ -25,5 +30,28 @@ public sealed class SendHostProfileResolverTests
         });
 
         Assert.Equal(expectedProfileName, profile.Name);
+    }
+
+    [Fact]
+    public void Resolve_DoudianProcess_ReturnsDouyinWorkbench()
+    {
+        var profile = SendHostProfileResolver.Resolve(new WindowDockTargetInfo
+        {
+            Handle = new IntPtr(1),
+            Title = "客服接待",
+            WindowClassName = "Chrome_WidgetWin_1",
+            ProcessName = "doudian",
+            ProcessPath = @"C:\Program Files\doudian\doudian.exe",
+            Left = 0,
+            Top = 0,
+            Width = 1280,
+            Height = 720
+        });
+
+        Assert.Equal("douyin_workbench", profile.Name);
+        Assert.True(profile.PreferConservativeRichPath);
+        Assert.False(profile.PreferFastTextPath);
+        Assert.True(profile.FilePasteStableMs >= 900);
+        Assert.True(profile.FilePasteTimeoutMs >= 2600);
     }
 }

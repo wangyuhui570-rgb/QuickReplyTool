@@ -16,7 +16,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
     private string _actionStatusMessage = string.Empty;
     private string _recognitionCorrectionText = string.Empty;
     private string _searchText = string.Empty;
-    private string _statusMessage = "输入关键词后，可按数字 1-9 或 Enter 发送结果；Ctrl+S 仅保存原文，Ctrl+Shift+S 发送并保存。";
+    private string _statusMessage = string.Empty;
     private SearchOverlayResultItem? _selectedResult;
     private SearchOverlayMode _currentMode = SearchOverlayMode.Phrase;
     private bool _isSettingsPreviewMode;
@@ -259,7 +259,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
     }
 
-    public string OverlayAssistText => HasActionStatusMessage ? ActionStatusMessage : StatusMessage;
+    public string OverlayAssistText => HasActionStatusMessage ? ActionStatusMessage : string.Empty;
 
     public bool HasOverlayAssistText =>
         SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText(SearchText, HasActionStatusMessage) &&
@@ -329,12 +329,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         _isSettingsPreviewMode = false;
         ClearActionStatus();
         CurrentMode = Settings.DefaultSearchOverlayMode;
-        StatusMessage = CurrentMode switch
-        {
-            SearchOverlayMode.File => "文件模式，可按数字 1-9 或 Enter 直接发送文件。",
-            SearchOverlayMode.Mixed => "混合模式，可按数字 1-9 或 Enter 发送当前选中结果；Ctrl+S 保存原文，Ctrl+Shift+S 发送并保存。",
-            _ => "短语模式，可按数字 1-9 或 Enter 直接发送；Ctrl+S 保存原文，Ctrl+Shift+S 发送并保存。"
-        };
+        StatusMessage = string.Empty;
 
         if (string.IsNullOrEmpty(SearchText))
         {
@@ -428,12 +423,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
 
         CurrentMode = mode;
-        StatusMessage = mode switch
-        {
-            SearchOverlayMode.File => "文件模式，可按数字 1-9 或 Enter 直接发送文件。",
-            SearchOverlayMode.Mixed => "混合模式，可按数字 1-9 或 Enter 发送当前选中结果；Ctrl+S 保存原文，Ctrl+Shift+S 发送并保存。",
-            _ => "短语模式，可按数字 1-9 或 Enter 直接发送；Ctrl+S 保存原文，Ctrl+Shift+S 发送并保存。"
-        };
+        StatusMessage = string.Empty;
         RefreshResults();
     }
 

@@ -5,7 +5,8 @@ internal enum SendHostKind
     GenericDesktopInput,
     BrowserHostedInput,
     PddWorkbench,
-    QianNiu
+    QianNiu,
+    DouyinWorkbench
 }
 
 internal sealed record SendHostProfile(
@@ -104,6 +105,25 @@ internal sealed record SendHostProfile(
         ClipboardRestoreDelayMs: 800,
         PreferConservativeRichPath: true,
         PreferFastTextPath: false);
+
+    public static SendHostProfile DouyinWorkbench { get; } = new(
+        SendHostKind.DouyinWorkbench,
+        "douyin_workbench",
+        ActivationStableMs: 80,
+        ActivationTimeoutMs: 340,
+        RetryBackoffMs: 100,
+        PollIntervalMs: 35,
+        TextPasteStableMs: 90,
+        TextPasteTimeoutMs: 340,
+        FilePasteStableMs: 900,
+        FilePasteTimeoutMs: 2600,
+        TextSendStableMs: 120,
+        TextSendTimeoutMs: 420,
+        RichSendStableMs: 300,
+        RichSendTimeoutMs: 1200,
+        ClipboardRestoreDelayMs: 900,
+        PreferConservativeRichPath: true,
+        PreferFastTextPath: false);
 }
 
 internal static class SendHostProfileResolver
@@ -139,6 +159,11 @@ internal static class SendHostProfileResolver
             return SendHostProfile.QianNiu;
         }
 
+        if (IsDouyinWorkbench(targetInfo, combined))
+        {
+            return SendHostProfile.DouyinWorkbench;
+        }
+
         if (combined.Contains("chrome", StringComparison.Ordinal) ||
             combined.Contains("msedge", StringComparison.Ordinal) ||
             combined.Contains("firefox", StringComparison.Ordinal) ||
@@ -151,5 +176,69 @@ internal static class SendHostProfileResolver
         }
 
         return SendHostProfile.GenericDesktopInput;
+    }
+
+    private static bool IsDouyinWorkbench(WindowDockTargetInfo targetInfo, string combinedLower)
+    {
+        var processIdentity = string.Join(
+            "\n",
+            [
+                targetInfo.WindowClassName,
+                targetInfo.ProcessName,
+                targetInfo.ProcessPath
+            ]);
+
+        if (ContainsAny(processIdentity, "doudian", "feige"))
+        {
+            return true;
+        }
+
+        var isBrowserShell =
+            ContainsAny(targetInfo.WindowClassName, "Chrome_WidgetWin", "MozillaWindowClass") &&
+            ContainsAny(targetInfo.ProcessName, "chrome", "msedge", "firefox", "brave", "opera");
+
+        // Browser tabs: only trust the title so ordinary Douyin video pages stay browser_hosted_input.
+        var classificationText = isBrowserShell ? targetInfo.Title : combinedLower;
+
+        if (ContainsAny(
+                classificationText,
+                "抖音工作台",
+                "抖店",
+                "飞鸽",
+                "巨量百应",
+                "doudian",
+                "feige",
+                "jinritemai"))
+        {
+            return true;
+        }
+
+        return ContainsAny(classificationText, "抖音", "douyin") &&
+               ContainsAny(
+                   classificationText,
+                   "客服",
+                   "商家",
+                   "工作台",
+                   "接待",
+                   "会话",
+                   "卖家",
+                   "workbench",
+                   "seller",
+                   "merchant",
+                   "chat",
+                   "feige");
+    }
+
+    private static bool ContainsAny(string text, params string[] keywords)
+    {
+        foreach (var keyword in keywords)
+        {
+            if (text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
