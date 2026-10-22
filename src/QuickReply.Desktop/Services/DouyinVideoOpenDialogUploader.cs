@@ -15,7 +15,6 @@ internal static class DouyinVideoOpenDialogUploader
 {
     private const int VideoIconIndex = 2; // 0=emoji, 1=image, 2=video
     private const int IconOffsetFromBottom = 146;
-    private const int IconRowYFromBottom = 146; // ~585 in 731-tall window
     private static readonly int[] IconXsIn1280 = [394, 430, 466, 498, 538, 567, 581, 627, 668];
 
     public static async Task<ReplyActionResult> TryUploadAndOptionallySendAsync(
