@@ -319,9 +319,9 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
             string? text = null;
             try
             {
-                if (Clipboard.ContainsText())
+                if (System.Windows.Clipboard.ContainsText())
                 {
-                    text = Clipboard.GetText();
+                    text = System.Windows.Clipboard.GetText();
                 }
             }
             catch
@@ -331,9 +331,9 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
             string[] files = [];
             try
             {
-                if (Clipboard.ContainsFileDropList())
+                if (System.Windows.Clipboard.ContainsFileDropList())
                 {
-                    files = Clipboard.GetFileDropList().Cast<string>().ToArray();
+                    files = System.Windows.Clipboard.GetFileDropList().Cast<string>().ToArray();
                 }
             }
             catch
