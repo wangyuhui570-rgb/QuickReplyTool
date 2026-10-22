@@ -19,15 +19,13 @@ public sealed class ComposeVideoManualConfirmationPolicyTests
         Assert.Equal(ComposeVideoManualConfirmationPolicy.WaitPreviewThenManualSendAction, decision.NextAction);
     }
 
-    [Theory]
-    [InlineData(SendHostKind.GenericDesktopInput)]
-    [InlineData(SendHostKind.BrowserHostedInput)]
-    [InlineData(SendHostKind.PddWorkbench)]
-    [InlineData(SendHostKind.QianNiu)]
-    public void Evaluate_OtherHosts_DoNotRequireManualConfirmation(SendHostKind hostKind)
+    [Fact]
+    public void Evaluate_OtherHosts_DoNotRequireManualConfirmation()
     {
-        var decision = ComposeVideoManualConfirmationPolicy.Evaluate(hostKind);
-        Assert.False(decision.RequiresManualConfirmation);
+        Assert.False(ComposeVideoManualConfirmationPolicy.Evaluate(SendHostKind.GenericDesktopInput).RequiresManualConfirmation);
+        Assert.False(ComposeVideoManualConfirmationPolicy.Evaluate(SendHostKind.BrowserHostedInput).RequiresManualConfirmation);
+        Assert.False(ComposeVideoManualConfirmationPolicy.Evaluate(SendHostKind.PddWorkbench).RequiresManualConfirmation);
+        Assert.False(ComposeVideoManualConfirmationPolicy.Evaluate(SendHostKind.QianNiu).RequiresManualConfirmation);
     }
 
     [Fact]
