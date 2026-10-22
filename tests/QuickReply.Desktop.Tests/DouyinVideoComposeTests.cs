@@ -154,13 +154,13 @@ public sealed class DouyinVideoComposeTests
     }
 
     [Fact]
-    public async Task PasteMode_StagesVideoWithoutSending()
+    public async Task InputMode_StagesVideoWithoutSending()
     {
         using var scope = new TestAppDataScope();
         var video = scope.CreateFile("videos\\a.mp4", "video");
         var service = CreateDouyinService(309, out _, out var keyboard, out var uploader, out _);
 
-        var result = await service.ExecuteFilesAsync([video], TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Paste);
+        var result = await service.ExecuteFilesAsync([video], TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Input);
 
         Assert.True(result.Success, result.Message);
         Assert.False(Assert.Single(uploader.Calls).SendAfterUpload);
