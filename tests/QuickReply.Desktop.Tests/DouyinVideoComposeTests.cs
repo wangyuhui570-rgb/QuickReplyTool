@@ -179,7 +179,8 @@ public sealed class DouyinVideoComposeTests
         var uploader = new FakeDouyinVideoUploader();
         var handle = new IntPtr(310);
         Arrange(workbench, windowFocus, handle, CreateWindowInfo(handle, "微信", "WeChatMainWndForPC", "WeChat"));
-        var service = new MessageComposeService(workbench, clipboard, keyboard, windowFocus, uploader, new DouyinVideoSendGuard());
+        var service = new MessageComposeService(
+            workbench, clipboard, keyboard, windowFocus, uploader, new DouyinVideoSendGuard(), new FakeDouyinSendProgressVerifier());
 
         var result = await service.ExecuteFilesAsync([video], TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send);
 
@@ -225,7 +226,8 @@ public sealed class DouyinVideoComposeTests
         var windowFocus = new FakeWindowFocusService();
         var handle = new IntPtr(312);
         Arrange(workbench, windowFocus, handle, CreateWindowInfo(handle, "微信", "WeChatMainWndForPC", "WeChat"));
-        var service = new MessageComposeService(workbench, clipboard, keyboard, windowFocus);
+        var service = new MessageComposeService(
+            workbench, clipboard, keyboard, windowFocus, douyinSendProgressVerifier: new FakeDouyinSendProgressVerifier());
         clipboard.OnSetFileDropList = (_, _) => { events.Add("image"); return new ReplyActionResult(true, "ok"); };
         clipboard.OnSetText = (_, _) => { events.Add("text"); return new ReplyActionResult(true, "ok"); };
         keyboard.OnSendKey = () => events.Add("send");
@@ -266,13 +268,65 @@ public sealed class DouyinVideoComposeTests
         Assert.DoesNotContain("manual_confirm", plan.StrategyName, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task DouyinTextWithImage_FailsWhenComposerStillHasContent()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\a.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier { Outcome = DouyinSendVerifyOutcome.StillHasContent };
+        var service = CreateDouyinService(320, out var clipboard, out var keyboard, out _, out _, verifier: verifier);
+
+        var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
+
+        Assert.False(result.Success);
+        Assert.Equal(ReplyActionFailureKind.ManualConfirmationRequired, result.FailureKind);
+        Assert.Contains("没有真正发出", result.Message, StringComparison.Ordinal);
+        Assert.True(verifier.CallCount >= 1);
+        Assert.Equal(1, keyboard.EnterCount);
+        Assert.Equal(1, clipboard.SetFileDropListCallCount); // image-first default: image pasted then failed verify
+    }
+
+    [Fact]
+    public async Task DouyinTextWithImage_FailsWhenSendUnconfirmed()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\a.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier { Outcome = DouyinSendVerifyOutcome.Indeterminate };
+        var service = CreateDouyinService(321, out _, out _, out _, out _, verifier: verifier);
+
+        var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
+
+        Assert.False(result.Success);
+        Assert.Contains("无法确认", result.Message, StringComparison.Ordinal);
+        Assert.Equal(1, verifier.CallCount);
+    }
+
+    [Fact]
+    public async Task DouyinTextWithImage_VerifyRunsTwiceWhenCleared()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\a.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier();
+        var service = CreateDouyinService(322, out _, out var keyboard, out _, out _, verifier: verifier);
+
+        var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, verifier.CallCount);
+        Assert.Equal(2, keyboard.EnterCount);
+        Assert.Null(verifier.Expectations[0].SentText);
+        Assert.NotNull(verifier.Expectations[0].SentImagePaths);
+        Assert.Equal("文字", verifier.Expectations[1].SentText);
+    }
+
     private static MessageComposeService CreateDouyinService(
         int handleValue,
         out FakeClipboardService clipboard,
         out FakeKeyboardInputSimulator keyboard,
         out FakeDouyinVideoUploader uploader,
         out FakeWindowFocusService windowFocus,
-        DouyinVideoSendGuard? guard = null)
+        DouyinVideoSendGuard? guard = null,
+        FakeDouyinSendProgressVerifier? verifier = null)
     {
         clipboard = new FakeClipboardService();
         keyboard = new FakeKeyboardInputSimulator();
@@ -281,7 +335,14 @@ public sealed class DouyinVideoComposeTests
         windowFocus = new FakeWindowFocusService();
         var handle = new IntPtr(handleValue);
         Arrange(workbench, windowFocus, handle, CreateWindowInfo(handle, "飞鸽客服", "Chrome_WidgetWin_1", "doudian"));
-        return new MessageComposeService(workbench, clipboard, keyboard, windowFocus, uploader, guard ?? new DouyinVideoSendGuard());
+        return new MessageComposeService(
+            workbench,
+            clipboard,
+            keyboard,
+            windowFocus,
+            uploader,
+            guard ?? new DouyinVideoSendGuard(),
+            verifier ?? new FakeDouyinSendProgressVerifier());
     }
 
     private static void Arrange(FakeExternalWorkbenchService workbench, FakeWindowFocusService windowFocus, IntPtr handle, WindowDockTargetInfo info)

@@ -72,7 +72,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
         ShowWindow(targetWindowHandle, 9);
         SetForegroundWindow(targetWindowHandle);
-        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!GetWindowRect(targetWindowHandle, out var windowRect))
         {
@@ -96,7 +96,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
         // Focus composer first (bottom-center) so the toolbar is the active chat's toolbar.
         AbsoluteClick(windowRect.Left + width * 2 / 3, windowRect.Top + height - 60);
-        await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
 
         var uiaPoint = await TryLocateVideoButtonByAutomationAsync(targetWindowHandle).ConfigureAwait(false);
         int screenX;
@@ -117,13 +117,21 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         diagnostics["douyinVideoClickX"] = screenX;
         diagnostics["douyinVideoClickY"] = screenY;
 
+        // Match 2.1.11 hover timings. Coordinates need the full hover; UIA still uses the same
+        // sequence so a near-miss hitbox still opens the dialog.
+        if (string.Equals(diagnostics["douyinVideoLocator"] as string, "coordinates_fallback", StringComparison.Ordinal))
+        {
+            // Extra activation settle before coordinate click (UIA path already spent ~1.5s looking).
+            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+        }
+
         AbsoluteMove(screenX - 15, screenY);
-        await Task.Delay(60, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(80, cancellationToken).ConfigureAwait(false);
         AbsoluteMove(screenX, screenY);
-        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(220, cancellationToken).ConfigureAwait(false);
         AbsoluteClick(screenX, screenY);
 
-        var dialog = await WaitForOpenFileDialogAsync(targetWindowHandle, TimeSpan.FromSeconds(5), cancellationToken)
+        var dialog = await WaitForOpenFileDialogAsync(targetWindowHandle, TimeSpan.FromSeconds(6), cancellationToken)
             .ConfigureAwait(false);
         if (dialog == IntPtr.Zero)
         {
@@ -136,7 +144,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
         diagnostics["douyinVideoDialogHandle"] = $"0x{dialog.ToInt64():X}";
         SetForegroundWindow(dialog);
-        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!TrySetOpenDialogFileName(dialog, videoPath))
         {
@@ -153,7 +161,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             _keyboard.SendEnter();
         }
 
-        var closed = await WaitUntilDialogClosedAsync(dialog, TimeSpan.FromSeconds(10), cancellationToken)
+        var closed = await WaitUntilDialogClosedAsync(dialog, TimeSpan.FromSeconds(12), cancellationToken)
             .ConfigureAwait(false);
         diagnostics["douyinVideoDialogClosed"] = closed;
         if (!closed)
@@ -174,10 +182,10 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
                 UserGuidance: "请检查弹出的文件框：选中目标 mp4 后点“打开”，确认输入区出现视频预览后再发送。");
         }
 
-        // Let Douyin stage the upload card in the composer (was 900ms; 500ms was enough in the 17s test run).
-        await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+        // Give Douyin time to stage the upload preview in the composer (restored to 2.1.11's 900ms).
+        await Task.Delay(900, cancellationToken).ConfigureAwait(false);
         SetForegroundWindow(targetWindowHandle);
-        await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!sendAfterUpload)
         {

@@ -152,6 +152,12 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
 
     public int AltSCount { get; private set; }
 
+    public int CtrlACount { get; private set; }
+
+    public int CtrlCCount { get; private set; }
+
+    public int EscapeCount { get; private set; }
+
     public void SendPasteShortcut()
     {
         PasteShortcutCount++;
@@ -174,6 +180,21 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
     {
         AltSCount++;
         OnSendKey?.Invoke();
+    }
+
+    public void SendCtrlA()
+    {
+        CtrlACount++;
+    }
+
+    public void SendCtrlC()
+    {
+        CtrlCCount++;
+    }
+
+    public void SendEscape()
+    {
+        EscapeCount++;
     }
 }
 
@@ -239,5 +260,30 @@ internal sealed class FakeDouyinVideoUploader : IDouyinVideoUploader
         return Task.FromResult(OnUpload?.Invoke(videoPath) ?? new ReplyActionResult(
             true,
             sendAfterUpload ? DouyinVideoOpenDialogUploader.SubmittedMessage : DouyinVideoOpenDialogUploader.StagedMessage));
+    }
+}
+
+internal sealed class FakeDouyinSendProgressVerifier : IDouyinSendProgressVerifier
+{
+    public DouyinSendVerifyOutcome Outcome { get; set; } = DouyinSendVerifyOutcome.Cleared;
+
+    public string Method { get; set; } = "fake";
+
+    public string Detail { get; set; } = "ok";
+
+    public int CallCount { get; private set; }
+
+    public List<DouyinSendVerifyExpectation> Expectations { get; } = [];
+
+    public Task<DouyinSendVerifyResult> VerifyComposerClearedAsync(
+        IntPtr targetWindowHandle,
+        DouyinSendVerifyExpectation expectation,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        Expectations.Add(expectation);
+        diagnostics["douyinSendVerifyFake"] = true;
+        return Task.FromResult(new DouyinSendVerifyResult(Outcome, Method, Detail));
     }
 }

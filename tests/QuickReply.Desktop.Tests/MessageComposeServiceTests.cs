@@ -565,7 +565,12 @@ public sealed class MessageComposeServiceTests
         workbench = new FakeExternalWorkbenchService();
         windowFocus = new FakeWindowFocusService();
 
-        return new MessageComposeService(workbench, clipboard, keyboard, windowFocus);
+        return new MessageComposeService(
+            workbench,
+            clipboard,
+            keyboard,
+            windowFocus,
+            douyinSendProgressVerifier: new FakeDouyinSendProgressVerifier());
     }
 
     private static WindowDockTargetInfo CreateWindowInfo(IntPtr handle, string title, string className, string processName)

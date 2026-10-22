@@ -44,7 +44,8 @@ public sealed class MessageComposeService : IMessageComposeService
         IKeyboardInputSimulator keyboardInputSimulator,
         IWindowFocusService windowFocusService,
         IDouyinVideoUploader? douyinVideoUploader = null,
-        DouyinVideoSendGuard? douyinVideoSendGuard = null)
+        DouyinVideoSendGuard? douyinVideoSendGuard = null,
+        IDouyinSendProgressVerifier? douyinSendProgressVerifier = null)
     {
         _externalWorkbenchService = externalWorkbenchService;
         _clipboardService = clipboardService;
@@ -52,11 +53,14 @@ public sealed class MessageComposeService : IMessageComposeService
         _windowFocusService = windowFocusService;
         _douyinVideoUploader = douyinVideoUploader ?? new DouyinVideoOpenDialogUploader(keyboardInputSimulator);
         _douyinVideoSendGuard = douyinVideoSendGuard ?? SharedDouyinVideoSendGuard;
+        _douyinSendProgressVerifier = douyinSendProgressVerifier
+            ?? new DouyinSendProgressVerifier(keyboardInputSimulator, clipboardService);
     }
 
     private static readonly DouyinVideoSendGuard SharedDouyinVideoSendGuard = new();
     private readonly IDouyinVideoUploader _douyinVideoUploader;
     private readonly DouyinVideoSendGuard _douyinVideoSendGuard;
+    private readonly IDouyinSendProgressVerifier _douyinSendProgressVerifier;
 
     public async Task<ReplyActionResult> CopyToClipboardAsync(string text, IReadOnlyCollection<string>? imagePaths = null)
     {
@@ -411,7 +415,10 @@ public sealed class MessageComposeService : IMessageComposeService
             return null;
         }
 
-        async Task<ReplyActionResult?> SendStepAsync(bool composerHasImages, string delayKey)
+        async Task<ReplyActionResult?> SendStepAsync(
+            bool composerHasImages,
+            string delayKey,
+            DouyinSendVerifyExpectation? verifyExpectation = null)
         {
             var sendFailure = await TrySendConfiguredHotkeyAsync(
                 activationResult.TargetWindowHandle,
@@ -429,6 +436,35 @@ public sealed class MessageComposeService : IMessageComposeService
                 return await FailAsync("send_failed", sendFailure.Value);
             }
 
+            if (isDouyin && verifyExpectation is { } expectation)
+            {
+                var verify = await _douyinSendProgressVerifier.VerifyComposerClearedAsync(
+                    activationResult.TargetWindowHandle,
+                    expectation,
+                    diagnostics).ConfigureAwait(false);
+                diagnostics["douyinSendVerifyOutcome"] = verify.Outcome.ToString();
+                diagnostics["douyinSendVerifyMethod"] = verify.Method;
+                if (verify.Outcome == DouyinSendVerifyOutcome.StillHasContent)
+                {
+                    return await FailAsync(
+                        "send_not_observed",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.ManualConfirmationRequired,
+                            "已按发送键，但输入框里的内容还在，抖店似乎没有真正发出。",
+                            "请确认抖店聊天输入框已聚焦、发送热键与抖店设置一致，再手动点发送或重试。"));
+                }
+
+                if (verify.Outcome == DouyinSendVerifyOutcome.Indeterminate)
+                {
+                    return await FailAsync(
+                        "send_unconfirmed",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.ManualConfirmationRequired,
+                            "已按发送键，但无法确认会话侧是否有进展（输入框未检出清空）。",
+                            "请看一眼抖店会话：若消息已出现可忽略；若没有，请手动发送或重试。不要把这次当成已成功。"));
+                }
+            }
+
             sentStageCount++;
             diagnostics["richImageSentStageCount"] = sentStageCount;
             return null;
@@ -444,7 +480,10 @@ public sealed class MessageComposeService : IMessageComposeService
         {
             var firstSendFailure = await SendStepAsync(
                 composerHasImages: imageFirst,
-                delayKey: imageFirst ? "effectiveRichImageSendDelayMs" : "effectiveRichSendDelayMs");
+                delayKey: imageFirst ? "effectiveRichImageSendDelayMs" : "effectiveRichSendDelayMs",
+                verifyExpectation: imageFirst
+                    ? new DouyinSendVerifyExpectation(SentText: null, SentImagePaths: imagePaths)
+                    : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: null));
             if (firstSendFailure is not null)
             {
                 return firstSendFailure.Value;
@@ -468,9 +507,20 @@ public sealed class MessageComposeService : IMessageComposeService
 
         if (mode == ComposeActionMode.Send)
         {
+            DouyinSendVerifyExpectation? finalExpectation = null;
+            if (isDouyin)
+            {
+                finalExpectation = useSeparateMessages
+                    ? (imageFirst
+                        ? new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: null)
+                        : new DouyinSendVerifyExpectation(SentText: null, SentImagePaths: imagePaths))
+                    : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: imagePaths);
+            }
+
             var finalSendFailure = await SendStepAsync(
                 composerHasImages: !useSeparateMessages || !imageFirst,
-                delayKey: "effectiveRichSendDelayMs");
+                delayKey: "effectiveRichSendDelayMs",
+                verifyExpectation: finalExpectation);
             if (finalSendFailure is not null)
             {
                 return finalSendFailure.Value;

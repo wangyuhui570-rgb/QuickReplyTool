@@ -22,7 +22,7 @@ jobs:
       - name: Build portable zip
         shell: pwsh
         run: |
-          $out = Join-Path $PWD 'artifacts\QuickReplyTool-Portable-2.1.12-douyin-test'
+          $out = Join-Path $PWD 'artifacts\QuickReplyTool-Portable-2.1.13-douyin-test'
           ./scripts/build-portable.ps1 -Configuration Release -OutputRoot $out
           $zip = "$out.zip"
           if (-not (Test-Path $zip)) { throw "zip not found: $zip" }
@@ -30,8 +30,8 @@ jobs:
           (Get-Item $zip).Length
       - uses: actions/upload-artifact@v4
         with:
-          name: QuickReplyTool-Portable-2.1.12-douyin-test
-          path: artifacts/QuickReplyTool-Portable-2.1.12-douyin-test.zip
+          name: QuickReplyTool-Portable-2.1.13-douyin-test
+          path: artifacts/QuickReplyTool-Portable-2.1.13-douyin-test.zip
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
