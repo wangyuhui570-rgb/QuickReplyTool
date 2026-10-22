@@ -55,19 +55,26 @@ internal static class SearchOverlayPlacementStrategy
         var maxBottom = workingArea.Bottom - BottomMargin;
         preferredTop = Clamp(preferredTop, workingArea.Top + TopMargin, maxBottom);
         var availableBelow = Math.Max(0d, maxBottom - preferredTop);
+        // Prefer staying just below the caret whenever a usable results area fits.
+        // Only pull upward when the remaining space is too short for ~4-5 candidates.
+        var minUsableHeight = Math.Min(CalculateOverlayHeight(5d, inputBoxHeight), 300d);
 
         double top;
         double height;
-        if (availableBelow >= preferredHeight)
+        if (availableBelow >= minUsableHeight)
         {
             top = preferredTop;
-            // Prefer a taller results area when space allows (up to ~9 rows worth).
-            height = Math.Min(availableBelow, Math.Max(preferredHeight, maxUsefulHeight));
+            height = Math.Min(availableBelow, Math.Max(minUsableHeight, Math.Min(preferredHeight, maxUsefulHeight)));
+            // Take remaining space under the caret when it helps show more candidates.
+            if (availableBelow > height)
+            {
+                height = Math.Min(availableBelow, maxUsefulHeight);
+            }
         }
         else
         {
-            // Not enough room below the caret/input zone: pull the overlay up so results stay tall.
-            // Covering the composer below the caret is acceptable.
+            // Remaining space under the caret is too short: pull up so results stay usable.
+            // Covering the composer is acceptable.
             height = preferredHeight;
             top = maxBottom - height;
             top = Math.Max(workingArea.Top + TopMargin, top);

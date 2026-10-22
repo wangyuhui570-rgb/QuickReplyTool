@@ -17,8 +17,8 @@ public sealed class SearchOverlayPlacementStrategyTests
             caret);
 
         Assert.Equal(SearchOverlayPlacementStrategy.AnchorCaretBelow, placement.Anchor);
-        Assert.Equal(728d, placement.Top); // 720 + 8
-        Assert.True(placement.Height >= SearchOverlayPlacementStrategy.CalculateOverlayHeight(5, 36));
+        Assert.Equal(caret.Bottom + 8d, placement.Top);
+        Assert.True(placement.Height >= 280d);
         AssertFitsWorkingArea(placement, workingArea);
         Assert.True(placement.Top + placement.Height <= workingArea.Bottom);
     }
