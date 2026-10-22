@@ -14,10 +14,11 @@ public sealed class SearchOverlayLayoutModeResolverTests
     }
 
     [Fact]
-    public void ShouldShowOverlayAssistText_ShowsActionStatusEvenWithoutManualSearch()
+    public void ShouldShowOverlayAssistText_OnlyShowsActionStatus()
     {
         Assert.False(SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText(string.Empty, false));
-        Assert.True(SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText("退款", false));
+        Assert.False(SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText("退款", false));
         Assert.True(SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText(string.Empty, true));
+        Assert.True(SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText("退款", true));
     }
 }

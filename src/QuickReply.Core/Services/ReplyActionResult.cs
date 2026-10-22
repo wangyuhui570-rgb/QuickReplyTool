@@ -10,6 +10,7 @@ public enum ReplyActionFailureKind
     FocusLost,
     ClipboardBusy,
     TargetChanged,
+    ManualConfirmationRequired,
     ExternalTool,
     Unexpected
 }

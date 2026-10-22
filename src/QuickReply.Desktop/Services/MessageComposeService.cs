@@ -456,12 +456,22 @@ public sealed class MessageComposeService : IMessageComposeService
                 "请确认文件仍存在，或重新选择文件后再试。");
         }
 
+        var filePayload = ComposeFilePayloadClassifier.Classify(normalizedPaths);
+        var transferPlan = ComposeFilePayloadClassifier.BuildTransferPlan(
+            filePayload,
+            attemptContext.HostProfile,
+            settings);
+
         var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
         var stopwatch = Stopwatch.StartNew();
         PopulateAttemptDiagnostics(diagnostics, attemptContext);
-        diagnostics["selectedSendPath"] = attemptContext.HostProfile.PreferConservativeRichPath
-            ? "safe_file_drop_send"
-            : "file_drop_send";
+        diagnostics["selectedSendPath"] = transferPlan.StrategyName;
+        diagnostics["filePayloadKind"] = filePayload.Kind.ToString();
+        diagnostics["fileCount"] = filePayload.FileCount;
+        diagnostics["fileContainsImage"] = filePayload.ContainsImage;
+        diagnostics["fileContainsVideo"] = filePayload.ContainsVideo;
+        diagnostics["fileContainsOther"] = filePayload.ContainsOtherFile;
+        diagnostics["fileExtensions"] = string.Join(",", filePayload.Extensions);
 
         var clipboardSnapshot = await CaptureClipboardSnapshotAsync(diagnostics, stopwatch);
 
@@ -498,8 +508,8 @@ public sealed class MessageComposeService : IMessageComposeService
         var pasteFailure = await TryPasteClipboardPayloadAsync(
             activationResult.TargetWindowHandle,
             "file_drop",
-            attemptContext.HostProfile.FilePasteStableMs,
-            GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+            transferPlan.PasteStableMs,
+            transferPlan.PasteTimeoutMs,
             attemptContext.HostProfile.PollIntervalMs,
             diagnostics,
             stopwatch,
@@ -515,11 +525,43 @@ public sealed class MessageComposeService : IMessageComposeService
 
         if (mode == ComposeActionMode.Send)
         {
+            if (transferPlan.SkipAutomaticSendHotkey)
+            {
+                diagnostics["sendHotkeySkipped"] = true;
+                diagnostics["sendHotkeySkippedReason"] = transferPlan.SkipAutomaticSendHotkeyReason;
+                diagnostics["manualConfirmationRequired"] = true;
+                diagnostics["manualConfirmationReason"] = transferPlan.SkipAutomaticSendHotkeyReason;
+                diagnostics["manualConfirmationStage"] = transferPlan.ManualConfirmationStage;
+                diagnostics["manualConfirmationUserGuidance"] = transferPlan.ManualConfirmationUserGuidance;
+                diagnostics["manualConfirmationOperatorState"] = transferPlan.ManualConfirmationOperatorState;
+                diagnostics["manualConfirmationNextAction"] = transferPlan.ManualConfirmationNextAction;
+
+                var effectiveClipboardRestoreDelayMs = GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
+                var willRestoreClipboard = clipboardSnapshot.CanRestore && clipboardPayloadFingerprint is not null;
+                if (willRestoreClipboard)
+                {
+                    QueueClipboardRestore(clipboardSnapshot, effectiveClipboardRestoreDelayMs, clipboardPayloadFingerprint);
+                }
+
+                diagnostics["queuedClipboardRestoreDelayMs"] = willRestoreClipboard ? effectiveClipboardRestoreDelayMs : null;
+                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+                diagnostics["result"] = "manual_confirmation_required";
+                SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+                return CreateFailureResult(
+                    ReplyActionFailureKind.ManualConfirmationRequired,
+                    string.IsNullOrWhiteSpace(transferPlan.ManualConfirmationMessage)
+                        ? $"已将 {normalizedPaths.Length} 个文件粘贴到当前窗口，请确认上传预览后再手动发送。"
+                        : transferPlan.ManualConfirmationMessage,
+                    string.IsNullOrWhiteSpace(transferPlan.ManualConfirmationUserGuidance)
+                        ? "请确认目标窗口是否出现上传预览；若没有预览，请改用工作台上传按钮手动选择文件。"
+                        : transferPlan.ManualConfirmationUserGuidance);
+            }
+
             var sendFailure = await TrySendConfiguredHotkeyAsync(
                 activationResult.TargetWindowHandle,
                 settings.SendHotkeyMode,
-                attemptContext.HostProfile.RichSendStableMs,
-                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: false),
+                transferPlan.SendStableMs,
+                transferPlan.SendTimeoutMs,
                 attemptContext.HostProfile.PollIntervalMs,
                 diagnostics,
                 stopwatch,
@@ -534,18 +576,18 @@ public sealed class MessageComposeService : IMessageComposeService
             }
         }
 
-        var effectiveClipboardRestoreDelayMs = GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
-        var willRestoreClipboard = clipboardSnapshot.CanRestore && clipboardPayloadFingerprint is not null;
-        if (willRestoreClipboard)
+        var restoreDelayMs = GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
+        var restoreClipboard = clipboardSnapshot.CanRestore && clipboardPayloadFingerprint is not null;
+        if (restoreClipboard)
         {
-            QueueClipboardRestore(clipboardSnapshot, effectiveClipboardRestoreDelayMs, clipboardPayloadFingerprint);
+            QueueClipboardRestore(clipboardSnapshot, restoreDelayMs, clipboardPayloadFingerprint);
         }
 
-        diagnostics["queuedClipboardRestoreDelayMs"] = willRestoreClipboard ? effectiveClipboardRestoreDelayMs : null;
+        diagnostics["queuedClipboardRestoreDelayMs"] = restoreClipboard ? restoreDelayMs : null;
         diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
         diagnostics["result"] = "success";
         SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
-        return BuildFileResult(mode, normalizedPaths.Length, clipboardSnapshot, restoreDeferred: willRestoreClipboard);
+        return BuildFileResult(mode, normalizedPaths.Length, clipboardSnapshot, restoreDeferred: restoreClipboard);
     }
 
     private async Task<ReplyActionResult> ExecuteTextOnlyAsync(
@@ -1193,6 +1235,7 @@ public sealed class MessageComposeService : IMessageComposeService
             ReplyActionFailureKind.FocusLost => "focus_lost",
             ReplyActionFailureKind.ClipboardBusy => "clipboard",
             ReplyActionFailureKind.TargetChanged => "target_changed",
+            ReplyActionFailureKind.ManualConfirmationRequired => "manual_confirm",
             ReplyActionFailureKind.ExternalTool => "external_tool",
             _ => "other"
         };

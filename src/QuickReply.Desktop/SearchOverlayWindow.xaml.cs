@@ -1361,7 +1361,9 @@ public partial class SearchOverlayWindow : Window
             var workArea = SystemParameters.WorkArea;
             var referenceWidth = Math.Max(620d, _previewAnchorWindow.ActualWidth - 48d);
             var previewWidth = Math.Max(MinWidth, Math.Min(referenceWidth, workArea.Width - SearchOverlayScreenMargin));
-            var previewHeight = Math.Clamp((_previewAnchorWindow.ActualHeight - 40d) * (activeSettings.SearchOverlayHeightPercent / 100d), 150, 420);
+            var previewHeight = SearchOverlayPlacementStrategy.CalculateOverlayHeight(
+                activeSettings.SearchOverlayHeightPercent,
+                activeSettings.SearchInputBoxHeight);
             var previewLeft = Math.Max(workArea.Left + 12d, Math.Min(_previewAnchorWindow.Left + 20d, workArea.Right - previewWidth - 12d));
             var previewTop = _previewAnchorWindow.Top + _previewAnchorWindow.ActualHeight + 10d;
             if (previewTop + previewHeight > workArea.Bottom - 12d)
@@ -1382,24 +1384,27 @@ public partial class SearchOverlayWindow : Window
             return;
         }
 
-        var workingArea = Forms.Screen.FromHandle(targetInfo.Handle).WorkingArea;
-        var desiredWidth = targetInfo.Width * (activeSettings.SearchOverlayWidthPercent / 100d);
-        var width = Math.Max(MinWidth, Math.Min(desiredWidth, workingArea.Width - SearchOverlayScreenMargin));
-        var desiredHeight = Math.Clamp(targetInfo.Height * (activeSettings.SearchOverlayHeightPercent / 100d), 150, 420);
-        var height = Math.Min(desiredHeight, Math.Max(150, workingArea.Height * 0.6));
-        var centeredLeft = targetInfo.Left + ((targetInfo.Width - width) / 2d);
-        var left = Math.Max(workingArea.Left, Math.Min(centeredLeft, workingArea.Right - width));
-        var top = Math.Min(targetInfo.Bottom + 6, workingArea.Bottom - height);
-        if (top < workingArea.Top)
-        {
-            top = workingArea.Top;
-        }
+        var screenWorkingArea = Forms.Screen.FromHandle(targetInfo.Handle).WorkingArea;
+        var caretAnchor = TryCreateOverlayTargetCaretAnchor();
+        var placement = SearchOverlayPlacementStrategy.Calculate(
+            targetInfo,
+            new SearchOverlayWorkingArea(
+                screenWorkingArea.Left,
+                screenWorkingArea.Top,
+                screenWorkingArea.Right,
+                screenWorkingArea.Bottom),
+            new SearchOverlayPlacementOptions(
+                MinWidth,
+                activeSettings.SearchOverlayWidthPercent,
+                activeSettings.SearchOverlayHeightPercent,
+                activeSettings.SearchInputBoxHeight),
+            caretAnchor);
 
-        Width = width;
-        Height = height;
-        Left = left;
-        Top = top;
-        ApplySearchInputSizing(width, activeSettings);
+        Width = placement.Width;
+        Height = placement.Height;
+        Left = placement.Left;
+        Top = placement.Top;
+        ApplySearchInputSizing(placement.Width, activeSettings);
     }
 
     private void ApplySearchInputSizing(double overlayWidth, AppSettings activeSettings)
@@ -2331,6 +2336,36 @@ public partial class SearchOverlayWindow : Window
         };
 
         return NativeMethods.GetGUIThreadInfo(threadId, ref guiInfo);
+    }
+
+    private SearchOverlayCaretAnchor? TryCreateOverlayTargetCaretAnchor()
+    {
+        if (!_overlayTargetHasCaretRect ||
+            _overlayTargetCaretHandle == IntPtr.Zero ||
+            !NativeMethods.IsWindow(_overlayTargetCaretHandle))
+        {
+            return null;
+        }
+
+        var topLeft = new NativeMethods.POINT
+        {
+            X = _overlayTargetCaretRect.Left,
+            Y = _overlayTargetCaretRect.Top
+        };
+        var bottomRight = new NativeMethods.POINT
+        {
+            X = _overlayTargetCaretRect.Right,
+            Y = _overlayTargetCaretRect.Bottom
+        };
+
+        if (!NativeMethods.ClientToScreen(_overlayTargetCaretHandle, ref topLeft) ||
+            !NativeMethods.ClientToScreen(_overlayTargetCaretHandle, ref bottomRight))
+        {
+            return null;
+        }
+
+        var anchor = new SearchOverlayCaretAnchor(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
+        return anchor.IsUsable ? anchor : null;
     }
 
     private static bool IsCaretRectUsable(NativeMethods.RECT rect)
