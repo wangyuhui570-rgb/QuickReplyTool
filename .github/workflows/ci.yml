@@ -77,12 +77,17 @@ jobs:
           INCLUDE_INSTALLER_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.includeInstallerCheck || false }}
           RELEASE_EVIDENCE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.releaseEvidenceVersion || '' }}
         run: |
-          $gateArgs = @('-Configuration', 'Release', '-IncludePackagingChecks')
+          # Hashtable splat is required: an array splat is positional and binds
+          # the literal "-Configuration" into -Configuration (ValidateSet fails).
+          $gateArgs = @{
+            Configuration = 'Release'
+            IncludePackagingChecks = $true
+          }
           if ($env:INCLUDE_INSTALLER_CHECK -eq 'true') {
-            $gateArgs += '-IncludeInstallerCheck'
+            $gateArgs.IncludeInstallerCheck = $true
           }
           if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_EVIDENCE_VERSION)) {
-            $gateArgs += @('-ReleaseEvidenceVersion', $env:RELEASE_EVIDENCE_VERSION)
+            $gateArgs.ReleaseEvidenceVersion = $env:RELEASE_EVIDENCE_VERSION
           }
           ./scripts/run-test-gates.ps1 @gateArgs
 
