@@ -1,0 +1,41 @@
+name: portable-test-build
+
+# Builds the Douyin test portable zip on a Windows runner (used while T5A is offline).
+# Runs on pushes to the PR #8 branch only; safe to delete before merging.
+on:
+  push:
+    branches:
+      - fix/douyin-image-text-and-video
+  workflow_dispatch:
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Unit tests
+        shell: pwsh
+        run: dotnet test tests/QuickReply.Desktop.Tests/QuickReply.Desktop.Tests.csproj -c Release --logger "trx;LogFileName=desktop-tests.trx" --results-directory artifacts/test-results
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'artifacts\QuickReplyTool-Portable-2.1.12-douyin-test'
+          ./scripts/build-portable.ps1 -Configuration Release -OutputRoot $out
+          $zip = "$out.zip"
+          if (-not (Test-Path $zip)) { throw "zip not found: $zip" }
+          Get-FileHash $zip -Algorithm SHA256 | Format-List
+          (Get-Item $zip).Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QuickReplyTool-Portable-2.1.12-douyin-test
+          path: artifacts/QuickReplyTool-Portable-2.1.12-douyin-test.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-test-results
+          path: artifacts/test-results/**
+          if-no-files-found: warn

@@ -121,6 +121,7 @@
                                                 <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,6,0,0">
                                                     <CheckBox IsChecked="{Binding SelectedRunAsAdministrator}" Content="始终以管理员权限启动 QuickReplyTool" />
                                                     <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="启用后，手动启动会优先走管理员启动任务；如果同时开启开机启动，会在登录后以管理员权限自动启动。首次启用可能需要一次管理员授权。" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="#B45309" Text="注意：管理员启动会和远程协助、自动化测试冲突（普通权限的远程/自动化工具无法操作本工具）。另外 Windows 不允许低权限程序给高权限窗口发键鼠：如果抖店/飞鸽以管理员运行，本工具也必须以管理员运行；反之两者都用普通权限。两边权限级别要一致，否则粘贴和发送会静默失败。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="截图工具" />
                                                 <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,6,0,0">
@@ -250,7 +251,7 @@
                                                         <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.ImageThenTextThenSend}" Content="先图片，再文字，最后发送" />
                                                         <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.ImageImmediateThenTextSend}" Content="图片先立即发送，再发送文字" />
                                                     </ComboBox>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="不同客服工作台对图文粘贴的兼容不同，这里可以切到更稳的顺序。" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认先图片后文字。抖店/飞鸽不支持图文同一条发送，会自动拆成两条，按这里选的先后顺序发；视频始终走抖店的“发送视频”按钮，最后逐个提交。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>

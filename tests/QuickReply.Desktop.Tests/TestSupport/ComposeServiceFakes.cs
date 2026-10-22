@@ -142,6 +142,8 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
 {
     public Action? OnPasteShortcut { get; set; }
 
+    public Action? OnSendKey { get; set; }
+
     public int PasteShortcutCount { get; private set; }
 
     public int EnterCount { get; private set; }
@@ -159,16 +161,19 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
     public void SendEnter()
     {
         EnterCount++;
+        OnSendKey?.Invoke();
     }
 
     public void SendCtrlEnter()
     {
         CtrlEnterCount++;
+        OnSendKey?.Invoke();
     }
 
     public void SendAltS()
     {
         AltSCount++;
+        OnSendKey?.Invoke();
     }
 }
 
@@ -209,5 +214,30 @@ internal static class TestSettingsFactory
             RichImageSendDelayMs = 50,
             RichImageClipboardRestoreDelayMs = 50
         };
+    }
+}
+
+internal sealed class FakeDouyinVideoUploader : IDouyinVideoUploader
+{
+    public List<(string Path, bool SendAfterUpload, SendHotkeyMode Hotkey)> Calls { get; } = [];
+
+    public Func<string, ReplyActionResult>? OnUpload { get; set; }
+
+    public Action<string>? OnUploadStarted { get; set; }
+
+    public Task<ReplyActionResult> UploadAsync(
+        IntPtr targetWindowHandle,
+        string videoPath,
+        bool sendAfterUpload,
+        SendHotkeyMode sendHotkeyMode,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        Calls.Add((videoPath, sendAfterUpload, sendHotkeyMode));
+        OnUploadStarted?.Invoke(videoPath);
+        diagnostics["videoSendState"] = sendAfterUpload ? "submitted" : "staged";
+        return Task.FromResult(OnUpload?.Invoke(videoPath) ?? new ReplyActionResult(
+            true,
+            sendAfterUpload ? DouyinVideoOpenDialogUploader.SubmittedMessage : DouyinVideoOpenDialogUploader.StagedMessage));
     }
 }

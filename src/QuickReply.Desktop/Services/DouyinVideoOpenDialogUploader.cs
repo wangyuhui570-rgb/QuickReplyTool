@@ -6,23 +6,46 @@ using QuickReply.Desktop.Models;
 
 namespace QuickReply.Desktop.Services;
 
-/// <summary>
-/// Douyin/飞鸽 video FileDrop paste is ignored by the Chromium composer.
-/// Working path (probed on DESKTOP-NTRMANG): hover+click toolbar "发送视频",
-/// fill the native OpenFileDialog with the absolute path, confirm Open, then send.
-/// </summary>
-internal static class DouyinVideoOpenDialogUploader
+internal interface IDouyinVideoUploader
 {
-    private const int VideoIconIndex = 2; // 0=emoji, 1=image, 2=video
-    private const int IconOffsetFromBottom = 146;
-    private static readonly int[] IconXsIn1280 = [394, 430, 466, 498, 538, 567, 581, 627, 668];
-
-    public static async Task<ReplyActionResult> TryUploadAndOptionallySendAsync(
+    Task<ReplyActionResult> UploadAsync(
         IntPtr targetWindowHandle,
         string videoPath,
         bool sendAfterUpload,
         SendHotkeyMode sendHotkeyMode,
-        IKeyboardInputSimulator keyboard,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Douyin/飞鸽 ignores a FileDrop paste of a video (the Chromium composer drops it silently),
+/// so every Douyin video goes through the toolbar "发送视频" button and the native OpenFileDialog.
+/// The button is located with UI Automation (Name/HelpText "发送视频") first and falls back to
+/// window-relative coordinates measured on DESKTOP-NTRMANG.
+/// </summary>
+internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
+{
+    internal const string SubmittedMessage = "视频已提交给抖店上传，通常 10–20 秒后出现在会话里；输入框已交还，可继续打字。";
+    internal const string StagedMessage = "已通过抖店视频按钮选中视频，请确认预览后手动发送。";
+
+    private const string VideoButtonLabel = "发送视频";
+    private const int VideoIconIndex = 2; // 0=emoji, 1=image, 2=video
+    private const int IconOffsetFromBottom = 146;
+    private static readonly int[] IconXsIn1280 = [394, 430, 466, 498, 538, 567, 581, 627, 668];
+    private static readonly TimeSpan UiaLookupTimeout = TimeSpan.FromMilliseconds(1500);
+
+    private readonly IKeyboardInputSimulator _keyboard;
+
+    public DouyinVideoOpenDialogUploader(IKeyboardInputSimulator keyboard)
+    {
+        _keyboard = keyboard;
+    }
+
+    public async Task<ReplyActionResult> UploadAsync(
+        IntPtr targetWindowHandle,
+        string videoPath,
+        bool sendAfterUpload,
+        SendHotkeyMode sendHotkeyMode,
         IDictionary<string, object?> diagnostics,
         CancellationToken cancellationToken = default)
     {
@@ -49,7 +72,7 @@ internal static class DouyinVideoOpenDialogUploader
 
         ShowWindow(targetWindowHandle, 9);
         SetForegroundWindow(targetWindowHandle);
-        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
 
         if (!GetWindowRect(targetWindowHandle, out var windowRect))
         {
@@ -71,24 +94,36 @@ internal static class DouyinVideoOpenDialogUploader
                 UserGuidance: "请把聊天窗口放大后再发送视频。");
         }
 
-        var scaleX = width / 1280.0;
-        var iconX = (int)Math.Round(IconXsIn1280[VideoIconIndex] * scaleX);
-        var iconY = height - IconOffsetFromBottom;
-        var screenX = windowRect.Left + iconX;
-        var screenY = windowRect.Top + iconY;
+        // Focus composer first (bottom-center) so the toolbar is the active chat's toolbar.
+        AbsoluteClick(windowRect.Left + width * 2 / 3, windowRect.Top + height - 60);
+        await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+
+        var uiaPoint = await TryLocateVideoButtonByAutomationAsync(targetWindowHandle).ConfigureAwait(false);
+        int screenX;
+        int screenY;
+        if (uiaPoint is { } point)
+        {
+            (screenX, screenY) = point;
+            diagnostics["douyinVideoLocator"] = "ui_automation";
+        }
+        else
+        {
+            var scaleX = width / 1280.0;
+            screenX = windowRect.Left + (int)Math.Round(IconXsIn1280[VideoIconIndex] * scaleX);
+            screenY = windowRect.Top + height - IconOffsetFromBottom;
+            diagnostics["douyinVideoLocator"] = "coordinates_fallback";
+        }
+
         diagnostics["douyinVideoClickX"] = screenX;
         diagnostics["douyinVideoClickY"] = screenY;
 
-        // Focus composer first (bottom-center), then hover+click video icon.
-        AbsoluteClick(windowRect.Left + width * 2 / 3, windowRect.Top + height - 60);
-        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
         AbsoluteMove(screenX - 15, screenY);
-        await Task.Delay(80, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(60, cancellationToken).ConfigureAwait(false);
         AbsoluteMove(screenX, screenY);
-        await Task.Delay(220, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
         AbsoluteClick(screenX, screenY);
 
-        var dialog = await WaitForOpenFileDialogAsync(targetWindowHandle, TimeSpan.FromSeconds(6), cancellationToken)
+        var dialog = await WaitForOpenFileDialogAsync(targetWindowHandle, TimeSpan.FromSeconds(5), cancellationToken)
             .ConfigureAwait(false);
         if (dialog == IntPtr.Zero)
         {
@@ -101,7 +136,7 @@ internal static class DouyinVideoOpenDialogUploader
 
         diagnostics["douyinVideoDialogHandle"] = $"0x{dialog.ToInt64():X}";
         SetForegroundWindow(dialog);
-        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(150, cancellationToken).ConfigureAwait(false);
 
         if (!TrySetOpenDialogFileName(dialog, videoPath))
         {
@@ -115,16 +150,15 @@ internal static class DouyinVideoOpenDialogUploader
 
         if (!TryClickOpenButton(dialog))
         {
-            // Fallback: Alt+O / Enter
-            keyboard.SendEnter();
+            _keyboard.SendEnter();
         }
 
-        var closed = await WaitUntilDialogClosedAsync(dialog, TimeSpan.FromSeconds(12), cancellationToken)
+        var closed = await WaitUntilDialogClosedAsync(dialog, TimeSpan.FromSeconds(10), cancellationToken)
             .ConfigureAwait(false);
         diagnostics["douyinVideoDialogClosed"] = closed;
         if (!closed)
         {
-            // Dismiss possible "文件名无效" child dialog then retry Enter once.
+            // Dismiss a possible "文件名无效" child dialog.
             DismissOwnedDialogs(dialog);
             await Task.Delay(300, cancellationToken).ConfigureAwait(false);
             closed = !IsWindowVisible(dialog);
@@ -140,29 +174,87 @@ internal static class DouyinVideoOpenDialogUploader
                 UserGuidance: "请检查弹出的文件框：选中目标 mp4 后点“打开”，确认输入区出现视频预览后再发送。");
         }
 
-        // Give Douyin time to stage the upload preview in the composer.
-        await Task.Delay(900, cancellationToken).ConfigureAwait(false);
+        // Let Douyin stage the upload card in the composer (was 900ms; 500ms was enough in the 17s test run).
+        await Task.Delay(500, cancellationToken).ConfigureAwait(false);
         SetForegroundWindow(targetWindowHandle);
-        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(120, cancellationToken).ConfigureAwait(false);
 
         if (!sendAfterUpload)
         {
-            return new ReplyActionResult(true, "已通过抖店视频按钮选中视频，请确认预览后手动发送。");
+            diagnostics["videoSendState"] = "staged";
+            return new ReplyActionResult(true, StagedMessage);
         }
 
         switch (sendHotkeyMode)
         {
             case SendHotkeyMode.CtrlEnter:
-                keyboard.SendCtrlEnter();
+                _keyboard.SendCtrlEnter();
+                break;
+            case SendHotkeyMode.AltS:
+                _keyboard.SendAltS();
                 break;
             case SendHotkeyMode.Enter:
             default:
-                keyboard.SendEnter();
+                _keyboard.SendEnter();
                 break;
         }
 
-        await Task.Delay(400, cancellationToken).ConfigureAwait(false);
-        return new ReplyActionResult(true, "已通过抖店视频按钮选择并发送视频。");
+        // Return immediately: the upload continues inside Douyin, the user gets the input box back.
+        // This is "submitted", not "delivered" – Douyin gives no reliable completion signal.
+        diagnostics["videoSendState"] = "submitted";
+        return new ReplyActionResult(true, SubmittedMessage);
+    }
+
+    private static Task<(int X, int Y)?> TryLocateVideoButtonByAutomationAsync(IntPtr targetWindowHandle)
+    {
+        var lookup = Task.Run<(int X, int Y)?>(() =>
+        {
+            try
+            {
+                var root = System.Windows.Automation.AutomationElement.FromHandle(targetWindowHandle);
+                if (root is null)
+                {
+                    return null;
+                }
+
+                var condition = new System.Windows.Automation.OrCondition(
+                    new System.Windows.Automation.PropertyCondition(
+                        System.Windows.Automation.AutomationElement.NameProperty, VideoButtonLabel),
+                    new System.Windows.Automation.PropertyCondition(
+                        System.Windows.Automation.AutomationElement.HelpTextProperty, VideoButtonLabel));
+                var element = root.FindFirst(System.Windows.Automation.TreeScope.Descendants, condition);
+                if (element is null)
+                {
+                    return null;
+                }
+
+                var rect = element.Current.BoundingRectangle;
+                if (rect.IsEmpty || rect.Width < 4 || rect.Height < 4)
+                {
+                    return null;
+                }
+
+                return ((int)(rect.Left + rect.Width / 2), (int)(rect.Top + rect.Height / 2));
+            }
+            catch
+            {
+                return null;
+            }
+        });
+
+        return Task.WhenAny(lookup, Task.Delay(UiaLookupTimeout)).ContinueWith(
+            finished =>
+            {
+                if (finished.Result == lookup && lookup.Status == TaskStatus.RanToCompletion)
+                {
+                    return lookup.Result;
+                }
+
+                // Observe a late failure so it never surfaces as an unobserved task exception.
+                _ = lookup.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                return ((int X, int Y)?)null;
+            },
+            TaskScheduler.Default);
     }
 
     private static async Task<IntPtr> WaitForOpenFileDialogAsync(
