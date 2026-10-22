@@ -492,6 +492,68 @@ public sealed class MessageComposeServiceTests
         Assert.Equal(0, clipboard.RestoreCallCount);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_DouyinTextWithImage_SendsImageAndTextAsSeparateMessages()
+    {
+        using var scope = new TestAppDataScope();
+        var imagePath = scope.CreateFile("images\\sample.png", "image");
+        var service = CreateService(out var clipboard, out var keyboard, out var workbench, out var windowFocus);
+        var handle = new IntPtr(207);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "飞鸽客服", "Chrome_WidgetWin_1", "doudian");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+        workbench.OnTryActivateLastExternalWindow = () =>
+        {
+            windowFocus.ForegroundWindow = handle;
+            return true;
+        };
+
+        var result = await service.ExecuteAsync(
+            "图文测试文字",
+            TestSettingsFactory.CreateFastSettings(),
+            ComposeActionMode.Send,
+            [imagePath]);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, clipboard.SetFileDropListCallCount);
+        Assert.Equal(1, clipboard.SetTextCallCount);
+        Assert.Equal(2, keyboard.PasteShortcutCount);
+        Assert.Equal(2, keyboard.EnterCount);
+        Assert.NotNull(result.ComposeTelemetry);
+        Assert.Equal("douyin_workbench", result.ComposeTelemetry.Value.HostProfile);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NonDouyinTextWithImage_StillUsesSingleFinalSend()
+    {
+        using var scope = new TestAppDataScope();
+        var imagePath = scope.CreateFile("images\\sample.png", "image");
+        var service = CreateService(out var clipboard, out var keyboard, out var workbench, out var windowFocus);
+        var handle = new IntPtr(208);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "微信", "WeChatMainWndForPC", "WeChat");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+        workbench.OnTryActivateLastExternalWindow = () =>
+        {
+            windowFocus.ForegroundWindow = handle;
+            return true;
+        };
+
+        var result = await service.ExecuteAsync(
+            "图文测试文字",
+            TestSettingsFactory.CreateFastSettings(),
+            ComposeActionMode.Send,
+            [imagePath]);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, clipboard.SetFileDropListCallCount);
+        Assert.Equal(1, clipboard.SetTextCallCount);
+        Assert.Equal(2, keyboard.PasteShortcutCount);
+        Assert.Equal(1, keyboard.EnterCount);
+    }
+
     private static MessageComposeService CreateService(
         out FakeClipboardService clipboard,
         out FakeKeyboardInputSimulator keyboard,

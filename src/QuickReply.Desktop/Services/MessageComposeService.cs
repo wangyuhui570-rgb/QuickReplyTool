@@ -283,9 +283,14 @@ public sealed class MessageComposeService : IMessageComposeService
         var diagnostics = CreateComposeDiagnosticsPayload("text_with_file_images", mode);
         var stopwatch = Stopwatch.StartNew();
         PopulateAttemptDiagnostics(diagnostics, attemptContext);
-        diagnostics["selectedSendPath"] = attemptContext.HostProfile.PreferConservativeRichPath
-            ? "safe_file_drop_then_text_send"
-            : "file_drop_then_text_send";
+        var useSeparateMessages = mode == ComposeActionMode.Send &&
+            attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench;
+        diagnostics["selectedSendPath"] = useSeparateMessages
+            ? "douyin_image_send_then_text_send"
+            : attemptContext.HostProfile.PreferConservativeRichPath
+                ? "safe_file_drop_then_text_send"
+                : "file_drop_then_text_send";
+        diagnostics["richImageSeparateMessages"] = useSeparateMessages;
 
         var activationResult = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
         if (!activationResult.Success)
@@ -352,6 +357,39 @@ public sealed class MessageComposeService : IMessageComposeService
                 fileDropPasteFailure.Value.UserGuidance);
         }
 
+        // Douyin swallows text when image+text share one Enter. Send image first, then text.
+        if (useSeparateMessages)
+        {
+            var imageSendFailure = await TrySendConfiguredHotkeyAsync(
+                activationResult.TargetWindowHandle,
+                settings.SendHotkeyMode,
+                attemptContext.HostProfile.RichSendStableMs,
+                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: true),
+                attemptContext.HostProfile.PollIntervalMs,
+                diagnostics,
+                stopwatch,
+                delayMsDiagnosticKey: "effectiveRichImageSendDelayMs");
+            if (imageSendFailure is not null)
+            {
+                if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
+                {
+                    await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                }
+
+                diagnostics["result"] = "send_failed";
+                diagnostics["message"] = imageSendFailure.Value.Message;
+                diagnostics["richImageSentStageCount"] = 0;
+                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+                SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+                return CreateFailureResult(
+                    ResolveFailureKind(imageSendFailure.Value),
+                    $"发送图文内容失败：{imageSendFailure.Value.Message}",
+                    imageSendFailure.Value.UserGuidance);
+            }
+
+            diagnostics["richImageSentStageCount"] = 1;
+        }
+
         var textPaste = await PasteTextAsync(
             text,
             settings,
@@ -383,7 +421,7 @@ public sealed class MessageComposeService : IMessageComposeService
                 activationResult.TargetWindowHandle,
                 settings.SendHotkeyMode,
                 attemptContext.HostProfile.RichSendStableMs,
-                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: true),
+                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: !useSeparateMessages),
                 attemptContext.HostProfile.PollIntervalMs,
                 diagnostics,
                 stopwatch,
@@ -403,6 +441,11 @@ public sealed class MessageComposeService : IMessageComposeService
                     ResolveFailureKind(sendFailure.Value),
                     $"发送图文内容失败：{sendFailure.Value.Message}",
                     sendFailure.Value.UserGuidance);
+            }
+
+            if (useSeparateMessages)
+            {
+                diagnostics["richImageSentStageCount"] = 2;
             }
         }
 
@@ -461,6 +504,46 @@ public sealed class MessageComposeService : IMessageComposeService
             filePayload,
             attemptContext.HostProfile,
             settings);
+
+        // Douyin video: FileDrop paste is ignored. Use toolbar "发送视频" + OpenFileDialog.
+        if (mode == ComposeActionMode.Send &&
+            attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
+            filePayload.ContainsVideo &&
+            !filePayload.ContainsImage &&
+            !filePayload.ContainsOtherFile &&
+            filePayload.FileCount == 1)
+        {
+            var diagnosticsEarly = CreateComposeDiagnosticsPayload("files", mode);
+            var stopwatchEarly = Stopwatch.StartNew();
+            PopulateAttemptDiagnostics(diagnosticsEarly, attemptContext);
+            diagnosticsEarly["selectedSendPath"] = "douyin_video_toolbar_open_dialog";
+            diagnosticsEarly["filePayloadKind"] = filePayload.Kind.ToString();
+            diagnosticsEarly["fileContainsVideo"] = true;
+            diagnosticsEarly["fileCount"] = filePayload.FileCount;
+
+            var activationEarly = await EnsureTargetWindowReadyAsync(settings, diagnosticsEarly, stopwatchEarly, attemptContext);
+            if (!activationEarly.Success)
+            {
+                diagnosticsEarly["result"] = activationEarly.FailureCode;
+                diagnosticsEarly["totalMs"] = stopwatchEarly.ElapsedMilliseconds;
+                SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnosticsEarly);
+                return CreateTargetWindowUnavailableResult(activationEarly.UserMessage);
+            }
+
+            var uploadResult = await DouyinVideoOpenDialogUploader.TryUploadAndOptionallySendAsync(
+                activationEarly.TargetWindowHandle,
+                normalizedPaths[0],
+                sendAfterUpload: true,
+                settings.SendHotkeyMode,
+                _keyboardInputSimulator,
+                diagnosticsEarly).ConfigureAwait(false);
+
+            diagnosticsEarly["totalMs"] = stopwatchEarly.ElapsedMilliseconds;
+            diagnosticsEarly["result"] = uploadResult.Success ? "success" : "failed";
+            diagnosticsEarly["message"] = uploadResult.Message;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnosticsEarly);
+            return uploadResult;
+        }
 
         var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
         var stopwatch = Stopwatch.StartNew();
