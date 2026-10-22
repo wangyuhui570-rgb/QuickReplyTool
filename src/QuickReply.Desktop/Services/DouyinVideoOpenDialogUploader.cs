@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using QuickReply.Desktop.Models;
 
 namespace QuickReply.Desktop.Services;
 
