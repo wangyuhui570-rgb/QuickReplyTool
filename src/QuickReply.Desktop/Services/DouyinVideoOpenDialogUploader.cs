@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using QuickReply.Desktop.Models;
@@ -13,6 +14,7 @@ namespace QuickReply.Desktop.Services;
 internal static class DouyinVideoOpenDialogUploader
 {
     private const int VideoIconIndex = 2; // 0=emoji, 1=image, 2=video
+    private const int IconOffsetFromBottom = 146;
     private const int IconRowYFromBottom = 146; // ~585 in 731-tall window
     private static readonly int[] IconXsIn1280 = [394, 430, 466, 498, 538, 567, 581, 627, 668];
 
@@ -72,7 +74,7 @@ internal static class DouyinVideoOpenDialogUploader
 
         var scaleX = width / 1280.0;
         var iconX = (int)Math.Round(IconXsIn1280[VideoIconIndex] * scaleX);
-        var iconY = height - IconPosYFromBottom;
+        var iconY = height - IconOffsetFromBottom;
         var screenX = windowRect.Left + iconX;
         var screenY = windowRect.Top + iconY;
         diagnostics["douyinVideoClickX"] = screenX;
