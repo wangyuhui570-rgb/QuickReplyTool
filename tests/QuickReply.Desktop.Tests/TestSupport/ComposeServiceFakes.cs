@@ -267,11 +267,16 @@ internal sealed class FakeDouyinSendProgressVerifier : IDouyinSendProgressVerifi
 {
     public DouyinSendVerifyOutcome Outcome { get; set; } = DouyinSendVerifyOutcome.Cleared;
 
+    /// <summary>Default StillHasContent so unit tests that paste images can proceed to Enter.</summary>
+    public DouyinSendVerifyOutcome ConfirmImageOutcome { get; set; } = DouyinSendVerifyOutcome.StillHasContent;
+
     public string Method { get; set; } = "fake";
 
     public string Detail { get; set; } = "ok";
 
     public int CallCount { get; private set; }
+
+    public int ConfirmImageCallCount { get; private set; }
 
     public List<DouyinSendVerifyExpectation> Expectations { get; } = [];
 
@@ -285,5 +290,16 @@ internal sealed class FakeDouyinSendProgressVerifier : IDouyinSendProgressVerifi
         Expectations.Add(expectation);
         diagnostics["douyinSendVerifyFake"] = true;
         return Task.FromResult(new DouyinSendVerifyResult(Outcome, Method, Detail));
+    }
+
+    public Task<DouyinSendVerifyResult> ConfirmComposerHasImageAsync(
+        IntPtr targetWindowHandle,
+        IReadOnlyList<string> imagePaths,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        ConfirmImageCallCount++;
+        diagnostics["douyinImagePasteConfirmFake"] = true;
+        return Task.FromResult(new DouyinSendVerifyResult(ConfirmImageOutcome, Method, Detail));
     }
 }

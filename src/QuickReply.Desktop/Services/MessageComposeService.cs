@@ -135,6 +135,7 @@ public sealed class MessageComposeService : IMessageComposeService
     }
 
     internal const int DouyinImageHeadStartMs = 1200;
+    internal const int DouyinPostTextBeforeImageSettleMs = DouyinComposerInputHelper.PostTextSendSettleMs;
 
     public async Task<ReplyActionResult> ExecuteAsync(
         string text,
@@ -369,32 +370,101 @@ public sealed class MessageComposeService : IMessageComposeService
                 sentStageCount > 0 ? "请检查会话里已发出的内容，再手动补发剩余部分。" : failure.UserGuidance);
         }
 
-        async Task<ReplyActionResult?> PasteImagesAsync()
+        var douyinImagePasteConfirmed = false;
+
+        async Task<ReplyActionResult?> PasteImagesAsync(bool prepareClipboardOnly = false)
         {
-            var fileDropWrite = await TryWriteClipboardPayloadAsync(
-                () => _clipboardService.SetFileDropListAsync(imagePaths, persist: false),
-                "file_drop",
-                diagnostics,
-                stopwatch,
-                ReplyActionFailureKind.ClipboardBusy,
-                "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
-                imagePaths[0]);
-            if (fileDropWrite.FailureResult is not null)
+            // Write file_drop once; on Douyin text→image the write can start during the post-text settle.
+            if (clipboardPayloadFingerprint is null || diagnostics["lastClipboardWriteKind"] as string != "file_drop")
             {
-                return await FailAsync("clipboard_write_failed", fileDropWrite.FailureResult.Value);
+                var fileDropWrite = await TryWriteClipboardPayloadAsync(
+                    () => _clipboardService.SetFileDropListAsync(imagePaths, persist: false),
+                    "file_drop",
+                    diagnostics,
+                    stopwatch,
+                    ReplyActionFailureKind.ClipboardBusy,
+                    "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+                    imagePaths[0]);
+                if (fileDropWrite.FailureResult is not null)
+                {
+                    return await FailAsync("clipboard_write_failed", fileDropWrite.FailureResult.Value);
+                }
+
+                clipboardPayloadFingerprint = fileDropWrite.Fingerprint;
             }
 
-            clipboardPayloadFingerprint = fileDropWrite.Fingerprint;
-            var fileDropPasteFailure = await TryPasteClipboardPayloadAsync(
-                activationResult.TargetWindowHandle,
-                "file_drop",
-                attemptContext.HostProfile.FilePasteStableMs,
-                GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
-                attemptContext.HostProfile.PollIntervalMs,
-                diagnostics,
-                stopwatch,
-                settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
-            return fileDropPasteFailure is null ? null : await FailAsync("send_failed", fileDropPasteFailure.Value);
+            if (prepareClipboardOnly)
+            {
+                return null;
+            }
+
+            var maxAttempts = isDouyin ? DouyinComposerInputHelper.MaxImagePasteAttempts : 1;
+            ReplyActionResult? lastPasteFailure = null;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                diagnostics["douyinImagePasteAttempt"] = attempt;
+                if (isDouyin)
+                {
+                    DouyinComposerInputHelper.TryFocusComposer(activationResult.TargetWindowHandle, diagnostics);
+                    await Task.Delay(DouyinComposerInputHelper.PostFocusSettleMs).ConfigureAwait(false);
+                }
+
+                lastPasteFailure = await TryPasteClipboardPayloadAsync(
+                    activationResult.TargetWindowHandle,
+                    "file_drop",
+                    attemptContext.HostProfile.FilePasteStableMs,
+                    GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+                    attemptContext.HostProfile.PollIntervalMs,
+                    diagnostics,
+                    stopwatch,
+                    settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+                if (lastPasteFailure is not null)
+                {
+                    // Focus lost: retry focus+paste on Douyin; otherwise fail.
+                    if (!isDouyin || attempt >= maxAttempts)
+                    {
+                        return await FailAsync("send_failed", lastPasteFailure.Value);
+                    }
+
+                    continue;
+                }
+
+                if (!isDouyin)
+                {
+                    return null;
+                }
+
+                var confirm = await _douyinSendProgressVerifier.ConfirmComposerHasImageAsync(
+                    activationResult.TargetWindowHandle,
+                    imagePaths,
+                    diagnostics).ConfigureAwait(false);
+                diagnostics["douyinImagePasteConfirmOutcome"] = confirm.Outcome.ToString();
+                diagnostics["douyinImagePasteConfirmDetail"] = confirm.Detail;
+                if (confirm.Outcome == DouyinSendVerifyOutcome.StillHasContent)
+                {
+                    douyinImagePasteConfirmed = true;
+                    diagnostics["douyinImagePasteConfirmed"] = true;
+                    return null;
+                }
+
+                // Cleared = definitely empty; Indeterminate = unknown. Retry a couple of times.
+                if (attempt >= maxAttempts)
+                {
+                    break;
+                }
+            }
+
+            if (isDouyin)
+            {
+                return await FailAsync(
+                    "image_paste_unconfirmed",
+                    CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        "图片未能贴进抖店输入框（已重试聚焦与粘贴），未按发送键，避免空发。",
+                        "请先点一下抖店聊天输入框，再重试；或把「图文发送顺序」临时改成「先图片后文字」。"));
+            }
+
+            return lastPasteFailure is null ? null : await FailAsync("send_failed", lastPasteFailure.Value);
         }
 
         async Task<ReplyActionResult?> PasteTextStepAsync()
@@ -418,8 +488,23 @@ public sealed class MessageComposeService : IMessageComposeService
         async Task<ReplyActionResult?> SendStepAsync(
             bool composerHasImages,
             string delayKey,
-            DouyinSendVerifyExpectation? verifyExpectation = null)
+            DouyinSendVerifyExpectation? verifyExpectation = null,
+            bool imagePasteConfirmed = false)
         {
+            // Never empty-Enter an image stage when Douyin paste was not confirmed.
+            if (isDouyin &&
+                composerHasImages &&
+                verifyExpectation is { SentImagePaths: { Count: > 0 } } &&
+                !imagePasteConfirmed)
+            {
+                return await FailAsync(
+                    "image_paste_unconfirmed",
+                    CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        "图片未确认贴入输入框，已跳过发送键，避免空发。",
+                        "请先点一下抖店聊天输入框，再重试。"));
+            }
+
             var sendFailure = await TrySendConfiguredHotkeyAsync(
                 activationResult.TargetWindowHandle,
                 settings.SendHotkeyMode,
@@ -456,12 +541,24 @@ public sealed class MessageComposeService : IMessageComposeService
 
                 if (verify.Outcome == DouyinSendVerifyOutcome.Indeterminate)
                 {
-                    return await FailAsync(
-                        "send_unconfirmed",
-                        CreateFailureResult(
-                            ReplyActionFailureKind.ManualConfirmationRequired,
-                            "已按发送键，但无法确认会话侧是否有进展（输入框未检出清空）。",
-                            "请看一眼抖店会话：若消息已出现可忽略；若没有，请手动发送或重试。不要把这次当成已成功。"));
+                    // Image stage: empty_selection* is now Indeterminate (ambiguous). If we confirmed
+                    // the paste before Enter, accept only that empty-ambiguous case as success.
+                    var imageStage = expectation.SentImagePaths is { Count: > 0 };
+                    var emptyAmbiguous = verify.Detail.Contains("empty_selection", StringComparison.OrdinalIgnoreCase)
+                        || verify.Detail.Contains("image_uncertain", StringComparison.OrdinalIgnoreCase);
+                    if (imageStage && imagePasteConfirmed && emptyAmbiguous)
+                    {
+                        diagnostics["douyinSendVerifyAcceptedViaPasteConfirm"] = true;
+                    }
+                    else
+                    {
+                        return await FailAsync(
+                            "send_unconfirmed",
+                            CreateFailureResult(
+                                ReplyActionFailureKind.ManualConfirmationRequired,
+                                "已按发送键，但无法确认会话侧是否有进展（输入框未检出清空）。",
+                                "请看一眼抖店会话：若消息已出现可忽略；若没有，请手动发送或重试。不要把这次当成已成功。"));
+                    }
                 }
             }
 
@@ -483,7 +580,8 @@ public sealed class MessageComposeService : IMessageComposeService
                 delayKey: imageFirst ? "effectiveRichImageSendDelayMs" : "effectiveRichSendDelayMs",
                 verifyExpectation: imageFirst
                     ? new DouyinSendVerifyExpectation(SentText: null, SentImagePaths: imagePaths)
-                    : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: null));
+                    : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: null),
+                imagePasteConfirmed: imageFirst && douyinImagePasteConfirmed);
             if (firstSendFailure is not null)
             {
                 return firstSendFailure.Value;
@@ -496,6 +594,20 @@ public sealed class MessageComposeService : IMessageComposeService
                 // overtake it. Give the image a head start before the second message.
                 diagnostics["douyinImageHeadStartMs"] = DouyinImageHeadStartMs;
                 await Task.Delay(DouyinImageHeadStartMs).ConfigureAwait(false);
+            }
+
+            if (isDouyin && !imageFirst)
+            {
+                // TextThenImage: brief settle after text Enter, prepare file_drop early, then
+                // refocus composer inside PasteImagesAsync before Ctrl+V.
+                diagnostics["douyinPostTextBeforeImageSettleMs"] = DouyinPostTextBeforeImageSettleMs;
+                var prepTask = PasteImagesAsync(prepareClipboardOnly: true);
+                await Task.Delay(DouyinPostTextBeforeImageSettleMs).ConfigureAwait(false);
+                var prepFailure = await prepTask.ConfigureAwait(false);
+                if (prepFailure is not null)
+                {
+                    return prepFailure.Value;
+                }
             }
         }
 
@@ -517,10 +629,12 @@ public sealed class MessageComposeService : IMessageComposeService
                     : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: imagePaths);
             }
 
+            var finalHasImages = !useSeparateMessages || !imageFirst;
             var finalSendFailure = await SendStepAsync(
-                composerHasImages: !useSeparateMessages || !imageFirst,
+                composerHasImages: finalHasImages,
                 delayKey: "effectiveRichSendDelayMs",
-                verifyExpectation: finalExpectation);
+                verifyExpectation: finalExpectation,
+                imagePasteConfirmed: finalHasImages && douyinImagePasteConfirmed);
             if (finalSendFailure is not null)
             {
                 return finalSendFailure.Value;

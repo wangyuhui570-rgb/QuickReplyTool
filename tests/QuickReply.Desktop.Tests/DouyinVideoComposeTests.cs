@@ -302,6 +302,48 @@ public sealed class DouyinVideoComposeTests
     }
 
     [Fact]
+    public async Task DouyinTextThenImage_FailsWithoutSecondEnterWhenImagePasteUnconfirmed()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\b.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier
+        {
+            ConfirmImageOutcome = DouyinSendVerifyOutcome.Cleared
+        };
+        var service = CreateDouyinService(323, out var clipboard, out var keyboard, out _, out _, verifier: verifier);
+        var settings = TestSettingsFactory.CreateFastSettings();
+        settings.PhraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
+
+        var result = await service.ExecuteAsync("文字", settings, ComposeActionMode.Send, [image]);
+
+        Assert.False(result.Success);
+        Assert.Contains("未能贴进", result.Message, StringComparison.Ordinal);
+        Assert.Equal(1, keyboard.EnterCount); // text sent only; no empty image Enter
+        Assert.True(verifier.ConfirmImageCallCount >= 1);
+        Assert.Equal(1, clipboard.SetFileDropListCallCount);
+    }
+
+    [Fact]
+    public async Task DouyinTextThenImage_ConfirmsImagePasteBeforeSecondEnter()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\c.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier();
+        var service = CreateDouyinService(324, out _, out var keyboard, out _, out _, verifier: verifier);
+        var settings = TestSettingsFactory.CreateFastSettings();
+        settings.PhraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
+
+        var result = await service.ExecuteAsync("文字", settings, ComposeActionMode.Send, [image]);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, keyboard.EnterCount);
+        Assert.True(verifier.ConfirmImageCallCount >= 1);
+        Assert.Equal(2, verifier.CallCount);
+        Assert.Equal("文字", verifier.Expectations[0].SentText);
+        Assert.NotNull(verifier.Expectations[1].SentImagePaths);
+    }
+
+        [Fact]
     public async Task DouyinTextWithImage_VerifyRunsTwiceWhenCleared()
     {
         using var scope = new TestAppDataScope();
