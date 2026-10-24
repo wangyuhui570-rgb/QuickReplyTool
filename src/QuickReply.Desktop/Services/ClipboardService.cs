@@ -12,6 +12,9 @@ namespace QuickReply.Desktop.Services;
 public sealed class ClipboardService : IClipboardService
 {
     private const int RetryCount = 12;
+    // File-drop second stage on Douyin was hanging 12–35s on busy clipboard; fail faster.
+    private const int FileDropRetryCount = 4;
+    private const int FileDropDispatcherTimeoutMs = 1500;
     private const int RetryDelayMs = 80;
     private const int MaxRetryDelayMs = 300;
     private const int MaxCachedImages = 24;
@@ -287,21 +290,24 @@ public sealed class ClipboardService : IClipboardService
 
         try
         {
-            await RetryClipboardAccessAsync(() =>
-            {
-                var collection = new StringCollection();
-                collection.AddRange(filePaths.ToArray());
-
-                var dataObject = new System.Windows.DataObject();
-                dataObject.SetFileDropList(collection);
-                System.Windows.Clipboard.SetDataObject(dataObject, persist);
-                if (persist)
+            await RetryClipboardAccessAsync(
+                () =>
                 {
-                    System.Windows.Clipboard.Flush();
-                }
+                    var collection = new StringCollection();
+                    collection.AddRange(filePaths.ToArray());
 
-                return true;
-            });
+                    var dataObject = new System.Windows.DataObject();
+                    dataObject.SetFileDropList(collection);
+                    System.Windows.Clipboard.SetDataObject(dataObject, persist);
+                    if (persist)
+                    {
+                        System.Windows.Clipboard.Flush();
+                    }
+
+                    return true;
+                },
+                maxAttempts: FileDropRetryCount,
+                dispatcherTimeoutMs: FileDropDispatcherTimeoutMs);
 
             return new ReplyActionResult(true, "文件已写入系统剪贴板。");
         }
@@ -377,15 +383,19 @@ public sealed class ClipboardService : IClipboardService
         }
     }
 
-    private static async Task<T> RetryClipboardAccessAsync<T>(Func<T> action)
+    private static async Task<T> RetryClipboardAccessAsync<T>(
+        Func<T> action,
+        int? maxAttempts = null,
+        int? dispatcherTimeoutMs = null)
     {
         Exception? lastException = null;
+        var attempts = maxAttempts ?? RetryCount;
 
-        for (var attempt = 0; attempt < RetryCount; attempt++)
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             try
             {
-                return await InvokeOnUiThreadAsync(action);
+                return await InvokeOnUiThreadAsync(action, dispatcherTimeoutMs);
             }
             catch (Exception ex)
             {
@@ -395,7 +405,7 @@ public sealed class ClipboardService : IClipboardService
                 }
 
                 lastException = ex;
-                if (attempt >= RetryCount - 1)
+                if (attempt >= attempts - 1)
                 {
                     break;
                 }
@@ -418,7 +428,7 @@ public sealed class ClipboardService : IClipboardService
         return Math.Min(delay, MaxRetryDelayMs);
     }
 
-    private static async Task<T> InvokeOnUiThreadAsync<T>(Func<T> action)
+    private static async Task<T> InvokeOnUiThreadAsync<T>(Func<T> action, int? dispatcherTimeoutMs = null)
     {
         var dispatcher = GetClipboardDispatcher();
 
@@ -427,10 +437,11 @@ public sealed class ClipboardService : IClipboardService
             return action();
         }
 
+        var timeoutMs = dispatcherTimeoutMs ?? DispatcherOperationTimeoutMs;
         var operation = dispatcher.InvokeAsync(action, DispatcherPriority.Send);
         var completedTask = await Task.WhenAny(
                 operation.Task,
-                Task.Delay(DispatcherOperationTimeoutMs))
+                Task.Delay(timeoutMs))
             .ConfigureAwait(false);
         if (completedTask != operation.Task)
         {
