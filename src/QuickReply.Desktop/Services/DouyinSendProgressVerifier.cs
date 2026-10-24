@@ -352,7 +352,8 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
                 }
             }
 
-            return new DouyinSendVerifyResult(DouyinSendVerifyOutcome.Cleared, "uia_image", "no_image_preview");
+            // Chromium often hides the preview from UIA; unknown is not empty.
+            return new DouyinSendVerifyResult(DouyinSendVerifyOutcome.Indeterminate, "uia_image", "no_image_preview");
         }
         catch (Exception ex)
         {

@@ -447,9 +447,26 @@ public sealed class MessageComposeService : IMessageComposeService
                     return null;
                 }
 
-                // Cleared = definitely empty; Indeterminate = unknown. Retry a couple of times.
+                // Cleared = definitely empty -> retry. Indeterminate = Chromium may hide preview;
+                // soft-accept after attempt >=2 so we do not false-fail a real paste.
+                if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate && attempt >= 2)
+                {
+                    douyinImagePasteConfirmed = true;
+                    diagnostics["douyinImagePasteConfirmed"] = true;
+                    diagnostics["douyinImagePasteSoftConfirm"] = true;
+                    return null;
+                }
+
                 if (attempt >= maxAttempts)
                 {
+                    if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate)
+                    {
+                        douyinImagePasteConfirmed = true;
+                        diagnostics["douyinImagePasteConfirmed"] = true;
+                        diagnostics["douyinImagePasteSoftConfirm"] = true;
+                        return null;
+                    }
+
                     break;
                 }
             }
