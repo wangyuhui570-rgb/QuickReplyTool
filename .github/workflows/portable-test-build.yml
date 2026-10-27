@@ -22,16 +22,34 @@ jobs:
       - name: Build portable zip
         shell: pwsh
         run: |
-          $out = Join-Path $PWD 'artifacts\QuickReplyTool-Portable-2.1.14-douyin-test'
+          $out = Join-Path $PWD 'artifacts\QuickReplyTool-Portable-2.1.15-douyin-test'
           ./scripts/build-portable.ps1 -Configuration Release -OutputRoot $out
           $zip = "$out.zip"
           if (-not (Test-Path $zip)) { throw "zip not found: $zip" }
-          Get-FileHash $zip -Algorithm SHA256 | Format-List
-          (Get-Item $zip).Length
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item $zip).Length
+          $name = Split-Path $zip -Leaf
+          $tag = 'v2.1.15-douyin-test'
+          "$sha  $name" | Set-Content -Path "$zip.sha256" -Encoding ascii -NoNewline
+          # Update manifest read by the in-app updater (published to the 'update-manifest' release).
+          [ordered]@{
+            version = '2.1.15'
+            tag = $tag
+            zipName = $name
+            url = "https://github.com/${{ github.repository }}/releases/download/$tag/$name"
+            sha256 = $sha
+            size = [int64]$size
+            notes = ''
+          } | ConvertTo-Json | Set-Content -Path artifacts/latest.json -Encoding utf8
+          Get-Content artifacts/latest.json
+          "sha256=$sha size=$size"
       - uses: actions/upload-artifact@v4
         with:
-          name: QuickReplyTool-Portable-2.1.14-douyin-test
-          path: artifacts/QuickReplyTool-Portable-2.1.14-douyin-test.zip
+          name: QuickReplyTool-Portable-2.1.15-douyin-test
+          path: |
+            artifacts/QuickReplyTool-Portable-2.1.15-douyin-test.zip
+            artifacts/QuickReplyTool-Portable-2.1.15-douyin-test.zip.sha256
+            artifacts/latest.json
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()

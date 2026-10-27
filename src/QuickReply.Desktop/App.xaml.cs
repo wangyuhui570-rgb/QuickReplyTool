@@ -146,6 +146,99 @@ public partial class App : System.Windows.Application
         }
 
         StartupTrace.Mark("app.startup_completed");
+        _ = CheckForUpdatesAsync(userInitiated: false);
+    }
+
+    private bool _updateInProgress;
+    private string? _dismissedUpdateVersion;
+
+    /// <summary>Background update check. Silent on failure unless the user asked for it.</summary>
+    public async Task CheckForUpdatesAsync(bool userInitiated)
+    {
+        if (_updateInProgress)
+        {
+            if (userInitiated)
+            {
+                System.Windows.MessageBox.Show("正在更新中，请稍候。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            return;
+        }
+
+        try
+        {
+            if (!userInitiated)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(8));
+            }
+
+            var service = new AppUpdateService();
+            var result = await Task.Run(() => service.CheckAsync(AppIdentity.Version));
+            if (result.Status != AppUpdateCheckStatus.UpdateAvailable || result.Update is null)
+            {
+                if (userInitiated)
+                {
+                    System.Windows.MessageBox.Show(
+                        result.Status == AppUpdateCheckStatus.UpToDate ? $"当前已是最新版本（{AppIdentity.Version}）。" : result.Message,
+                        "检查更新",
+                        MessageBoxButton.OK,
+                        result.Status == AppUpdateCheckStatus.UpToDate ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                }
+                return;
+            }
+
+            var update = result.Update;
+            if (!userInitiated && string.Equals(_dismissedUpdateVersion, update.Version, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var installRoot = AppUpdatePolicy.ResolveInstallRoot(AppContext.BaseDirectory);
+            if (installRoot is null)
+            {
+                if (userInitiated)
+                {
+                    System.Windows.MessageBox.Show($"发现新版本 {update.Version}，但当前不是绿色版目录（app 文件夹）运行，无法自动更新。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                return;
+            }
+
+            var sizeText = update.SizeBytes > 0 ? $"（约 {update.SizeBytes / 1024 / 1024} MB）" : string.Empty;
+            var answer = System.Windows.MessageBox.Show(
+                $"发现新版本 {update.Version}{sizeText}，当前版本 {AppIdentity.Version}。\n\n现在更新吗？\n会自动下载、替换并重启软件，设置和话术都不会受影响。\n选「否」稍后再说。",
+                "发现新版本",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+            if (answer != MessageBoxResult.Yes)
+            {
+                _dismissedUpdateVersion = update.Version;
+                return;
+            }
+
+            _updateInProgress = true;
+            ShowBackgroundNotification("软件更新", $"正在后台下载 {update.Version}，完成后会自动重启。");
+            var lastNotify = DateTime.MinValue;
+            var progress = new Progress<string>(message =>
+            {
+                if (DateTime.UtcNow - lastNotify > TimeSpan.FromSeconds(15))
+                {
+                    lastNotify = DateTime.UtcNow;
+                    ShowBackgroundNotification("软件更新", message);
+                }
+            });
+            var stagingRoot = await Task.Run(() => service.DownloadAndStageAsync(update, progress));
+            service.LaunchUpdater(stagingRoot, installRoot, Environment.ProcessId);
+            PrepareForRestart();
+            Shutdown();
+        }
+        catch (Exception ex)
+        {
+            _updateInProgress = false;
+            _exceptionLogService?.RecordException(ex, "app_update_failed", isTerminating: false);
+            if (userInitiated || _dismissedUpdateVersion is null)
+            {
+                System.Windows.MessageBox.Show($"更新失败，旧版本不受影响，可稍后重试。\n\n{ex.Message}", "软件更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

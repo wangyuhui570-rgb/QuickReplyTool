@@ -121,6 +121,7 @@ public sealed class TrayIconService : IDisposable
         contextMenu.Items.Add(CreateActionItem("问题记录历史", (_, _) => OpenIssueReportHistory()));
         contextMenu.Items.Add(CreateActionItem("打开问题目录", (_, _) => OpenIssueReportDirectory()));
         contextMenu.Items.Add(CreateActionItem("快速重启", (_, _) => RestartApplication()));
+        contextMenu.Items.Add(CreateActionItem($"检查更新（当前 {AppIdentity.Version}）", (_, _) => _ = App.Instance?.CheckForUpdatesAsync(userInitiated: true)));
         contextMenu.Items.Add(new Forms.ToolStripSeparator());
         contextMenu.Items.Add(CreateActionItem("退出程序", (_, _) => ExitApplication(), isDanger: true));
         return contextMenu;
