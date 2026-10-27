@@ -42,13 +42,25 @@ public sealed class MessageComposeService : IMessageComposeService
         IExternalWorkbenchService externalWorkbenchService,
         IClipboardService clipboardService,
         IKeyboardInputSimulator keyboardInputSimulator,
-        IWindowFocusService windowFocusService)
+        IWindowFocusService windowFocusService,
+        IDouyinVideoUploader? douyinVideoUploader = null,
+        DouyinVideoSendGuard? douyinVideoSendGuard = null,
+        IDouyinSendProgressVerifier? douyinSendProgressVerifier = null)
     {
         _externalWorkbenchService = externalWorkbenchService;
         _clipboardService = clipboardService;
         _keyboardInputSimulator = keyboardInputSimulator;
         _windowFocusService = windowFocusService;
+        _douyinVideoUploader = douyinVideoUploader ?? new DouyinVideoOpenDialogUploader(keyboardInputSimulator);
+        _douyinVideoSendGuard = douyinVideoSendGuard ?? SharedDouyinVideoSendGuard;
+        _douyinSendProgressVerifier = douyinSendProgressVerifier
+            ?? new DouyinSendProgressVerifier(keyboardInputSimulator, clipboardService);
     }
+
+    private static readonly DouyinVideoSendGuard SharedDouyinVideoSendGuard = new();
+    private readonly IDouyinVideoUploader _douyinVideoUploader;
+    private readonly DouyinVideoSendGuard _douyinVideoSendGuard;
+    private readonly IDouyinSendProgressVerifier _douyinSendProgressVerifier;
 
     public async Task<ReplyActionResult> CopyToClipboardAsync(string text, IReadOnlyCollection<string>? imagePaths = null)
     {
@@ -121,6 +133,9 @@ public sealed class MessageComposeService : IMessageComposeService
             _clipboardService.SetFileDropListAsync(normalizedPaths),
             "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
     }
+
+    internal const int DouyinImageHeadStartMs = 1200;
+    internal const int DouyinPostTextBeforeImageSettleMs = DouyinComposerInputHelper.PostTextSendSettleMs;
 
     public async Task<ReplyActionResult> ExecuteAsync(
         string text,
@@ -280,12 +295,34 @@ public sealed class MessageComposeService : IMessageComposeService
         ComposeActionMode mode,
         ComposeAttemptContext attemptContext)
     {
+        if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
+            imagePaths.Any(IsVideoPath))
+        {
+            return await ExecuteDouyinPayloadWithVideosAsync(text, imagePaths, settings, mode, attemptContext);
+        }
+
         var diagnostics = CreateComposeDiagnosticsPayload("text_with_file_images", mode);
         var stopwatch = Stopwatch.StartNew();
         PopulateAttemptDiagnostics(diagnostics, attemptContext);
-        diagnostics["selectedSendPath"] = attemptContext.HostProfile.PreferConservativeRichPath
-            ? "safe_file_drop_then_text_send"
-            : "file_drop_then_text_send";
+        var isDouyin = attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench;
+        var phraseImageSendMode = Enum.IsDefined(settings.PhraseImageSendMode)
+            ? settings.PhraseImageSendMode
+            : PhraseImageSendMode.ImageThenTextThenSend;
+        var imageFirst = phraseImageSendMode != PhraseImageSendMode.TextThenImageThenSend;
+        // Douyin swallows the text when image+text share one Enter, so it always sends them as
+        // two messages, in the order chosen in settings. "图片先发" also forces two messages elsewhere.
+        var useSeparateMessages = mode == ComposeActionMode.Send &&
+            (isDouyin || phraseImageSendMode == PhraseImageSendMode.ImageImmediateThenTextSend);
+        diagnostics["selectedSendPath"] = (useSeparateMessages, imageFirst) switch
+        {
+            (true, true) => isDouyin ? "douyin_image_send_then_text_send" : "image_send_then_text_send",
+            (true, false) => isDouyin ? "douyin_text_send_then_image_send" : "text_send_then_image_send",
+            (false, true) => attemptContext.HostProfile.PreferConservativeRichPath
+                ? "safe_file_drop_then_text_send"
+                : "file_drop_then_text_send",
+            (false, false) => "text_then_file_drop_send"
+        };
+        diagnostics["richImageSeparateMessages"] = useSeparateMessages;
 
         var activationResult = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
         if (!activationResult.Success)
@@ -302,107 +339,322 @@ public sealed class MessageComposeService : IMessageComposeService
         diagnostics["hasText"] = true;
         diagnostics["imageCount"] = imagePaths.Count;
         diagnostics["phraseImageSendMode"] = settings.PhraseImageSendMode.ToString();
-        diagnostics["effectivePhraseImageSendMode"] = PhraseImageSendMode.ImageThenTextThenSend.ToString();
+        diagnostics["effectivePhraseImageSendMode"] = phraseImageSendMode.ToString();
         diagnostics["imageTransferStrategy"] = "file_drop_clipboard";
 
         var clipboardSnapshot = await CaptureClipboardSnapshotAsync(diagnostics, stopwatch);
 
         ClipboardFingerprint? clipboardPayloadFingerprint = null;
-        var fileDropWrite = await TryWriteClipboardPayloadAsync(
-            () => _clipboardService.SetFileDropListAsync(imagePaths, persist: false),
-            "file_drop",
-            diagnostics,
-            stopwatch,
-            ReplyActionFailureKind.ClipboardBusy,
-            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
-            imagePaths[0]);
-        if (fileDropWrite.FailureResult is not null)
-        {
-            diagnostics["result"] = "clipboard_write_failed";
-            diagnostics["message"] = fileDropWrite.FailureResult.Value.Message;
-            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
-            SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
-            return fileDropWrite.FailureResult.Value;
-        }
+        var sentStageCount = 0;
 
-        clipboardPayloadFingerprint = fileDropWrite.Fingerprint;
-        var fileDropPasteFailure = await TryPasteClipboardPayloadAsync(
-            activationResult.TargetWindowHandle,
-            "file_drop",
-            attemptContext.HostProfile.FilePasteStableMs,
-            GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
-            attemptContext.HostProfile.PollIntervalMs,
-            diagnostics,
-            stopwatch,
-            settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
-        if (fileDropPasteFailure is not null)
+        async Task<ReplyActionResult> FailAsync(string resultCode, ReplyActionResult failure)
         {
             if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
             {
                 await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
             }
 
-            diagnostics["result"] = "send_failed";
-            diagnostics["message"] = fileDropPasteFailure.Value.Message;
+            diagnostics["result"] = resultCode;
+            diagnostics["message"] = failure.Message;
+            diagnostics["richImageSentStageCount"] = sentStageCount;
             diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
             SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
+            // Once one message is out, a retry would resend it – make the failure non-retryable.
+            var failureKind = sentStageCount > 0
+                ? ReplyActionFailureKind.ManualConfirmationRequired
+                : ResolveFailureKind(failure);
+            var prefix = sentStageCount > 0 ? "图文已发出第一条，第二条失败：" : "发送图文内容失败：";
             return CreateFailureResult(
-                ResolveFailureKind(fileDropPasteFailure.Value),
-                $"发送图文内容失败：{fileDropPasteFailure.Value.Message}",
-                fileDropPasteFailure.Value.UserGuidance);
+                failureKind,
+                $"{prefix}{failure.Message}",
+                sentStageCount > 0 ? "请检查会话里已发出的内容，再手动补发剩余部分。" : failure.UserGuidance);
         }
 
-        var textPaste = await PasteTextAsync(
-            text,
-            settings,
-            activationResult.TargetWindowHandle,
-            diagnostics,
-            stopwatch,
-            attemptContext.HostProfile);
-        if (textPaste.FailureResult is not null)
+        var douyinImagePasteConfirmed = false;
+
+        async Task<ReplyActionResult?> PasteImagesAsync(bool prepareClipboardOnly = false)
         {
-            if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
+            // Write file_drop once; on Douyin text→image the write can start during the post-text settle.
+            if (clipboardPayloadFingerprint is null || diagnostics["lastClipboardWriteKind"] as string != "file_drop")
             {
-                await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                var fileDropWrite = await TryWriteClipboardPayloadAsync(
+                    () => _clipboardService.SetFileDropListAsync(imagePaths, persist: false),
+                    "file_drop",
+                    diagnostics,
+                    stopwatch,
+                    ReplyActionFailureKind.ClipboardBusy,
+                    "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+                    imagePaths[0]);
+                if (fileDropWrite.FailureResult is not null)
+                {
+                    return await FailAsync("clipboard_write_failed", fileDropWrite.FailureResult.Value);
+                }
+
+                clipboardPayloadFingerprint = fileDropWrite.Fingerprint;
             }
 
-            diagnostics["result"] = "send_failed";
-            diagnostics["message"] = textPaste.FailureResult.Value.Message;
-            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
-            SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
-            return CreateFailureResult(
-                ResolveFailureKind(textPaste.FailureResult.Value),
-                $"发送图文内容失败：{textPaste.FailureResult.Value.Message}",
-                textPaste.FailureResult.Value.UserGuidance);
+            if (prepareClipboardOnly)
+            {
+                return null;
+            }
+
+            var maxAttempts = isDouyin ? DouyinComposerInputHelper.MaxImagePasteAttempts : 1;
+            ReplyActionResult? lastPasteFailure = null;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                diagnostics["douyinImagePasteAttempt"] = attempt;
+                if (isDouyin)
+                {
+                    DouyinComposerInputHelper.TryFocusComposer(activationResult.TargetWindowHandle, diagnostics);
+                    await Task.Delay(DouyinComposerInputHelper.PostFocusSettleMs).ConfigureAwait(false);
+                }
+
+                lastPasteFailure = await TryPasteClipboardPayloadAsync(
+                    activationResult.TargetWindowHandle,
+                    "file_drop",
+                    attemptContext.HostProfile.FilePasteStableMs,
+                    GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+                    attemptContext.HostProfile.PollIntervalMs,
+                    diagnostics,
+                    stopwatch,
+                    settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+                if (lastPasteFailure is not null)
+                {
+                    // Focus lost: retry focus+paste on Douyin; otherwise fail.
+                    if (!isDouyin || attempt >= maxAttempts)
+                    {
+                        return await FailAsync("send_failed", lastPasteFailure.Value);
+                    }
+
+                    continue;
+                }
+
+                if (!isDouyin)
+                {
+                    return null;
+                }
+
+                var confirm = await _douyinSendProgressVerifier.ConfirmComposerHasImageAsync(
+                    activationResult.TargetWindowHandle,
+                    imagePaths,
+                    diagnostics).ConfigureAwait(false);
+                diagnostics["douyinImagePasteConfirmOutcome"] = confirm.Outcome.ToString();
+                diagnostics["douyinImagePasteConfirmDetail"] = confirm.Detail;
+                if (confirm.Outcome == DouyinSendVerifyOutcome.StillHasContent)
+                {
+                    douyinImagePasteConfirmed = true;
+                    diagnostics["douyinImagePasteConfirmed"] = true;
+                    return null;
+                }
+
+                // Cleared = definitely empty -> retry. Indeterminate = Chromium may hide preview;
+                // soft-accept after attempt >=2 so we do not false-fail a real paste.
+                if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate && attempt >= 2)
+                {
+                    douyinImagePasteConfirmed = true;
+                    diagnostics["douyinImagePasteConfirmed"] = true;
+                    diagnostics["douyinImagePasteSoftConfirm"] = true;
+                    return null;
+                }
+
+                if (attempt >= maxAttempts)
+                {
+                    if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate)
+                    {
+                        douyinImagePasteConfirmed = true;
+                        diagnostics["douyinImagePasteConfirmed"] = true;
+                        diagnostics["douyinImagePasteSoftConfirm"] = true;
+                        return null;
+                    }
+
+                    break;
+                }
+            }
+
+            if (isDouyin)
+            {
+                return await FailAsync(
+                    "image_paste_unconfirmed",
+                    CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        "图片未能贴进抖店输入框（已重试聚焦与粘贴），未按发送键，避免空发。",
+                        "请先点一下抖店聊天输入框，再重试；或把「图文发送顺序」临时改成「先图片后文字」。"));
+            }
+
+            return lastPasteFailure is null ? null : await FailAsync("send_failed", lastPasteFailure.Value);
         }
 
-        clipboardPayloadFingerprint = textPaste.Fingerprint;
-        if (mode == ComposeActionMode.Send)
+        async Task<ReplyActionResult?> PasteTextStepAsync()
         {
+            var textPaste = await PasteTextAsync(
+                text,
+                settings,
+                activationResult.TargetWindowHandle,
+                diagnostics,
+                stopwatch,
+                attemptContext.HostProfile);
+            if (textPaste.FailureResult is not null)
+            {
+                return await FailAsync("send_failed", textPaste.FailureResult.Value);
+            }
+
+            clipboardPayloadFingerprint = textPaste.Fingerprint;
+            return null;
+        }
+
+        async Task<ReplyActionResult?> SendStepAsync(
+            bool composerHasImages,
+            string delayKey,
+            DouyinSendVerifyExpectation? verifyExpectation = null,
+            bool imagePasteConfirmed = false)
+        {
+            // Never empty-Enter an image stage when Douyin paste was not confirmed.
+            if (isDouyin &&
+                composerHasImages &&
+                verifyExpectation is { SentImagePaths: { Count: > 0 } } &&
+                !imagePasteConfirmed)
+            {
+                return await FailAsync(
+                    "image_paste_unconfirmed",
+                    CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        "图片未确认贴入输入框，已跳过发送键，避免空发。",
+                        "请先点一下抖店聊天输入框，再重试。"));
+            }
+
             var sendFailure = await TrySendConfiguredHotkeyAsync(
                 activationResult.TargetWindowHandle,
                 settings.SendHotkeyMode,
                 attemptContext.HostProfile.RichSendStableMs,
-                GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: true),
+                composerHasImages
+                    ? GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: true)
+                    : GetEffectiveRichSendDelayMs(settings, attemptContext.HostProfile, hasImages: false),
                 attemptContext.HostProfile.PollIntervalMs,
                 diagnostics,
                 stopwatch,
-                delayMsDiagnosticKey: "effectiveRichSendDelayMs");
+                delayMsDiagnosticKey: delayKey);
             if (sendFailure is not null)
             {
-                if (clipboardSnapshot.CaptureSucceeded && clipboardPayloadFingerprint is not null)
+                return await FailAsync("send_failed", sendFailure.Value);
+            }
+
+            if (isDouyin && verifyExpectation is { } expectation)
+            {
+                var verify = await _douyinSendProgressVerifier.VerifyComposerClearedAsync(
+                    activationResult.TargetWindowHandle,
+                    expectation,
+                    diagnostics).ConfigureAwait(false);
+                diagnostics["douyinSendVerifyOutcome"] = verify.Outcome.ToString();
+                diagnostics["douyinSendVerifyMethod"] = verify.Method;
+                if (verify.Outcome == DouyinSendVerifyOutcome.StillHasContent)
                 {
-                    await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                    return await FailAsync(
+                        "send_not_observed",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.ManualConfirmationRequired,
+                            "已按发送键，但输入框里的内容还在，抖店似乎没有真正发出。",
+                            "请确认抖店聊天输入框已聚焦、发送热键与抖店设置一致，再手动点发送或重试。"));
                 }
 
-                diagnostics["result"] = "send_failed";
-                diagnostics["message"] = sendFailure.Value.Message;
-                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
-                SearchOverlayDiagnostics.Log("message_compose", "compose_rich_completed", diagnostics);
-                return CreateFailureResult(
-                    ResolveFailureKind(sendFailure.Value),
-                    $"发送图文内容失败：{sendFailure.Value.Message}",
-                    sendFailure.Value.UserGuidance);
+                if (verify.Outcome == DouyinSendVerifyOutcome.Indeterminate)
+                {
+                    // Image stage: empty_selection* is now Indeterminate (ambiguous). If we confirmed
+                    // the paste before Enter, accept only that empty-ambiguous case as success.
+                    var imageStage = expectation.SentImagePaths is { Count: > 0 };
+                    var emptyAmbiguous = verify.Detail.Contains("empty_selection", StringComparison.OrdinalIgnoreCase)
+                        || verify.Detail.Contains("image_uncertain", StringComparison.OrdinalIgnoreCase);
+                    if (imageStage && imagePasteConfirmed && emptyAmbiguous)
+                    {
+                        diagnostics["douyinSendVerifyAcceptedViaPasteConfirm"] = true;
+                    }
+                    else
+                    {
+                        return await FailAsync(
+                            "send_unconfirmed",
+                            CreateFailureResult(
+                                ReplyActionFailureKind.ManualConfirmationRequired,
+                                "已按发送键，但无法确认会话侧是否有进展（输入框未检出清空）。",
+                                "请看一眼抖店会话：若消息已出现可忽略；若没有，请手动发送或重试。不要把这次当成已成功。"));
+                    }
+                }
+            }
+
+            sentStageCount++;
+            diagnostics["richImageSentStageCount"] = sentStageCount;
+            return null;
+        }
+
+        var firstFailure = imageFirst ? await PasteImagesAsync() : await PasteTextStepAsync();
+        if (firstFailure is not null)
+        {
+            return firstFailure.Value;
+        }
+
+        if (useSeparateMessages)
+        {
+            var firstSendFailure = await SendStepAsync(
+                composerHasImages: imageFirst,
+                delayKey: imageFirst ? "effectiveRichImageSendDelayMs" : "effectiveRichSendDelayMs",
+                verifyExpectation: imageFirst
+                    ? new DouyinSendVerifyExpectation(SentText: null, SentImagePaths: imagePaths)
+                    : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: null),
+                imagePasteConfirmed: imageFirst && douyinImagePasteConfirmed);
+            if (firstSendFailure is not null)
+            {
+                return firstSendFailure.Value;
+            }
+
+            if (isDouyin && imageFirst)
+            {
+                // 2026-10-23 live test: the text landed above the image. Douyin uploads the image
+                // asynchronously after Enter; pasting the text right away lets the text message
+                // overtake it. Give the image a head start before the second message.
+                diagnostics["douyinImageHeadStartMs"] = DouyinImageHeadStartMs;
+                await Task.Delay(DouyinImageHeadStartMs).ConfigureAwait(false);
+            }
+
+            if (isDouyin && !imageFirst)
+            {
+                // TextThenImage: brief settle after text Enter, prepare file_drop early, then
+                // refocus composer inside PasteImagesAsync before Ctrl+V.
+                diagnostics["douyinPostTextBeforeImageSettleMs"] = DouyinPostTextBeforeImageSettleMs;
+                var prepTask = PasteImagesAsync(prepareClipboardOnly: true);
+                await Task.Delay(DouyinPostTextBeforeImageSettleMs).ConfigureAwait(false);
+                var prepFailure = await prepTask.ConfigureAwait(false);
+                if (prepFailure is not null)
+                {
+                    return prepFailure.Value;
+                }
+            }
+        }
+
+        var secondFailure = imageFirst ? await PasteTextStepAsync() : await PasteImagesAsync();
+        if (secondFailure is not null)
+        {
+            return secondFailure.Value;
+        }
+
+        if (mode == ComposeActionMode.Send)
+        {
+            DouyinSendVerifyExpectation? finalExpectation = null;
+            if (isDouyin)
+            {
+                finalExpectation = useSeparateMessages
+                    ? (imageFirst
+                        ? new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: null)
+                        : new DouyinSendVerifyExpectation(SentText: null, SentImagePaths: imagePaths))
+                    : new DouyinSendVerifyExpectation(SentText: text, SentImagePaths: imagePaths);
+            }
+
+            var finalHasImages = !useSeparateMessages || !imageFirst;
+            var finalSendFailure = await SendStepAsync(
+                composerHasImages: finalHasImages,
+                delayKey: "effectiveRichSendDelayMs",
+                verifyExpectation: finalExpectation,
+                imagePasteConfirmed: finalHasImages && douyinImagePasteConfirmed);
+            if (finalSendFailure is not null)
+            {
+                return finalSendFailure.Value;
             }
         }
 
@@ -461,6 +713,12 @@ public sealed class MessageComposeService : IMessageComposeService
             filePayload,
             attemptContext.HostProfile,
             settings);
+
+        // Douyin ignores a FileDrop'd video: every video goes through the toolbar uploader.
+        if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench && filePayload.ContainsVideo)
+        {
+            return await ExecuteDouyinPayloadWithVideosAsync(string.Empty, normalizedPaths, settings, mode, attemptContext);
+        }
 
         var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
         var stopwatch = Stopwatch.StartNew();
@@ -588,6 +846,127 @@ public sealed class MessageComposeService : IMessageComposeService
         diagnostics["result"] = "success";
         SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
         return BuildFileResult(mode, normalizedPaths.Length, clipboardSnapshot, restoreDeferred: restoreClipboard);
+    }
+
+    private static bool IsVideoPath(string path)
+    {
+        return ComposeFilePayloadClassifier.Classify([path]).ContainsVideo;
+    }
+
+    /// <summary>
+    /// Douyin payload that contains at least one video: text and images go first as separate
+    /// messages (per 图文发送顺序), then each video is uploaded one at a time through the toolbar
+    /// "发送视频" open-file dialog. A video is reported as "已提交" (submitted), never as delivered.
+    /// </summary>
+    private async Task<ReplyActionResult> ExecuteDouyinPayloadWithVideosAsync(
+        string text,
+        IReadOnlyList<string> paths,
+        AppSettings settings,
+        ComposeActionMode mode,
+        ComposeAttemptContext attemptContext)
+    {
+        var videoPaths = paths.Where(IsVideoPath).ToArray();
+        var otherPaths = paths.Where(path => !IsVideoPath(path)).ToArray();
+        var hasText = !string.IsNullOrWhiteSpace(text);
+        var messages = new List<string>();
+        var earlierPartsDone = false;
+
+        if (hasText || otherPaths.Length > 0)
+        {
+            var leading = hasText && otherPaths.Length > 0
+                ? await ExecuteTextWithFileBackedImagesAsync(text, otherPaths, settings, mode, attemptContext)
+                : hasText
+                    ? await ExecuteTextOnlyAsync(text, settings, mode, attemptContext)
+                    : await ExecuteFilesCoreAsync(otherPaths, settings, mode, attemptContext);
+            if (!leading.Success)
+            {
+                return leading;
+            }
+
+            messages.Add(leading.Message);
+            earlierPartsDone = true;
+        }
+
+        var sendAfterUpload = mode == ComposeActionMode.Send;
+        for (var index = 0; index < videoPaths.Length; index++)
+        {
+            var videoPath = videoPaths[index];
+            var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
+            var stopwatch = Stopwatch.StartNew();
+            PopulateAttemptDiagnostics(diagnostics, attemptContext);
+            diagnostics["selectedSendPath"] = "douyin_video_toolbar_open_dialog";
+            diagnostics["fileContainsVideo"] = true;
+            diagnostics["douyinVideoIndex"] = index;
+            diagnostics["douyinVideoCount"] = videoPaths.Length;
+
+            var activation = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
+            ReplyActionResult videoResult;
+            if (!activation.Success)
+            {
+                videoResult = CreateTargetWindowUnavailableResult(activation.UserMessage);
+            }
+            else
+            {
+                var decision = _douyinVideoSendGuard.TryBegin(activation.TargetWindowHandle, videoPath);
+                diagnostics["douyinVideoGuard"] = decision.ToString();
+                if (decision == DouyinVideoSendGuard.GuardDecision.Duplicate)
+                {
+                    videoResult = CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        $"同一个视频 {DouyinVideoSendGuard.DefaultDuplicateWindow.TotalSeconds:0} 秒内刚提交过，已跳过以免重复发送：{Path.GetFileName(videoPath)}",
+                        "如确实要再发一次，请稍等半分钟后再试。");
+                }
+                else if (decision == DouyinVideoSendGuard.GuardDecision.Busy)
+                {
+                    videoResult = CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        "上一个视频还在提交中，已跳过本次视频。",
+                        "请等上一个视频提交完成后再发送。");
+                }
+                else
+                {
+                    var submitted = false;
+                    try
+                    {
+                        videoResult = await _douyinVideoUploader.UploadAsync(
+                            activation.TargetWindowHandle,
+                            videoPath,
+                            sendAfterUpload,
+                            settings.SendHotkeyMode,
+                            diagnostics).ConfigureAwait(false);
+                        submitted = videoResult.Success && sendAfterUpload;
+                    }
+                    finally
+                    {
+                        _douyinVideoSendGuard.Complete(activation.TargetWindowHandle, videoPath, submitted);
+                    }
+                }
+            }
+
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            diagnostics["result"] = videoResult.Success ? "success" : "failed";
+            diagnostics["message"] = videoResult.Message;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+
+            if (!videoResult.Success)
+            {
+                if (!earlierPartsDone)
+                {
+                    return videoResult;
+                }
+
+                // Earlier text/images/videos are already out: never let the retry loop resend them.
+                return CreateFailureResult(
+                    ReplyActionFailureKind.ManualConfirmationRequired,
+                    $"{string.Join("；", messages)}；第 {index + 1} 个视频失败：{videoResult.Message}",
+                    videoResult.UserGuidance);
+            }
+
+            messages.Add(videoPaths.Length > 1 ? $"第 {index + 1} 个视频：{videoResult.Message}" : videoResult.Message);
+            earlierPartsDone = true;
+        }
+
+        return new ReplyActionResult(true, string.Join("；", messages));
     }
 
     private async Task<ReplyActionResult> ExecuteTextOnlyAsync(

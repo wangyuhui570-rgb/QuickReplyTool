@@ -36,6 +36,9 @@ internal static class NativeMethods
     internal const ushort VkMenu = 0x12;
     internal const ushort VkS = 0x53;
     internal const ushort VkV = 0x56;
+    internal const ushort VkA = 0x41;
+    internal const ushort VkC = 0x43;
+    internal const ushort VkEscape = 0x1B;
     internal const uint KeyeventfKeyup = 0x0002;
     internal const uint KeyeventfUnicode = 0x0004;
     internal const uint LlkhfAltdown = 0x0020;

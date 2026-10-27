@@ -31,6 +31,21 @@ public sealed class KeyboardInputSimulator : IKeyboardInputSimulator
         SendShortcut("%s", NativeMethods.VkMenu, NativeMethods.VkS);
     }
 
+    public void SendCtrlA()
+    {
+        SendShortcut("^a", NativeMethods.VkControl, NativeMethods.VkA);
+    }
+
+    public void SendCtrlC()
+    {
+        SendShortcut("^c", NativeMethods.VkControl, NativeMethods.VkC);
+    }
+
+    public void SendEscape()
+    {
+        SendShortcut("{ESC}", NativeMethods.VkEscape);
+    }
+
     public void SendUnicodeText(string text)
     {
         if (string.IsNullOrEmpty(text))

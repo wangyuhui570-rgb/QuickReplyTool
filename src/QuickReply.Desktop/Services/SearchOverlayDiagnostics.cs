@@ -18,7 +18,9 @@ internal static class SearchOverlayDiagnostics
 
     internal static void Log(string source, string eventName, IDictionary<string, object?>? data = null)
     {
-        if (!IsEnabled)
+        // Release builds keep compose events (one line per send) so live send-order issues can be
+        // diagnosed from %APPDATA%\QuickReplyTool\logs; the noisy overlay events stay DEBUG-only.
+        if (!IsEnabled && !string.Equals(source, "message_compose", StringComparison.Ordinal))
         {
             return;
         }

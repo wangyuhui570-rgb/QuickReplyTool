@@ -1,0 +1,59 @@
+name: portable-test-build
+
+# Builds the Douyin test portable zip on a Windows runner (used while T5A is offline).
+# Runs on pushes to the PR #8 branch only; safe to delete before merging.
+on:
+  push:
+    branches:
+      - fix/douyin-image-text-and-video
+  workflow_dispatch:
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Unit tests
+        shell: pwsh
+        run: dotnet test tests/QuickReply.Desktop.Tests/QuickReply.Desktop.Tests.csproj -c Release --logger "trx;LogFileName=desktop-tests.trx" --results-directory artifacts/test-results
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'artifacts\QuickReplyTool-Portable-2.1.15-douyin-test'
+          ./scripts/build-portable.ps1 -Configuration Release -OutputRoot $out
+          $zip = "$out.zip"
+          if (-not (Test-Path $zip)) { throw "zip not found: $zip" }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item $zip).Length
+          $name = Split-Path $zip -Leaf
+          $tag = 'v2.1.15-douyin-test'
+          "$sha  $name" | Set-Content -Path "$zip.sha256" -Encoding ascii -NoNewline
+          # Update manifest read by the in-app updater (published to the 'update-manifest' release).
+          [ordered]@{
+            version = '2.1.15'
+            tag = $tag
+            zipName = $name
+            url = "https://github.com/${{ github.repository }}/releases/download/$tag/$name"
+            sha256 = $sha
+            size = [int64]$size
+            notes = ''
+          } | ConvertTo-Json | Set-Content -Path artifacts/latest.json -Encoding utf8
+          Get-Content artifacts/latest.json
+          "sha256=$sha size=$size"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QuickReplyTool-Portable-2.1.15-douyin-test
+          path: |
+            artifacts/QuickReplyTool-Portable-2.1.15-douyin-test.zip
+            artifacts/QuickReplyTool-Portable-2.1.15-douyin-test.zip.sha256
+            artifacts/latest.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-test-results
+          path: artifacts/test-results/**
+          if-no-files-found: warn

@@ -9,10 +9,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>QuickReplyTool</AssemblyName>
     <ApplicationIcon>Assets\quickreply.ico</ApplicationIcon>
-    <Version>2.1.11</Version>
-    <AssemblyVersion>2.1.11.0</AssemblyVersion>
-    <FileVersion>2.1.11.0</FileVersion>
-    <InformationalVersion>2.1.11</InformationalVersion>
+    <Version>2.1.15</Version>
+    <AssemblyVersion>2.1.15.0</AssemblyVersion>
+    <FileVersion>2.1.15.0</FileVersion>
+    <InformationalVersion>2.1.15</InformationalVersion>
     <Title>客服效率工具$(Version)</Title>
     <AssemblyTitle>客服效率工具$(Version)</AssemblyTitle>
     <Product>客服效率工具$(Version)</Product>
