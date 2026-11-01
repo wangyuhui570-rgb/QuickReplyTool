@@ -14,6 +14,7 @@ public sealed class SupportedSearchFocusWorkbenchMatcherTests
     [InlineData("抖店 工作台", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
     [InlineData("飞鸽客服", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
     [InlineData("抖音商家工作台", "Chrome_WidgetWin_1", "chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe")]
+    [InlineData("客服接待", "Chrome_WidgetWin_1", "doudian", @"C:\Program Files\doudian\doudian.exe")]
     public void IsSupported_ReturnsTrueForConfiguredWorkbenchTargets(string title, string className, string processName, string processPath)
     {
         var result = SupportedSearchFocusWorkbenchMatcher.IsSupported(CreateWindowInfo(title, className, processName, processPath));
@@ -27,6 +28,8 @@ public sealed class SupportedSearchFocusWorkbenchMatcherTests
     [InlineData("Notepad", "Notepad", "notepad", @"C:\Windows\System32\notepad.exe")]
     [InlineData("资源管理器", "CabinetWClass", "explorer", @"C:\Windows\explorer.exe")]
     [InlineData("Douyin video search - Microsoft Edge", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
+    [InlineData("抖音 - 记录美好生活", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
+    [InlineData("www.douyin.com - Google Chrome", "Chrome_WidgetWin_1", "chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe")]
     public void IsSupported_ReturnsFalseForNonWorkbenchTargets(string title, string className, string processName, string processPath)
     {
         var result = SupportedSearchFocusWorkbenchMatcher.IsSupported(CreateWindowInfo(title, className, processName, processPath));
