@@ -18,7 +18,17 @@ packaging/
 截图工具源码/
 ```
 
-当前版本是**纯本地工具**：不包含（已移除的云同步）、知识审核服务、OTA 自动更新或远端问题上报。
+当前版本是**纯本地工具**：不包含云同步、知识审核服务或远端问题上报。绿色版启动时会检查 GitHub Releases；发现更高版本并经确认后，下载便携包、校验、替换 `app` 文件夹并重启。设置和话术仍在 `%AppData%\QuickReplyTool`，不会被覆盖。
+
+## 正式发布
+
+版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.16）。合并到 `main` 之后，在该提交上推送标签 `v2.1.16`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
+
+- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.16.zip`（根目录下有 `app/QuickReplyTool.exe`）
+- 创建非草稿、非预发布的 GitHub Release，说明里写 `SHA256: <64位小写>`，更新器只认这种写法
+- 用同一份信息覆盖 `update-manifest` 发布里的 `latest.json`（这个发布不能删）
+
+已安装的 2.1.15 客户端比较的是程序集版本和标签里的数字。标签、zip 文件名或说明里的 SHA256 对不上时，检查会跳过这次发布，继续停在旧包上。
 
 ## 数据存储
 
