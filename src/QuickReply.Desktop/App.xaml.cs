@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using QuickReply.Desktop.Models;
 using System.Diagnostics;
 using QuickReply.Desktop.Services;
@@ -146,11 +147,36 @@ public partial class App : System.Windows.Application
         }
 
         StartupTrace.Mark("app.startup_completed");
-        _ = CheckForUpdatesAsync(userInitiated: false);
+        BeginUpdateCheck(userInitiated: false);
     }
 
     private bool _updateInProgress;
     private string? _dismissedUpdateVersion;
+
+    /// <summary>
+    /// The check used to be fire-and-forget. A fault after the prompt never reached a dialog
+    /// and never wrote a log the user could find.
+    /// </summary>
+    public void BeginUpdateCheck(bool userInitiated)
+    {
+        var task = CheckForUpdatesAsync(userInitiated);
+        _ = task.ContinueWith(
+            failed =>
+            {
+                var error = failed.Exception?.GetBaseException();
+                if (error is null)
+                {
+                    return;
+                }
+
+                AppUpdateLog.Write("update task faulted: " + error);
+                _exceptionLogService?.RecordException(error, "app_update_failed", isTerminating: false);
+                Dispatcher.BeginInvoke(() => ShowUpdateFailure(error.Message));
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
+    }
 
     /// <summary>Background update check. Silent on failure unless the user asked for it.</summary>
     public async Task CheckForUpdatesAsync(bool userInitiated)
@@ -159,11 +185,13 @@ public partial class App : System.Windows.Application
         {
             if (userInitiated)
             {
-                System.Windows.MessageBox.Show("正在更新中，请稍候。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show(MainWindow, "正在更新中，请稍候。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             return;
         }
 
+        var accepted = false;
+        Window? statusWindow = null;
         try
         {
             if (!userInitiated)
@@ -171,13 +199,16 @@ public partial class App : System.Windows.Application
                 await Task.Delay(TimeSpan.FromSeconds(8));
             }
 
+            AppUpdateLog.Write($"check start current={AppIdentity.Version} userInitiated={userInitiated} base={AppContext.BaseDirectory}");
             var service = new AppUpdateService();
-            var result = await Task.Run(() => service.CheckAsync(AppIdentity.Version));
+            var result = await service.CheckAsync(AppIdentity.Version);
             if (result.Status != AppUpdateCheckStatus.UpdateAvailable || result.Update is null)
             {
+                AppUpdateLog.Write($"check result {result.Status} {result.Message}");
                 if (userInitiated)
                 {
                     System.Windows.MessageBox.Show(
+                        MainWindow,
                         result.Status == AppUpdateCheckStatus.UpToDate ? $"当前已是最新版本（{AppIdentity.Version}）。" : result.Message,
                         "检查更新",
                         MessageBoxButton.OK,
@@ -195,15 +226,17 @@ public partial class App : System.Windows.Application
             var installRoot = AppUpdatePolicy.ResolveInstallRoot(AppContext.BaseDirectory);
             if (installRoot is null)
             {
+                AppUpdateLog.Write("not a portable app folder, skip apply");
                 if (userInitiated)
                 {
-                    System.Windows.MessageBox.Show($"发现新版本 {update.Version}，但当前不是绿色版目录（app 文件夹）运行，无法自动更新。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show(MainWindow, $"发现新版本 {update.Version}，但当前不是绿色版目录（app 文件夹）运行，无法自动更新。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 return;
             }
 
             var sizeText = update.SizeBytes > 0 ? $"（约 {update.SizeBytes / 1024 / 1024} MB）" : string.Empty;
             var answer = System.Windows.MessageBox.Show(
+                MainWindow,
                 $"发现新版本 {update.Version}{sizeText}，当前版本 {AppIdentity.Version}。\n\n现在更新吗？\n会自动下载、替换并重启软件，设置和话术都不会受影响。\n选「否」稍后再说。",
                 "发现新版本",
                 MessageBoxButton.YesNo,
@@ -211,34 +244,72 @@ public partial class App : System.Windows.Application
             if (answer != MessageBoxResult.Yes)
             {
                 _dismissedUpdateVersion = update.Version;
+                AppUpdateLog.Write("user declined " + update.Version);
                 return;
             }
 
+            accepted = true;
             _updateInProgress = true;
-            ShowBackgroundNotification("软件更新", $"正在后台下载 {update.Version}，完成后会自动重启。");
-            var lastNotify = DateTime.MinValue;
-            var progress = new Progress<string>(message =>
+            AppUpdateLog.Write($"user accepted {update.Version} installRoot={installRoot}");
+            var status = new TextBlock
             {
-                if (DateTime.UtcNow - lastNotify > TimeSpan.FromSeconds(15))
-                {
-                    lastNotify = DateTime.UtcNow;
-                    ShowBackgroundNotification("软件更新", message);
-                }
-            });
-            var stagingRoot = await Task.Run(() => service.DownloadAndStageAsync(update, progress));
+                Text = $"正在下载 {update.Version}…\n请不要关闭这个窗口。",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(16)
+            };
+            statusWindow = new Window
+            {
+                Title = "软件更新",
+                Width = 440,
+                Height = 180,
+                Owner = MainWindow,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                Topmost = true,
+                Content = status
+            };
+            statusWindow.Show();
+            var progress = new Progress<string>(message => status.Text = message);
+            var stagingRoot = await service.DownloadAndStageAsync(update, progress);
+            status.Text = "下载完成，正在重启…";
+            AppUpdateLog.Write("staged " + stagingRoot);
             service.LaunchUpdater(stagingRoot, installRoot, Environment.ProcessId);
             PrepareForRestart();
-            Shutdown();
+            // OnExit blocks the UI thread on ShutdownAsync().GetResult(), so the process never
+            // exits and the updater sits on "does nothing" until its 30s kill. Leave immediately.
+            AppUpdateLog.Write("exit for updater");
+            Environment.Exit(0);
         }
         catch (Exception ex)
         {
             _updateInProgress = false;
+            AppUpdateLog.Write($"failed: {ex.GetType().Name}: {ex.Message}");
             _exceptionLogService?.RecordException(ex, "app_update_failed", isTerminating: false);
-            if (userInitiated || _dismissedUpdateVersion is null)
+            try
             {
-                System.Windows.MessageBox.Show($"更新失败，旧版本不受影响，可稍后重试。\n\n{ex.Message}", "软件更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+                statusWindow?.Close();
+            }
+            catch
+            {
+            }
+
+            statusWindow = null;
+
+            if (userInitiated || accepted || _dismissedUpdateVersion is null)
+            {
+                ShowUpdateFailure(ex.Message);
             }
         }
+    }
+
+    private void ShowUpdateFailure(string message)
+    {
+        System.Windows.MessageBox.Show(
+            MainWindow,
+            $"更新失败，旧版本不受影响，可稍后重试。\n\n{message}\n\n日志：{AppUpdateLog.LogFilePath}",
+            "软件更新",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
     }
 
     protected override void OnExit(ExitEventArgs e)
