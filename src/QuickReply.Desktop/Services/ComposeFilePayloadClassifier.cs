@@ -112,23 +112,9 @@ internal static class ComposeFilePayloadClassifier
         var manualConfirmationOperatorState = string.Empty;
         var manualConfirmationNextAction = string.Empty;
 
-        // Only Douyin/抖店 videos skip auto-send this round; other hosts keep existing behavior.
-        if (payload.ContainsVideo && hostProfile.Kind == SendHostKind.DouyinWorkbench)
-        {
-            var manualConfirmationDecision = ComposeVideoManualConfirmationPolicy.Evaluate(hostProfile.Kind);
-            if (manualConfirmationDecision.RequiresManualConfirmation)
-            {
-                strategyName = manualConfirmationDecision.StrategyName;
-                skipAutomaticSendHotkey = true;
-                skipAutomaticSendHotkeyReason = manualConfirmationDecision.Reason;
-                manualConfirmationStage = manualConfirmationDecision.StageName;
-                manualConfirmationMessage = manualConfirmationDecision.Message;
-                manualConfirmationUserGuidance = manualConfirmationDecision.UserGuidance;
-                manualConfirmationOperatorState = manualConfirmationDecision.OperatorState;
-                manualConfirmationNextAction = manualConfirmationDecision.NextAction;
-                pasteStableMs = Math.Max(pasteStableMs, hostProfile.ActivationStableMs);
-            }
-        }
+        // Douyin videos no longer reach the FileDrop path: MessageComposeService routes each one
+        // through the toolbar open-dialog uploader. The manual-confirmation fields stay as a
+        // generic hook but no host sets them today.
 
         return new ComposeFileTransferPlan(
             payload,

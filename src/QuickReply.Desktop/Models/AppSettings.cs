@@ -33,7 +33,7 @@ public sealed class AppSettings : ObservableObject
     private string _lastPublishedKnowledgeVersion = string.Empty;
     private bool _runAsAdministrator;
     private bool _hasCompletedFirstRunGuide;
-    private PhraseImageSendMode _phraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
+    private PhraseImageSendMode _phraseImageSendMode = PhraseImageSendMode.ImageThenTextThenSend;
     private PhraseListDensity _phraseListDensity = PhraseListDensity.Compact;
     private string _fileLibraryFolderPath = string.Empty;
     private string _phraseImageFolderPath = string.Empty;

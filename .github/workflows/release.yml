@@ -1,0 +1,106 @@
+name: release
+
+# Formal portable release for the in-app updater (AppUpdateService).
+# After this commit is on main, push tag vX.Y.Z (same number as
+# src/QuickReply.Desktop/QuickReply.Desktop.csproj <Version>).
+# Test tags such as v2.1.15-douyin-test do not match and will fail this workflow.
+#
+# The updater's primary source is the GitHub releases API. A release is usable
+# only when all of the following are true:
+#   - not a draft
+#   - tag parses as a version newer than the installed build (v2.1.16 -> 2.1.16)
+#   - an asset name starts with QuickReplyTool-Portable- and ends with .zip
+#   - the release notes contain "SHA256: " plus the 64-hex digest of that zip
+#   - the zip extracts to app/QuickReplyTool.exe
+# The fallback is releases/download/update-manifest/latest.json. Do not delete
+# that release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Require a formal vX.Y.Z tag that matches the project
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            throw "Formal release tags must be exactly vX.Y.Z with no suffix. Got '$tag'. Test tags are not published."
+          }
+          $tagVersion = $Matches[1]
+          [xml]$projectXml = Get-Content -Path "src/QuickReply.Desktop/QuickReply.Desktop.csproj"
+          $versionNode = $projectXml.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1
+          $version = if ($versionNode) { $versionNode.Version.Trim() } else { "" }
+          if ($version -ne $tagVersion) {
+            throw "Tag v$tagVersion does not match csproj Version '$version'. Bump <Version> first, merge, then tag that commit."
+          }
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "version=$version`n")
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "tag=$tag`n")
+
+      - name: Test
+        shell: pwsh
+        run: dotnet test tests/QuickReply.Desktop.Tests/QuickReply.Desktop.Tests.csproj -c Release --nologo
+
+      - name: Build portable zip
+        shell: pwsh
+        run: ./scripts/build-portable.ps1 -Configuration Release
+
+      - name: Write release notes and update manifest
+        shell: pwsh
+        run: |
+          $zipName = "QuickReplyTool-Portable-$env:version.zip"
+          $zip = Join-Path "artifacts" $zipName
+          if (-not (Test-Path -LiteralPath $zip)) { throw "zip not found: $zip" }
+          $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $zip).Length
+          $url = "https://github.com/${{ github.repository }}/releases/download/$env:tag/$zipName"
+          # AppUpdatePolicy.ExtractSha256 requires "SHA256:" then the 64-hex digest.
+          $notes = "客服效率工具 $env:version`r`n`r`nSHA256: $sha`r`nSize: $size bytes`r`n"
+          $notesPath = Join-Path "artifacts" "release-notes.md"
+          [System.IO.File]::WriteAllText($notesPath, $notes, [System.Text.UTF8Encoding]::new($false))
+          $manifest = [ordered]@{
+            version = $env:version
+            tag = $env:tag
+            zipName = $zipName
+            url = $url
+            sha256 = $sha
+            size = [int64]$size
+            notes = "客服效率工具 $env:version"
+          } | ConvertTo-Json
+          $manifestPath = Join-Path "artifacts" "latest.json"
+          [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
+          Get-Content -LiteralPath $notesPath
+          Get-Content -LiteralPath $manifestPath
+          "$sha  $zipName" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii -NoNewline
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zipName = "QuickReplyTool-Portable-$env:version.zip"
+          $zip = Join-Path "artifacts" $zipName
+          gh release create $env:tag $zip "$zip.sha256" `
+            --repo "${{ github.repository }}" `
+            --title "客服效率工具 $env:version" `
+            --notes-file (Join-Path "artifacts" "release-notes.md") `
+            --verify-tag `
+            --latest
+          gh release upload update-manifest (Join-Path "artifacts" "latest.json") `
+            --repo "${{ github.repository }}" `
+            --clobber

@@ -142,6 +142,8 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
 {
     public Action? OnPasteShortcut { get; set; }
 
+    public Action? OnSendKey { get; set; }
+
     public int PasteShortcutCount { get; private set; }
 
     public int EnterCount { get; private set; }
@@ -149,6 +151,12 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
     public int CtrlEnterCount { get; private set; }
 
     public int AltSCount { get; private set; }
+
+    public int CtrlACount { get; private set; }
+
+    public int CtrlCCount { get; private set; }
+
+    public int EscapeCount { get; private set; }
 
     public void SendPasteShortcut()
     {
@@ -159,16 +167,34 @@ internal sealed class FakeKeyboardInputSimulator : IKeyboardInputSimulator
     public void SendEnter()
     {
         EnterCount++;
+        OnSendKey?.Invoke();
     }
 
     public void SendCtrlEnter()
     {
         CtrlEnterCount++;
+        OnSendKey?.Invoke();
     }
 
     public void SendAltS()
     {
         AltSCount++;
+        OnSendKey?.Invoke();
+    }
+
+    public void SendCtrlA()
+    {
+        CtrlACount++;
+    }
+
+    public void SendCtrlC()
+    {
+        CtrlCCount++;
+    }
+
+    public void SendEscape()
+    {
+        EscapeCount++;
     }
 }
 
@@ -209,5 +235,71 @@ internal static class TestSettingsFactory
             RichImageSendDelayMs = 50,
             RichImageClipboardRestoreDelayMs = 50
         };
+    }
+}
+
+internal sealed class FakeDouyinVideoUploader : IDouyinVideoUploader
+{
+    public List<(string Path, bool SendAfterUpload, SendHotkeyMode Hotkey)> Calls { get; } = [];
+
+    public Func<string, ReplyActionResult>? OnUpload { get; set; }
+
+    public Action<string>? OnUploadStarted { get; set; }
+
+    public Task<ReplyActionResult> UploadAsync(
+        IntPtr targetWindowHandle,
+        string videoPath,
+        bool sendAfterUpload,
+        SendHotkeyMode sendHotkeyMode,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        Calls.Add((videoPath, sendAfterUpload, sendHotkeyMode));
+        OnUploadStarted?.Invoke(videoPath);
+        diagnostics["videoSendState"] = sendAfterUpload ? "submitted" : "staged";
+        return Task.FromResult(OnUpload?.Invoke(videoPath) ?? new ReplyActionResult(
+            true,
+            sendAfterUpload ? DouyinVideoOpenDialogUploader.SubmittedMessage : DouyinVideoOpenDialogUploader.StagedMessage));
+    }
+}
+
+internal sealed class FakeDouyinSendProgressVerifier : IDouyinSendProgressVerifier
+{
+    public DouyinSendVerifyOutcome Outcome { get; set; } = DouyinSendVerifyOutcome.Cleared;
+
+    /// <summary>Default StillHasContent so unit tests that paste images can proceed to Enter.</summary>
+    public DouyinSendVerifyOutcome ConfirmImageOutcome { get; set; } = DouyinSendVerifyOutcome.StillHasContent;
+
+    public string Method { get; set; } = "fake";
+
+    public string Detail { get; set; } = "ok";
+
+    public int CallCount { get; private set; }
+
+    public int ConfirmImageCallCount { get; private set; }
+
+    public List<DouyinSendVerifyExpectation> Expectations { get; } = [];
+
+    public Task<DouyinSendVerifyResult> VerifyComposerClearedAsync(
+        IntPtr targetWindowHandle,
+        DouyinSendVerifyExpectation expectation,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        Expectations.Add(expectation);
+        diagnostics["douyinSendVerifyFake"] = true;
+        return Task.FromResult(new DouyinSendVerifyResult(Outcome, Method, Detail));
+    }
+
+    public Task<DouyinSendVerifyResult> ConfirmComposerHasImageAsync(
+        IntPtr targetWindowHandle,
+        IReadOnlyList<string> imagePaths,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        ConfirmImageCallCount++;
+        diagnostics["douyinImagePasteConfirmFake"] = true;
+        return Task.FromResult(new DouyinSendVerifyResult(ConfirmImageOutcome, Method, Detail));
     }
 }

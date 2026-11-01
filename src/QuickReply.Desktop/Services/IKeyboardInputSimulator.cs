@@ -9,4 +9,10 @@ internal interface IKeyboardInputSimulator
     void SendCtrlEnter();
 
     void SendAltS();
+
+    void SendCtrlA();
+
+    void SendCtrlC();
+
+    void SendEscape();
 }

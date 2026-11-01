@@ -19,6 +19,13 @@ internal static class SupportedSearchFocusWorkbenchMatcher
             return true;
         }
 
+        // Same rules as the send path, including 飞鸽 / 抖音商家 titles that do not contain "抖店".
+        // Ordinary Douyin video pages stay unsupported because the resolver keeps them as browser input.
+        if (SendHostProfileResolver.Resolve(targetInfo).Kind == SendHostKind.DouyinWorkbench)
+        {
+            return true;
+        }
+
         var combined = string.Join(
             "\n",
             [

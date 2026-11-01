@@ -16,7 +16,8 @@ public static class TriggerAppFilterMatcher
         new() { DisplayName = "企业微信", ProcessName = "WXWork.exe" },
         new() { DisplayName = "千牛", ProcessName = "AliWorkbench.exe" },
         new() { DisplayName = "拼多多商家工作台", TitleKeyword = "拼多多" },
-        new() { DisplayName = "抖店/飞鸽", TitleKeyword = "抖店" },
+        new() { DisplayName = "抖店", TitleKeyword = "抖店" },
+        new() { DisplayName = "飞鸽客服", TitleKeyword = "飞鸽" },
         new() { DisplayName = "京东京麦/咚咚", TitleKeyword = "京麦" },
         new() { DisplayName = "Chrome 浏览器", ProcessName = "chrome.exe" },
         new() { DisplayName = "Edge 浏览器", ProcessName = "msedge.exe" }

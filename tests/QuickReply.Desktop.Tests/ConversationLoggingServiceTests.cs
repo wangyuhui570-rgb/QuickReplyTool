@@ -38,8 +38,13 @@ public sealed class ConversationLoggingServiceTests
                 targetWindowHandle: IntPtr.Zero);
         }
 
-        await Task.Delay(250);
+        // The log writer is asynchronous; poll instead of a fixed 250ms (flaky on loaded CI runners).
         var suggestion = await service.GetFrequentPlainTextSuggestionAsync("怎么样");
+        for (var attempt = 0; attempt < 30 && (suggestion is null || suggestion.UseCount < 3); attempt++)
+        {
+            await Task.Delay(100);
+            suggestion = await service.GetFrequentPlainTextSuggestionAsync("怎么样");
+        }
 
         Assert.NotNull(suggestion);
         Assert.Equal("怎么样", suggestion!.PayloadText);
