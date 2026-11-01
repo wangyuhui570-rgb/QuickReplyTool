@@ -318,16 +318,20 @@ internal sealed class AppUpdateService
             downloaded = true;
         }
 
+        AppUpdateLog.Write($"download start version={update.Version} zip={update.ZipName} url={update.ZipUrl} expectedSha={update.Sha256}");
         foreach (var url in downloaded ? Array.Empty<string>() : AppUpdatePolicy.BuildDownloadCandidates(update.ZipUrl))
         {
             try
             {
                 progress?.Report($"正在下载 {update.Version}（{SafeHost(url)}）…");
+                AppUpdateLog.Write("GET " + url);
                 await DownloadFileAsync(url, zipPath + ".part", update.SizeBytes, progress, cancellationToken);
                 var sha = await ComputeSha256Async(zipPath + ".part", cancellationToken);
+                AppUpdateLog.Write($"sha256 {SafeHost(url)} {sha}");
                 if (!string.Equals(sha, update.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
                     errors.Add($"{SafeHost(url)} 校验不一致");
+                    AppUpdateLog.Write($"sha mismatch {SafeHost(url)} expected={update.Sha256} actual={sha}");
                     TryDeleteFile(zipPath + ".part");
                     continue;
                 }
@@ -339,13 +343,16 @@ internal sealed class AppUpdateService
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 errors.Add($"{SafeHost(url)} {ex.Message}");
+                AppUpdateLog.Write($"download failed {SafeHost(url)} {ex.GetType().Name}: {ex.Message}");
                 TryDeleteFile(zipPath + ".part");
             }
         }
 
         if (!downloaded)
         {
-            throw new InvalidOperationException("下载失败：" + string.Join("；", errors));
+            var failure = "下载失败：" + string.Join("；", errors);
+            AppUpdateLog.Write(failure);
+            throw new InvalidOperationException(failure);
         }
 
         progress?.Report("下载完成，正在解压…");
@@ -368,6 +375,7 @@ internal sealed class AppUpdateService
     /// <summary>Writes the updater script and starts it hidden. Caller must exit the app right after.</summary>
     public void LaunchUpdater(string stagingRoot, string installRoot, int processId)
     {
+        AppUpdateLog.Write($"launch updater pid={processId} install={installRoot} staging={stagingRoot}");
         var scriptPath = Path.Combine(_workRoot, "apply-update.ps1");
         File.WriteAllText(scriptPath, UpdaterScript, new UTF8Encoding(true));
         var logPath = Path.Combine(_workRoot, "update.log");
@@ -387,41 +395,76 @@ internal sealed class AppUpdateService
             startInfo.ArgumentList.Add(arg);
         }
 
-        Process.Start(startInfo);
+        var started = Process.Start(startInfo);
+        AppUpdateLog.Write(started is null
+            ? "powershell did not start"
+            : $"powershell pid={started.Id} script={scriptPath}");
     }
 
     private async Task DownloadFileAsync(string url, string destination, long expectedSize, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         using var client = _httpClientFactory();
+        // Infinite covers a slow but steady body. Headers have their own short deadline so a
+        // stuck mirror cannot sit for 15 minutes with no file and no error.
         client.Timeout = Timeout.InfiniteTimeSpan;
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromMinutes(15));
-        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        using var headerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        headerCts.CancelAfter(TimeSpan.FromSeconds(25));
+        HttpResponseMessage responseMessage;
+        try
+        {
+            responseMessage = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, headerCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("连接超时（25 秒内没有响应）");
+        }
+
+        using var response = responseMessage;
         response.EnsureSuccessStatusCode();
+        // The request token stays tied to the response stream. Leave the 25s timer armed and it
+        // aborts a normal 80MB download with SocketException 995.
+        headerCts.CancelAfter(Timeout.InfiniteTimeSpan);
         var total = response.Content.Headers.ContentLength ?? expectedSize;
-        await using var source = await response.Content.ReadAsStreamAsync(cts.Token);
+        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         await using var target = File.Create(destination);
+        AppUpdateLog.Write($"saving {destination} total={total}");
         var buffer = new byte[81920];
         long readTotal = 0;
-        var lastReport = DateTime.UtcNow;
-        int read;
-        while ((read = await ReadWithStallTimeoutAsync(source, buffer, cts.Token)) > 0)
+        var lastReport = DateTime.MinValue;
+        // One stall timer for the whole body. A new CancellationTokenSource per chunk aborts the
+        // socket when it is disposed (SocketException 995) and those faults were never shown.
+        using var stall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        while (true)
         {
-            await target.WriteAsync(buffer.AsMemory(0, read), cts.Token);
+            stall.CancelAfter(TimeSpan.FromSeconds(45));
+            int read;
+            try
+            {
+                read = await source.ReadAsync(buffer.AsMemory(), stall.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("下载停滞超过 45 秒，已放弃这个地址");
+            }
+
+            if (read == 0)
+            {
+                break;
+            }
+
+            await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             readTotal += read;
-            if (total > 0 && DateTime.UtcNow - lastReport > TimeSpan.FromSeconds(2))
+            if (total > 0 && DateTime.UtcNow - lastReport > TimeSpan.FromSeconds(1))
             {
                 lastReport = DateTime.UtcNow;
-                progress?.Report($"正在下载… {readTotal * 100 / total}%");
+                progress?.Report($"正在下载… {readTotal * 100 / total}%（{readTotal / 1024 / 1024}/{Math.Max(total, 1) / 1024 / 1024} MB）");
             }
         }
-    }
 
-    private static async Task<int> ReadWithStallTimeoutAsync(Stream source, byte[] buffer, CancellationToken cancellationToken)
-    {
-        using var stall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        stall.CancelAfter(TimeSpan.FromSeconds(30));
-        return await source.ReadAsync(buffer, stall.Token);
+        if (!stall.IsCancellationRequested)
+        {
+            stall.CancelAfter(Timeout.InfiniteTimeSpan);
+        }
     }
 
     internal static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
@@ -540,4 +583,38 @@ if ($replaced) {
 try { Remove-Item -LiteralPath $StagingRoot -Recurse -Force -ErrorAction Stop } catch { Log "remove staging failed: $($_.Exception.Message)" }
 Log 'update done'
 """;
+}
+
+/// <summary>Durable update trace. The Yes path used to fail with no file under logs\.</summary>
+internal static class AppUpdateLog
+{
+    private static readonly object Sync = new();
+
+    internal static string LogFilePath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "QuickReplyTool",
+        "logs",
+        "update.log");
+
+    internal static void Write(string message)
+    {
+        try
+        {
+            lock (Sync)
+            {
+                var directory = Path.GetDirectoryName(LogFilePath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.AppendAllText(
+                    LogFilePath,
+                    $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+        }
+    }
 }
