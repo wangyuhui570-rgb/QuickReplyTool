@@ -104,6 +104,16 @@ public sealed class KeyboardInputSimulator : IKeyboardInputSimulator
 
         if (sent != inputs.Count)
         {
+            SearchOverlayDiagnostics.Log(
+                "message_compose",
+                "send_input_failed",
+                new Dictionary<string, object?>
+                {
+                    ["sent"] = sent,
+                    ["expected"] = inputs.Count,
+                    ["win32Error"] = Marshal.GetLastWin32Error(),
+                    ["keyCount"] = virtualKeys.Length
+                });
             throw new InvalidOperationException("发送按键失败。");
         }
     }

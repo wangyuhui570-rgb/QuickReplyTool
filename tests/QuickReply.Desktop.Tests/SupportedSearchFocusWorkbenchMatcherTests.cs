@@ -12,6 +12,8 @@ public sealed class SupportedSearchFocusWorkbenchMatcherTests
     [InlineData("京东工作台", "JdWorkbench", "JdWork", @"C:\Program Files\JD\JdWork.exe")]
     [InlineData("会话详情", "Chrome_WidgetWin_1", "jingmai", @"C:\Program Files\JD\JingMai\jingmai.exe")]
     [InlineData("抖店 工作台", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
+    [InlineData("飞鸽客服", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
+    [InlineData("抖音商家工作台", "Chrome_WidgetWin_1", "chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe")]
     public void IsSupported_ReturnsTrueForConfiguredWorkbenchTargets(string title, string className, string processName, string processPath)
     {
         var result = SupportedSearchFocusWorkbenchMatcher.IsSupported(CreateWindowInfo(title, className, processName, processPath));
@@ -24,6 +26,7 @@ public sealed class SupportedSearchFocusWorkbenchMatcherTests
     [InlineData("Google Chrome", "Chrome_WidgetWin_1", "chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe")]
     [InlineData("Notepad", "Notepad", "notepad", @"C:\Windows\System32\notepad.exe")]
     [InlineData("资源管理器", "CabinetWClass", "explorer", @"C:\Windows\explorer.exe")]
+    [InlineData("Douyin video search - Microsoft Edge", "Chrome_WidgetWin_1", "msedge", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe")]
     public void IsSupported_ReturnsFalseForNonWorkbenchTargets(string title, string className, string processName, string processPath)
     {
         var result = SupportedSearchFocusWorkbenchMatcher.IsSupported(CreateWindowInfo(title, className, processName, processPath));

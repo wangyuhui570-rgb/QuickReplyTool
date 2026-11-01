@@ -187,6 +187,27 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
         }
     }
 
+    private static bool IsSameTopLevel(IntPtr foreground, IntPtr target)
+    {
+        if (foreground == IntPtr.Zero || target == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        if (foreground == target)
+        {
+            return true;
+        }
+
+        var root = Native.NativeMethods.GetAncestor(foreground, Native.NativeMethods.GaRootowner);
+        return root != IntPtr.Zero && root == target;
+    }
+
+    private static string FormatRect(System.Windows.Rect rect)
+    {
+        return $"{rect.X:0},{rect.Y:0},{rect.Width:0}x{rect.Height:0}";
+    }
+
     private static string? TryReadElementText(AutomationElement element)
     {
         try
@@ -224,41 +245,22 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
     {
         await Task.Delay(120, cancellationToken).ConfigureAwait(false);
 
-        var expectation = new DouyinSendVerifyExpectation(SentText: null, SentImagePaths: imagePaths);
         var uia = await Task.Run(
-                () => TryDetectImageViaAutomation(targetWindowHandle, imagePaths),
+                () => TryDetectImageViaAutomation(targetWindowHandle, imagePaths, diagnostics),
                 cancellationToken)
             .ConfigureAwait(false);
         diagnostics["douyinImagePasteConfirmUia"] = uia.Method + ":" + uia.Outcome + ":" + uia.Detail;
-        if (uia.Outcome is DouyinSendVerifyOutcome.StillHasContent or DouyinSendVerifyOutcome.Cleared)
-        {
-            return uia;
-        }
-
-        var probe = await TryInspectViaSelectAllCopyAsync(targetWindowHandle, expectation, diagnostics, cancellationToken)
-            .ConfigureAwait(false);
-        diagnostics["douyinImagePasteConfirmProbe"] = probe.Method + ":" + probe.Outcome + ":" + probe.Detail;
-
-        // Map probe outcomes for "has image?" semantics:
-        // StillHasContent (image_still_present) → confirmed.
-        // Cleared / empty → not present.
-        // Indeterminate empty_selection_image_uncertain → not present enough to Enter safely.
-        if (probe.Outcome == DouyinSendVerifyOutcome.StillHasContent)
-        {
-            return probe;
-        }
-
-        if (probe.Detail is "empty_selection" or "empty_selection_image_uncertain" or "text_absent")
-        {
-            return new DouyinSendVerifyResult(DouyinSendVerifyOutcome.Cleared, probe.Method, "composer_empty_after_paste");
-        }
-
-        return new DouyinSendVerifyResult(DouyinSendVerifyOutcome.Indeterminate, probe.Method, probe.Detail);
+        // Do not Ctrl+A / Ctrl+C / Escape to "see" the preview. That probe selects whatever
+        // currently has focus (often the conversation) and Escape can dismiss the image chip.
+        // Indeterminate is handled by the single-attempt caller: send once, never paste again.
+        diagnostics["douyinImagePasteConfirmProbe"] = "skipped_no_keyboard_probe";
+        return uia;
     }
 
     private static DouyinSendVerifyResult TryDetectImageViaAutomation(
         IntPtr targetWindowHandle,
-        IReadOnlyList<string> imagePaths)
+        IReadOnlyList<string> imagePaths,
+        IDictionary<string, object?> diagnostics)
     {
         try
         {
@@ -279,9 +281,11 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
             }
 
             var windowBottom = windowRect.Bottom;
-            var windowTop = windowRect.Top;
-            var height = Math.Max(windowBottom - windowTop, 1);
-            var lowerBandTop = windowTop + height * 0.55;
+            var height = Math.Max(windowBottom - windowRect.Top, 1);
+            // Composer chips sit in a short band above the window bottom. The old 55% band
+            // also matched customer images in the transcript and confirmed a paste that missed.
+            var composerBandTop = windowBottom - Math.Min(200, Math.Max(80, height * 0.22));
+            diagnostics["douyinImageUiaComposerBandTop"] = composerBandTop;
 
             var expectedNames = imagePaths
                 .Select(path => Path.GetFileNameWithoutExtension(path))
@@ -296,12 +300,13 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Thumb));
 
             var candidates = root.FindAll(TreeScope.Descendants, imageCondition);
+            diagnostics["douyinImageUiaCandidateCount"] = candidates.Count;
             foreach (AutomationElement element in candidates)
             {
                 try
                 {
                     var rect = element.Current.BoundingRectangle;
-                    if (rect.IsEmpty || rect.Bottom < lowerBandTop)
+                    if (rect.IsEmpty || rect.Top < composerBandTop)
                     {
                         continue;
                     }
@@ -313,16 +318,19 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
                             name.Contains(n, StringComparison.OrdinalIgnoreCase) ||
                             help.Contains(n, StringComparison.OrdinalIgnoreCase)))
                     {
+                        diagnostics["douyinImageUiaMatchRect"] = FormatRect(rect);
                         return new DouyinSendVerifyResult(
                             DouyinSendVerifyOutcome.StillHasContent,
                             "uia_image",
                             "name_match");
                     }
 
+                    // Thumbnail-sized only. A large image in this band is usually a chat bubble.
                     if (Equals(element.Current.ControlType, ControlType.Image) &&
-                        rect.Width >= 24 &&
-                        rect.Height >= 24)
+                        rect.Width is >= 24 and <= 220 &&
+                        rect.Height is >= 24 and <= 180)
                     {
+                        diagnostics["douyinImageUiaMatchRect"] = FormatRect(rect);
                         return new DouyinSendVerifyResult(
                             DouyinSendVerifyOutcome.StillHasContent,
                             "uia_image",
@@ -334,7 +342,7 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
                 }
             }
 
-            // Also: edit value non-empty after paste can mean a caption/alt stuck in composer.
+            // A non-empty edit is the user's draft or the text half of the phrase, not proof of an image.
             var edits = root.FindAll(
                 TreeScope.Descendants,
                 new OrCondition(
@@ -345,10 +353,8 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
                 var value = TryReadElementText(edit);
                 if (!string.IsNullOrWhiteSpace(value))
                 {
-                    return new DouyinSendVerifyResult(
-                        DouyinSendVerifyOutcome.StillHasContent,
-                        "uia_image",
-                        "non_empty_value");
+                    diagnostics["douyinImageUiaNonEmptyValueIgnored"] = true;
+                    break;
                 }
             }
 
@@ -370,8 +376,17 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
         ClipboardSnapshot? probeBackup = null;
         try
         {
-            // Keep the target focused so Ctrl+A/C hit the composer, not our overlay.
-            Native.NativeMethods.SetForegroundWindow(targetWindowHandle);
+            // Never pull the foreground back. If the user has already left the chat, Ctrl+A
+            // would select that other window. Skip the probe and report that we could not check.
+            if (!IsSameTopLevel(Native.NativeMethods.GetForegroundWindow(), targetWindowHandle))
+            {
+                diagnostics["douyinSendVerifyProbeSkipped"] = "focus_not_on_target";
+                return new DouyinSendVerifyResult(
+                    DouyinSendVerifyOutcome.Indeterminate,
+                    "select_all_copy",
+                    "focus_not_on_target_probe_skipped");
+            }
+
             await Task.Delay(80, cancellationToken).ConfigureAwait(false);
 
             probeBackup = await _clipboard.CaptureSnapshotAsync().ConfigureAwait(false);

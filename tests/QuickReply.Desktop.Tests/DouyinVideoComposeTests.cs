@@ -318,9 +318,15 @@ public sealed class DouyinVideoComposeTests
 
         Assert.False(result.Success);
         Assert.Contains("未能贴进", result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("已自动补救", result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("已重试", result.Message, StringComparison.Ordinal);
         Assert.Equal(1, keyboard.EnterCount); // text sent only; no empty image Enter
-        Assert.True(verifier.ConfirmImageCallCount >= 1);
+        Assert.Equal(2, keyboard.PasteShortcutCount); // one text paste + one image paste, no image retry
+        Assert.Equal(1, verifier.ConfirmImageCallCount);
         Assert.Equal(1, clipboard.SetFileDropListCallCount);
+        Assert.NotNull(result.ComposeTelemetry);
+        Assert.False(result.ComposeTelemetry.Value.RetryTriggered);
+        Assert.Equal("douyin_no_retry", result.ComposeTelemetry.Value.RetryOutcome);
     }
 
     [Fact]
@@ -359,6 +365,138 @@ public sealed class DouyinVideoComposeTests
         Assert.Null(verifier.Expectations[0].SentText);
         Assert.NotNull(verifier.Expectations[0].SentImagePaths);
         Assert.Equal("文字", verifier.Expectations[1].SentText);
+    }
+
+    [Fact]
+    public async Task DouyinImageFirst_UnconfirmedPaste_DoesNotSendOrPasteAgain()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\d.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier
+        {
+            ConfirmImageOutcome = DouyinSendVerifyOutcome.Cleared
+        };
+        var service = CreateDouyinService(325, out var clipboard, out var keyboard, out _, out _, verifier: verifier);
+
+        var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
+
+        Assert.False(result.Success);
+        Assert.Contains("未能贴进", result.Message, StringComparison.Ordinal);
+        Assert.Equal(1, keyboard.PasteShortcutCount);
+        Assert.Equal(0, keyboard.EnterCount);
+        Assert.Equal(0, clipboard.SetTextCallCount);
+        Assert.Equal(1, clipboard.SetFileDropListCallCount);
+        Assert.Equal(1, verifier.ConfirmImageCallCount);
+        Assert.False(result.ComposeTelemetry!.Value.RetryTriggered);
+    }
+
+    [Fact]
+    public async Task DouyinImagePaste_IndeterminateConfirm_SendsOnceWithoutRepasting()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\e.png", "image");
+        var verifier = new FakeDouyinSendProgressVerifier
+        {
+            ConfirmImageOutcome = DouyinSendVerifyOutcome.Indeterminate
+        };
+        var service = CreateDouyinService(326, out _, out var keyboard, out _, out _, verifier: verifier);
+        var settings = TestSettingsFactory.CreateFastSettings();
+        settings.PhraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
+
+        var result = await service.ExecuteAsync("文字", settings, ComposeActionMode.Send, [image]);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, keyboard.PasteShortcutCount);
+        Assert.Equal(2, keyboard.EnterCount);
+        Assert.Equal(1, verifier.ConfirmImageCallCount);
+    }
+
+    [Fact]
+    public async Task DouyinImageHeadStart_ForegroundLeft_DoesNotPasteText()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\f.png", "image");
+        var service = CreateDouyinService(327, out var clipboard, out var keyboard, out _, out var windowFocus);
+        keyboard.OnSendKey = () => windowFocus.ForegroundWindow = new IntPtr(9001);
+
+        var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
+
+        Assert.False(result.Success);
+        Assert.Contains("焦点离开了抖店窗口", result.Message, StringComparison.Ordinal);
+        Assert.Equal(1, keyboard.PasteShortcutCount);
+        Assert.Equal(1, keyboard.EnterCount);
+        Assert.Equal(0, clipboard.SetTextCallCount);
+        Assert.False(result.ComposeTelemetry!.Value.RetryTriggered);
+    }
+
+    [Fact]
+    public async Task DouyinText_ActivationAndClipboardFailures_AreNotRetried()
+    {
+        var clipboard = new FakeClipboardService();
+        var keyboard = new FakeKeyboardInputSimulator();
+        var workbench = new FakeExternalWorkbenchService();
+        var windowFocus = new FakeWindowFocusService();
+        var handle = new IntPtr(328);
+        var activations = 0;
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "飞鸽客服", "Chrome_WidgetWin_1", "doudian");
+        windowFocus.ValidHandles.Add(handle);
+        workbench.OnTryActivateLastExternalWindow = () =>
+        {
+            activations++;
+            return false;
+        };
+        var service = new MessageComposeService(
+            workbench,
+            clipboard,
+            keyboard,
+            windowFocus,
+            douyinSendProgressVerifier: new FakeDouyinSendProgressVerifier());
+
+        var activation = await service.ExecuteAsync("你好", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send);
+
+        Assert.False(activation.Success);
+        Assert.Equal(1, activations);
+        Assert.Equal(0, clipboard.SetTextCallCount);
+        Assert.False(activation.ComposeTelemetry!.Value.RetryTriggered);
+        Assert.Equal("douyin_no_retry", activation.ComposeTelemetry.Value.RetryOutcome);
+        Assert.DoesNotContain("已自动补救", activation.Message, StringComparison.Ordinal);
+
+        windowFocus.ForegroundWindow = handle;
+        workbench.OnTryActivateLastExternalWindow = () =>
+        {
+            windowFocus.ForegroundWindow = handle;
+            return true;
+        };
+        clipboard.SetTextResult = new ReplyActionResult(false, "剪贴板忙碌", FailureKind: ReplyActionFailureKind.ClipboardBusy);
+
+        var clipboardFailure = await service.ExecuteAsync("你好", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send);
+
+        Assert.False(clipboardFailure.Success);
+        Assert.Equal(1, clipboard.SetTextCallCount);
+        Assert.Equal(0, keyboard.PasteShortcutCount);
+        Assert.False(clipboardFailure.ComposeTelemetry!.Value.RetryTriggered);
+        Assert.Equal("douyin_no_retry", clipboardFailure.ComposeTelemetry.Value.RetryOutcome);
+    }
+
+    [Fact]
+    public async Task DouyinVideoUploadFailure_IsNotRetriedInsideTheSameSend()
+    {
+        using var scope = new TestAppDataScope();
+        var video = scope.CreateFile("videos\\once.mp4", "video");
+        var service = CreateDouyinService(329, out _, out _, out var uploader, out _);
+        uploader.OnUpload = _ => new ReplyActionResult(
+            false,
+            "未出现文件选择框",
+            FailureKind: ReplyActionFailureKind.ActivationFailed);
+
+        var result = await service.ExecuteFilesAsync([video], TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send);
+
+        Assert.False(result.Success);
+        Assert.Single(uploader.Calls);
+        Assert.False(result.ComposeTelemetry!.Value.RetryTriggered);
+        Assert.Equal("douyin_no_retry", result.ComposeTelemetry.Value.RetryOutcome);
+        Assert.DoesNotContain("已自动补救", result.Message, StringComparison.Ordinal);
     }
 
     private static MessageComposeService CreateDouyinService(

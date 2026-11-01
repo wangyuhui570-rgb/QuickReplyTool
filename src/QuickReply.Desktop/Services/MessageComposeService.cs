@@ -1,6 +1,8 @@
 ﻿using System.Diagnostics;
 using System.IO;
+using System.Security.Principal;
 using QuickReply.Desktop.Models;
+using QuickReply.Desktop.Native;
 
 namespace QuickReply.Desktop.Services;
 
@@ -218,6 +220,24 @@ public sealed class MessageComposeService : IMessageComposeService
         }
 
         var firstFailureCategory = MapFailureCategory(firstResult);
+        // Douyin failures must not paste, click, or send a second time. The user retries by hand.
+        if (firstAttemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench)
+        {
+            LogDouyinSendStopped(firstAttemptContext, firstResult, firstFailureCategory);
+            return CompleteComposeOperation(
+                firstAttemptContext,
+                mode,
+                firstResult,
+                ComposeOperationTelemetry.Create(
+                    composeKind,
+                    firstAttemptContext.HostProfile.Name,
+                    attemptCount: 1,
+                    retryTriggered: false,
+                    retryReason: string.Empty,
+                    retryOutcome: "douyin_no_retry",
+                    failureCategory: firstFailureCategory));
+        }
+
         if (MaximumComposeAttempts <= 1 ||
             !TryBuildRetryDecision(firstResult, out var retryDecision))
         {
@@ -398,90 +418,73 @@ public sealed class MessageComposeService : IMessageComposeService
                 return null;
             }
 
-            var maxAttempts = isDouyin ? DouyinComposerInputHelper.MaxImagePasteAttempts : 1;
-            ReplyActionResult? lastPasteFailure = null;
-            for (var attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                diagnostics["douyinImagePasteAttempt"] = attempt;
-                if (isDouyin)
-                {
-                    DouyinComposerInputHelper.TryFocusComposer(activationResult.TargetWindowHandle, diagnostics);
-                    await Task.Delay(DouyinComposerInputHelper.PostFocusSettleMs).ConfigureAwait(false);
-                }
-
-                lastPasteFailure = await TryPasteClipboardPayloadAsync(
-                    activationResult.TargetWindowHandle,
-                    "file_drop",
-                    attemptContext.HostProfile.FilePasteStableMs,
-                    GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
-                    attemptContext.HostProfile.PollIntervalMs,
-                    diagnostics,
-                    stopwatch,
-                    settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
-                if (lastPasteFailure is not null)
-                {
-                    // Focus lost: retry focus+paste on Douyin; otherwise fail.
-                    if (!isDouyin || attempt >= maxAttempts)
-                    {
-                        return await FailAsync("send_failed", lastPasteFailure.Value);
-                    }
-
-                    continue;
-                }
-
-                if (!isDouyin)
-                {
-                    return null;
-                }
-
-                var confirm = await _douyinSendProgressVerifier.ConfirmComposerHasImageAsync(
-                    activationResult.TargetWindowHandle,
-                    imagePaths,
-                    diagnostics).ConfigureAwait(false);
-                diagnostics["douyinImagePasteConfirmOutcome"] = confirm.Outcome.ToString();
-                diagnostics["douyinImagePasteConfirmDetail"] = confirm.Detail;
-                if (confirm.Outcome == DouyinSendVerifyOutcome.StillHasContent)
-                {
-                    douyinImagePasteConfirmed = true;
-                    diagnostics["douyinImagePasteConfirmed"] = true;
-                    return null;
-                }
-
-                // Cleared = definitely empty -> retry. Indeterminate = Chromium may hide preview;
-                // soft-accept after attempt >=2 so we do not false-fail a real paste.
-                if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate && attempt >= 2)
-                {
-                    douyinImagePasteConfirmed = true;
-                    diagnostics["douyinImagePasteConfirmed"] = true;
-                    diagnostics["douyinImagePasteSoftConfirm"] = true;
-                    return null;
-                }
-
-                if (attempt >= maxAttempts)
-                {
-                    if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate)
-                    {
-                        douyinImagePasteConfirmed = true;
-                        diagnostics["douyinImagePasteConfirmed"] = true;
-                        diagnostics["douyinImagePasteSoftConfirm"] = true;
-                        return null;
-                    }
-
-                    break;
-                }
-            }
-
+            // One paste only. A missed confirm must not click or paste again.
+            diagnostics["douyinImagePasteAttempt"] = 1;
+            diagnostics["douyinImagePasteMaxAttempts"] = DouyinComposerInputHelper.MaxImagePasteAttempts;
             if (isDouyin)
             {
-                return await FailAsync(
-                    "image_paste_unconfirmed",
-                    CreateFailureResult(
-                        ReplyActionFailureKind.ManualConfirmationRequired,
-                        "图片未能贴进抖店输入框（已重试聚焦与粘贴），未按发送键，避免空发。",
-                        "请先点一下抖店聊天输入框，再重试；或把「图文发送顺序」临时改成「先图片后文字」。"));
+                DouyinComposerInputHelper.TryFocusComposer(activationResult.TargetWindowHandle, diagnostics);
+                await Task.Delay(DouyinComposerInputHelper.PostFocusSettleMs).ConfigureAwait(false);
             }
 
-            return lastPasteFailure is null ? null : await FailAsync("send_failed", lastPasteFailure.Value);
+            var pasteFailure = await TryPasteClipboardPayloadAsync(
+                activationResult.TargetWindowHandle,
+                "file_drop",
+                attemptContext.HostProfile.FilePasteStableMs,
+                GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+                attemptContext.HostProfile.PollIntervalMs,
+                diagnostics,
+                stopwatch,
+                settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+            if (pasteFailure is not null)
+            {
+                if (isDouyin && diagnostics.ContainsKey("lastPasteKind"))
+                {
+                    return await FailAsync(
+                        "send_failed",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.FocusLost,
+                            "图片只粘贴了一次，随后焦点离开了抖店窗口，已停止，没有再粘贴也没有按发送键。",
+                            "请先看输入框里有没有这张图片。有的话手动发送；没有的话再发一次。本次不会自动重试。"));
+                }
+
+                return await FailAsync("send_failed", pasteFailure.Value);
+            }
+
+            if (!isDouyin)
+            {
+                return null;
+            }
+
+            var confirm = await _douyinSendProgressVerifier.ConfirmComposerHasImageAsync(
+                activationResult.TargetWindowHandle,
+                imagePaths,
+                diagnostics).ConfigureAwait(false);
+            diagnostics["douyinImagePasteConfirmOutcome"] = confirm.Outcome.ToString();
+            diagnostics["douyinImagePasteConfirmDetail"] = confirm.Detail;
+            if (confirm.Outcome == DouyinSendVerifyOutcome.StillHasContent)
+            {
+                douyinImagePasteConfirmed = true;
+                diagnostics["douyinImagePasteConfirmed"] = true;
+                return null;
+            }
+
+            // Chromium usually hides the preview from UIA. Accept that once and send once.
+            // Cleared means the composer looked empty: do not press Enter, and do not paste again.
+            if (confirm.Outcome == DouyinSendVerifyOutcome.Indeterminate)
+            {
+                douyinImagePasteConfirmed = true;
+                diagnostics["douyinImagePasteConfirmed"] = true;
+                diagnostics["douyinImagePasteSoftConfirm"] = true;
+                return null;
+            }
+
+            return await FailAsync(
+                "image_paste_unconfirmed",
+                CreateFailureResult(
+                    ReplyActionFailureKind.ManualConfirmationRequired,
+                    "图片未能贴进抖店输入框，已停止。没有再次粘贴，也没有按发送键。",
+                    "请看一下抖店输入框：图片如果已经在里面，手动点发送即可；如果不在，再发一次。本次不会自动重试。"));
         }
 
         async Task<ReplyActionResult?> PasteTextStepAsync()
@@ -518,8 +521,8 @@ public sealed class MessageComposeService : IMessageComposeService
                     "image_paste_unconfirmed",
                     CreateFailureResult(
                         ReplyActionFailureKind.ManualConfirmationRequired,
-                        "图片未确认贴入输入框，已跳过发送键，避免空发。",
-                        "请先点一下抖店聊天输入框，再重试。"));
+                        "图片未确认贴入输入框，已跳过发送键。",
+                        "请看一下抖店输入框。本次不会自动重试。"));
             }
 
             var sendFailure = await TrySendConfiguredHotkeyAsync(
@@ -611,12 +614,22 @@ public sealed class MessageComposeService : IMessageComposeService
                 // overtake it. Give the image a head start before the second message.
                 diagnostics["douyinImageHeadStartMs"] = DouyinImageHeadStartMs;
                 await Task.Delay(DouyinImageHeadStartMs).ConfigureAwait(false);
+                if (DidForegroundLeaveTarget(activationResult.TargetWindowHandle, diagnostics, "image_head_start"))
+                {
+                    diagnostics["douyinSecondStageAborted"] = "foreground_left_during_image_head_start";
+                    return await FailAsync(
+                        "foreground_left",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.FocusLost,
+                            "等待期间焦点离开了抖店窗口，文字没有再粘贴。",
+                            "图片如果已经发出，只需手动把文字补上。本次没有自动重试，也没有再抢焦点。"));
+                }
             }
 
             if (isDouyin && !imageFirst)
             {
                 // TextThenImage: brief settle after text Enter, prepare file_drop early, then
-                // refocus composer inside PasteImagesAsync before Ctrl+V.
+                // one composer focus inside PasteImagesAsync before the single Ctrl+V.
                 diagnostics["douyinPostTextBeforeImageSettleMs"] = DouyinPostTextBeforeImageSettleMs;
                 var prepTask = PasteImagesAsync(prepareClipboardOnly: true);
                 await Task.Delay(DouyinPostTextBeforeImageSettleMs).ConfigureAwait(false);
@@ -624,6 +637,17 @@ public sealed class MessageComposeService : IMessageComposeService
                 if (prepFailure is not null)
                 {
                     return prepFailure.Value;
+                }
+
+                if (DidForegroundLeaveTarget(activationResult.TargetWindowHandle, diagnostics, "before_image_paste"))
+                {
+                    diagnostics["douyinSecondStageAborted"] = "foreground_left_before_image_paste";
+                    return await FailAsync(
+                        "foreground_left",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.FocusLost,
+                            "焦点已离开抖店窗口，图片没有再粘贴。",
+                            "请确认当前还停在原来的抖店会话后再手动补发图片。本次没有自动重试，也没有再抢焦点。"));
                 }
             }
         }
@@ -1407,7 +1431,11 @@ public sealed class MessageComposeService : IMessageComposeService
             return (false, IntPtr.Zero, "target_window_missing", "未找到目标输入窗口。请先点击聊天输入框，再回到工具执行操作。");
         }
 
-        for (var attempt = 1; attempt <= TargetActivationAttemptCount; attempt++)
+        var activationAttempts = attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench
+            ? 1
+            : TargetActivationAttemptCount;
+        diagnostics["activationAttemptBudget"] = activationAttempts;
+        for (var attempt = 1; attempt <= activationAttempts; attempt++)
         {
             var refreshedTargetWindowInfo = ResolveLatestTargetWindowInfo(attemptContext.TargetWindowInfo);
             var refreshedTargetWindowHandle = NormalizeTargetWindowHandle(
@@ -1539,6 +1567,12 @@ public sealed class MessageComposeService : IMessageComposeService
         diagnostics["attemptIndex"] = attemptContext.AttemptIndex;
         diagnostics["attemptReason"] = attemptContext.AttemptReason;
         diagnostics["hostProfile"] = attemptContext.HostProfile.Name;
+        if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench)
+        {
+            diagnostics["processElevated"] = IsProcessElevated();
+            diagnostics["douyinAutomaticRetry"] = false;
+        }
+
         if (attemptContext.TargetWindowInfo is not null)
         {
             diagnostics["targetProcessName"] = attemptContext.TargetWindowInfo.ProcessName;
@@ -1932,5 +1966,110 @@ public sealed class MessageComposeService : IMessageComposeService
             ReplyActionFailureKind.TargetChanged => "请重新确认当前聊天窗口后再重试。",
             _ => string.Empty
         };
+    }
+
+    /// <summary>
+    /// True when the user has moved to a different app. Our own windows and an empty
+    /// foreground do not count: those happen while the overlay hides and must not abort the send.
+    /// </summary>
+    private bool DidForegroundLeaveTarget(
+        IntPtr targetWindowHandle,
+        IDictionary<string, object?> diagnostics,
+        string stage)
+    {
+        var foreground = NormalizeTargetWindowHandle(_windowFocusService.GetForegroundWindow());
+        var target = NormalizeTargetWindowHandle(targetWindowHandle);
+        diagnostics["douyinForegroundAt_" + stage] = SearchOverlayDiagnostics.FormatHandle(foreground);
+        if (foreground == IntPtr.Zero || foreground == target)
+        {
+            return false;
+        }
+
+        uint processId;
+        try
+        {
+            NativeMethods.GetWindowThreadProcessId(foreground, out processId);
+        }
+        catch (Exception ex)
+        {
+            diagnostics["douyinForegroundProcessQueryError"] = ex.GetType().Name;
+            return true;
+        }
+
+        diagnostics["douyinForegroundProcessIdAt_" + stage] = processId;
+        // Only our own overlay/main window is ignored. An unknown or other-process
+        // foreground means the user left the chat; do not pull focus back.
+        return processId != (uint)Environment.ProcessId;
+    }
+
+    private static void LogDouyinSendStopped(
+        ComposeAttemptContext attemptContext,
+        ReplyActionResult result,
+        string failureCategory)
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["step"] = InferDouyinFailureStep(result),
+            ["failureKind"] = ResolveFailureKind(result).ToString(),
+            ["failureCategory"] = failureCategory,
+            ["message"] = result.Message,
+            ["userGuidance"] = result.UserGuidance,
+            ["composeKind"] = attemptContext.ComposeKind,
+            ["hostProfile"] = attemptContext.HostProfile.Name,
+            ["attemptIndex"] = attemptContext.AttemptIndex,
+            ["automaticRetry"] = false,
+            ["processElevated"] = IsProcessElevated(),
+            ["targetWindowTitle"] = attemptContext.TargetWindowInfo?.Title ?? string.Empty,
+            ["targetProcessName"] = attemptContext.TargetWindowInfo?.ProcessName ?? string.Empty
+        };
+        SearchOverlayDiagnostics.Log("message_compose", "douyin_send_stopped", payload);
+    }
+
+    private static string InferDouyinFailureStep(ReplyActionResult result)
+    {
+        var message = result.Message ?? string.Empty;
+        if (message.Contains("视频", StringComparison.Ordinal))
+        {
+            return "video_upload";
+        }
+
+        if (message.Contains("图片", StringComparison.Ordinal))
+        {
+            return "image_paste";
+        }
+
+        if (message.Contains("焦点", StringComparison.Ordinal))
+        {
+            return "focus";
+        }
+
+        if (message.Contains("没有真正发出", StringComparison.Ordinal) ||
+            message.Contains("无法确认", StringComparison.Ordinal))
+        {
+            return "send_verify";
+        }
+
+        var kind = ResolveFailureKind(result);
+        return kind switch
+        {
+            ReplyActionFailureKind.FocusLost => "focus",
+            ReplyActionFailureKind.ActivationFailed or ReplyActionFailureKind.MissingTargetWindow => "activate_window",
+            ReplyActionFailureKind.ClipboardBusy => "clipboard",
+            ReplyActionFailureKind.TargetChanged => "target_changed",
+            _ => "send"
+        };
+    }
+
+    private static bool IsProcessElevated()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

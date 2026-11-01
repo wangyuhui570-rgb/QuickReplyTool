@@ -11,7 +11,9 @@ internal static class DouyinComposerInputHelper
 {
     internal const int PostTextSendSettleMs = 300;
     internal const int PostFocusSettleMs = 150;
-    internal const int MaxImagePasteAttempts = 3;
+
+    /// <summary>Douyin image paste is a single attempt. Do not raise this to retry on failure.</summary>
+    internal const int MaxImagePasteAttempts = 1;
 
     public static bool TryFocusComposer(IntPtr targetWindowHandle, IDictionary<string, object?> diagnostics)
     {
@@ -21,20 +23,58 @@ internal static class DouyinComposerInputHelper
             return false;
         }
 
+        bool activated;
         try
         {
-            NativeMethods.SetForegroundWindow(targetWindowHandle);
+            // Raw SetForegroundWindow is often rejected after our overlay hides. Attach to the
+            // foreground input queue first, same as the rest of the send path.
+            activated = ForegroundWindowTracker.ActivateWindowWithInputAttach(targetWindowHandle);
         }
-        catch
+        catch (Exception ex)
         {
+            activated = false;
+            diagnostics["douyinComposerActivateError"] = ex.GetType().Name;
         }
 
+        diagnostics["douyinComposerActivated"] = activated;
         if (TryFocusViaAutomation(targetWindowHandle, diagnostics))
         {
             return true;
         }
 
+        // A blind click while another app is in front lands in the wrong window and steals the cursor.
+        try
+        {
+            if (!IsTargetForeground(targetWindowHandle))
+            {
+                diagnostics["douyinComposerFocus"] = "click_skipped_not_foreground";
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            diagnostics["douyinComposerFocus"] = "foreground_check_error:" + ex.GetType().Name;
+            return false;
+        }
+
         return TryClickComposer(targetWindowHandle, diagnostics);
+    }
+
+    private static bool IsTargetForeground(IntPtr targetWindowHandle)
+    {
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        if (foreground == targetWindowHandle)
+        {
+            return true;
+        }
+
+        var root = NativeMethods.GetAncestor(foreground, NativeMethods.GaRootowner);
+        return root != IntPtr.Zero && root == targetWindowHandle;
     }
 
     private static bool TryFocusViaAutomation(IntPtr targetWindowHandle, IDictionary<string, object?> diagnostics)

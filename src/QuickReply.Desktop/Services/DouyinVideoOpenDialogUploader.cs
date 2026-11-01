@@ -71,7 +71,8 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         }
 
         ShowWindow(targetWindowHandle, 9);
-        SetForegroundWindow(targetWindowHandle);
+        var activated = ForegroundWindowTracker.ActivateWindowWithInputAttach(targetWindowHandle);
+        diagnostics["douyinVideoActivated"] = activated;
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!GetWindowRect(targetWindowHandle, out var windowRect))
@@ -143,7 +144,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         }
 
         diagnostics["douyinVideoDialogHandle"] = $"0x{dialog.ToInt64():X}";
-        SetForegroundWindow(dialog);
+        ForegroundWindowTracker.ActivateWindowWithInputAttach(dialog);
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!TrySetOpenDialogFileName(dialog, videoPath))
@@ -175,16 +176,19 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
         if (!closed)
         {
+            // One close, then stop. Leaving the modal up blocks the chat; clicking the toolbar again would open another dialog.
+            PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            diagnostics["douyinVideoDialogClosedByTool"] = true;
             return new ReplyActionResult(
                 false,
-                "视频文件选择框仍未关闭，可能路径无效或被拦截。",
+                "视频文件选择框没有自己关掉，已关闭该窗口并停止，没有再次点击。",
                 FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
-                UserGuidance: "请检查弹出的文件框：选中目标 mp4 后点“打开”，确认输入区出现视频预览后再发送。");
+                UserGuidance: "请看一下抖店：如果视频预览已经在输入框里，手动点发送即可；如果不在，再发一次。本次不会自动重试。");
         }
 
         // Give Douyin time to stage the upload preview in the composer (restored to 2.1.11's 900ms).
         await Task.Delay(900, cancellationToken).ConfigureAwait(false);
-        SetForegroundWindow(targetWindowHandle);
+        ForegroundWindowTracker.ActivateWindowWithInputAttach(targetWindowHandle);
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!sendAfterUpload)
@@ -534,9 +538,6 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
