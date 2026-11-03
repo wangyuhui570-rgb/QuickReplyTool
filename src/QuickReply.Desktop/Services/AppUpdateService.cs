@@ -172,6 +172,62 @@ internal static class AppUpdatePolicy
         return best;
     }
 
+    /// <summary>
+    /// ECDSA P-256 public key (SubjectPublicKeyInfo, base64). The private half is the
+    /// UPDATE_SIGNING_KEY secret used by .github/workflows/release.yml to sign latest.json.
+    /// </summary>
+    public const string ManifestSigningPublicKey =
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXkfKo1yuId8Wa/O7WyTQs2RI8luzyHSmBjVNMnhXOsQPvIYzf+F3RXExlcDg4soA2gZXJGiezvn5AO510t3BDg==";
+
+    public static string ReleaseDownloadPrefix => $"https://github.com/{RepoOwner}/{RepoName}/releases/download/";
+
+    /// <summary>The exact text CI signs: version, zipName, url and sha256, one per line.</summary>
+    public static string BuildManifestSigningPayload(string version, string zipName, string url, string sha256) =>
+        string.Join("\n", version.Trim(), zipName.Trim(), url.Trim(), sha256.Trim().ToLowerInvariant());
+
+    /// <summary>
+    /// A manifest fetched through the third-party mirror is trusted only with a valid signature and
+    /// a zip URL inside this repository's releases. Otherwise the mirror could name any zip and
+    /// supply a matching SHA256, and the updater would install it.
+    /// </summary>
+    public static AppUpdateInfo? ParseSignedManifest(string json) =>
+        ParseSignedManifest(json, ManifestSigningPublicKey);
+
+    internal static AppUpdateInfo? ParseSignedManifest(string json, string publicKeyBase64)
+    {
+        var info = ParseManifest(json);
+        if (info is null || !info.ZipUrl.StartsWith(ReleaseDownloadPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var signatureText = GetString(root, "signature").Trim();
+        if (signatureText.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var payload = BuildManifestSigningPayload(
+                GetString(root, "version"),
+                GetString(root, "zipName"),
+                GetString(root, "url"),
+                GetString(root, "sha256"));
+            using var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKeyBase64), out _);
+            return ecdsa.VerifyData(Encoding.UTF8.GetBytes(payload), Convert.FromBase64String(signatureText), HashAlgorithmName.SHA256)
+                ? info
+                : null;
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Parses the latest.json manifest published by CI.</summary>
     public static AppUpdateInfo? ParseManifest(string json)
     {
@@ -227,7 +283,7 @@ internal static class AppUpdatePolicy
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 }
 
-/// <summary>Checks GitHub (api → mirror manifest → direct manifest), downloads, verifies and hands off to an updater script.</summary>
+/// <summary>Checks GitHub (api → direct manifest → signed mirror manifest), downloads, verifies and hands off to an updater script.</summary>
 internal sealed class AppUpdateService
 {
     private readonly Func<HttpClient> _httpClientFactory;
@@ -254,14 +310,15 @@ internal sealed class AppUpdateService
         info = await TryFetchAsync(AppUpdatePolicy.ReleasesApiUrl, TimeSpan.FromSeconds(6), AppUpdatePolicy.SelectLatestFromReleasesJson, errors, cancellationToken);
         if (info is null)
         {
-            foreach (var url in AppUpdatePolicy.BuildDownloadCandidates(AppUpdatePolicy.ManifestDirectUrl))
-            {
-                info = await TryFetchAsync(url, TimeSpan.FromSeconds(8), AppUpdatePolicy.ParseManifest, errors, cancellationToken);
-                if (info is not null)
-                {
-                    break;
-                }
-            }
+            // Direct GitHub first: TLS to github.com vouches for the manifest. The mirror is only
+            // used for a signed manifest, since whoever runs it could rewrite url and sha256 together.
+            info = await TryFetchAsync(AppUpdatePolicy.ManifestDirectUrl, TimeSpan.FromSeconds(8), AppUpdatePolicy.ParseManifest, errors, cancellationToken);
+            info ??= await TryFetchAsync(
+                AppUpdatePolicy.MirrorPrefix + AppUpdatePolicy.ManifestDirectUrl,
+                TimeSpan.FromSeconds(8),
+                AppUpdatePolicy.ParseSignedManifest,
+                errors,
+                cancellationToken);
         }
 
         if (info is null)

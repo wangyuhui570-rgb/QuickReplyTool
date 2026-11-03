@@ -62,6 +62,8 @@ jobs:
 
       - name: Write release notes and update manifest
         shell: pwsh
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           $zipName = "QuickReplyTool-Portable-$env:version.zip"
           $zip = Join-Path "artifacts" $zipName
@@ -73,6 +75,19 @@ jobs:
           $notes = "客服效率工具 $env:version`r`n`r`nSHA256: $sha`r`nSize: $size bytes`r`n"
           $notesPath = Join-Path "artifacts" "release-notes.md"
           [System.IO.File]::WriteAllText($notesPath, $notes, [System.Text.UTF8Encoding]::new($false))
+          # AppUpdatePolicy.ParseSignedManifest: the mirror copy of latest.json is trusted only with
+          # this signature. Payload = version, zipName, url, sha256 joined by "\n" (ECDSA P-256, SHA-256).
+          $signature = ""
+          if ([string]::IsNullOrWhiteSpace($env:UPDATE_SIGNING_KEY)) {
+            Write-Warning "UPDATE_SIGNING_KEY is not set: latest.json is unsigned, mirror-only clients cannot update."
+          } else {
+            $payload = "$env:version`n$zipName`n$url`n$sha"
+            $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
+            $bytesRead = 0
+            $ecdsa.ImportPkcs8PrivateKey([Convert]::FromBase64String($env:UPDATE_SIGNING_KEY.Trim()), [ref]$bytesRead)
+            $signature = [Convert]::ToBase64String($ecdsa.SignData([System.Text.Encoding]::UTF8.GetBytes($payload), [System.Security.Cryptography.HashAlgorithmName]::SHA256))
+            $ecdsa.Dispose()
+          }
           $manifest = [ordered]@{
             version = $env:version
             tag = $env:tag
@@ -81,6 +96,7 @@ jobs:
             sha256 = $sha
             size = [int64]$size
             notes = "客服效率工具 $env:version"
+            signature = $signature
           } | ConvertTo-Json
           $manifestPath = Join-Path "artifacts" "latest.json"
           [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))

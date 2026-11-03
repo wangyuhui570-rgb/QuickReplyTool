@@ -70,6 +70,14 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
                 UserGuidance: "请确认视频文件仍存在后再试。");
         }
 
+        // Text and images may have taken several seconds before the video starts. If the user went
+        // to another app meanwhile, do not pull Douyin back and click into it.
+        if (UserLeftTarget(targetWindowHandle))
+        {
+            diagnostics["douyinVideoAborted"] = "user_left_before_start";
+            return CreateUserLeftResult("视频还没开始上传");
+        }
+
         ShowWindow(targetWindowHandle, 9);
         var activated = ForegroundWindowTracker.ActivateWindowWithInputAttach(targetWindowHandle);
         diagnostics["douyinVideoActivated"] = activated;
@@ -126,6 +134,12 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             await Task.Delay(200, cancellationToken).ConfigureAwait(false);
         }
 
+        if (UserLeftTarget(targetWindowHandle))
+        {
+            diagnostics["douyinVideoAborted"] = "user_left_before_toolbar_click";
+            return CreateUserLeftResult("视频按钮没有点击");
+        }
+
         AbsoluteMove(screenX - 15, screenY);
         await Task.Delay(80, cancellationToken).ConfigureAwait(false);
         AbsoluteMove(screenX, screenY);
@@ -144,7 +158,15 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         }
 
         diagnostics["douyinVideoDialogHandle"] = $"0x{dialog.ToInt64():X}";
-        ForegroundWindowTracker.ActivateWindowWithInputAttach(dialog);
+        // The path is written with window messages, so the dialog only needs to be in front when the
+        // user is still on Douyin. Bringing it up over another app was the "forced back" bug.
+        var userLeftBeforeDialog = UserLeftTarget(targetWindowHandle, dialog);
+        diagnostics["douyinVideoUserLeftBeforeDialog"] = userLeftBeforeDialog;
+        if (!userLeftBeforeDialog)
+        {
+            ForegroundWindowTracker.ActivateWindowWithInputAttach(dialog);
+        }
+
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!TrySetOpenDialogFileName(dialog, videoPath))
@@ -159,6 +181,12 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
         if (!TryClickOpenButton(dialog))
         {
+            if (UserLeftTarget(targetWindowHandle, dialog))
+            {
+                diagnostics["douyinVideoAborted"] = "user_left_before_open_enter";
+                return CreateUserLeftResult("视频文件框已填好路径，但没有按打开");
+            }
+
             _keyboard.SendEnter();
         }
 
@@ -188,14 +216,26 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
         // Give Douyin time to stage the upload preview in the composer (restored to 2.1.11's 900ms).
         await Task.Delay(900, cancellationToken).ConfigureAwait(false);
-        ForegroundWindowTracker.ActivateWindowWithInputAttach(targetWindowHandle);
-        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (!sendAfterUpload)
         {
             diagnostics["videoSendState"] = "staged";
             return new ReplyActionResult(true, StagedMessage);
         }
+
+        // The send key goes to whatever is in front. If the user switched away during the upload
+        // (up to ~13 s), leave the staged video for them instead of yanking Douyin back.
+        if (UserLeftTarget(targetWindowHandle, dialog))
+        {
+            diagnostics["videoSendState"] = "staged_user_left";
+            return new ReplyActionResult(
+                false,
+                "视频已放进抖店输入框，但你已切到别的窗口，没有按发送键。",
+                FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
+                UserGuidance: "回到抖店后确认视频预览，手动点发送即可。本次没有抢回焦点。");
+        }
+
+        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         switch (sendHotkeyMode)
         {
@@ -215,6 +255,39 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         // This is "submitted", not "delivered" – Douyin gives no reliable completion signal.
         diagnostics["videoSendState"] = "submitted";
         return new ReplyActionResult(true, SubmittedMessage);
+    }
+
+    /// <summary>
+    /// True when another app is in front. Douyin itself, its dialogs and this tool's own windows
+    /// (the overlay that just closed) do not count as the user leaving.
+    /// </summary>
+    private static bool UserLeftTarget(IntPtr targetWindowHandle, IntPtr dialog = default)
+    {
+        var foreground = Native.NativeMethods.GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground == targetWindowHandle || (dialog != IntPtr.Zero && foreground == dialog))
+        {
+            return false;
+        }
+
+        var root = Native.NativeMethods.GetAncestor(foreground, Native.NativeMethods.GaRootowner);
+        if (root == targetWindowHandle || (dialog != IntPtr.Zero && root == dialog))
+        {
+            return false;
+        }
+
+        Native.NativeMethods.GetWindowThreadProcessId(foreground, out var foregroundProcessId);
+        Native.NativeMethods.GetWindowThreadProcessId(targetWindowHandle, out var targetProcessId);
+        return foregroundProcessId != (uint)Environment.ProcessId &&
+               (foregroundProcessId == 0 || foregroundProcessId != targetProcessId);
+    }
+
+    private static ReplyActionResult CreateUserLeftResult(string stage)
+    {
+        return new ReplyActionResult(
+            false,
+            $"你已切到别的窗口，{stage}，已停止。",
+            FailureKind: ReplyActionFailureKind.FocusLost,
+            UserGuidance: "回到抖店会话后再发一次视频。本次没有抢回焦点，也没有点击。");
     }
 
     private static Task<(int X, int Y)?> TryLocateVideoButtonByAutomationAsync(IntPtr targetWindowHandle)

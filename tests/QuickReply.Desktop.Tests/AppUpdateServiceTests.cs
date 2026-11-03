@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using QuickReply.Desktop.Services;
 
 namespace QuickReply.Desktop.Tests;
@@ -80,6 +82,31 @@ public sealed class AppUpdateServiceTests
         Assert.Equal(Sha, info.Sha256);
         Assert.Equal(123, info.SizeBytes);
         Assert.Null(AppUpdatePolicy.ParseManifest("""{"version":"2.1.15","url":"https://x/y.zip","sha256":"bad"}"""));
+    }
+
+    [Fact]
+    public void ParseSignedManifest_AcceptsOnlyValidSignatureForThisRepository()
+    {
+        using var signer = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(signer.ExportSubjectPublicKeyInfo());
+        var url = AppUpdatePolicy.ReleaseDownloadPrefix + "v2.1.18/Q.zip";
+
+        string Manifest(string manifestUrl, string sha, string signature) =>
+            $$"""{"version":"2.1.18","tag":"v2.1.18","zipName":"Q.zip","url":"{{manifestUrl}}","sha256":"{{sha}}","size":1,"signature":"{{signature}}"}""";
+
+        string Sign(string manifestUrl, string sha) => Convert.ToBase64String(signer.SignData(
+            Encoding.UTF8.GetBytes(AppUpdatePolicy.BuildManifestSigningPayload("2.1.18", "Q.zip", manifestUrl, sha)),
+            HashAlgorithmName.SHA256));
+
+        Assert.NotNull(AppUpdatePolicy.ParseSignedManifest(Manifest(url, Sha, Sign(url, Sha)), publicKey));
+
+        // A mirror swapping the hash, pointing elsewhere, or dropping the signature is rejected.
+        var otherSha = new string('0', 64);
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(url, otherSha, Sign(url, Sha)), publicKey));
+        var evilUrl = "https://evil.example/Q.zip";
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(evilUrl, Sha, Sign(evilUrl, Sha)), publicKey));
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(url, Sha, ""), publicKey));
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(url, Sha, "not-base64!"), publicKey));
     }
 
     [Fact]

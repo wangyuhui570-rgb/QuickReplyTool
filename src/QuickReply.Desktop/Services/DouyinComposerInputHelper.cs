@@ -23,20 +23,22 @@ internal static class DouyinComposerInputHelper
             return false;
         }
 
-        bool activated;
+        // The send path activated Douyin once at the start. If it is no longer in front, the user
+        // switched apps on purpose: never force Douyin back over the window they are working in.
         try
         {
-            // Raw SetForegroundWindow is often rejected after our overlay hides. Attach to the
-            // foreground input queue first, same as the rest of the send path.
-            activated = ForegroundWindowTracker.ActivateWindowWithInputAttach(targetWindowHandle);
+            if (!IsTargetForeground(targetWindowHandle))
+            {
+                diagnostics["douyinComposerFocus"] = "skipped_user_left";
+                return false;
+            }
         }
         catch (Exception ex)
         {
-            activated = false;
-            diagnostics["douyinComposerActivateError"] = ex.GetType().Name;
+            diagnostics["douyinComposerFocus"] = "foreground_check_error:" + ex.GetType().Name;
+            return false;
         }
 
-        diagnostics["douyinComposerActivated"] = activated;
         if (TryFocusViaAutomation(targetWindowHandle, diagnostics))
         {
             return true;

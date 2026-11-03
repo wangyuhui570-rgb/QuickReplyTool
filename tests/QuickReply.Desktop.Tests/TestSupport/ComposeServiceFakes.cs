@@ -131,9 +131,16 @@ internal sealed class FakeClipboardService : IClipboardService
         return Task.FromResult(OnSetFileDropList?.Invoke(filePaths, persist) ?? SetFileDropListResult);
     }
 
+    public List<ClipboardSnapshot> RestoredSnapshots { get; } = [];
+
     public Task<ReplyActionResult> RestoreSnapshotAsync(ClipboardSnapshot snapshot, ClipboardFingerprint? expectedCurrentFingerprint = null)
     {
         RestoreCallCount++;
+        lock (RestoredSnapshots)
+        {
+            RestoredSnapshots.Add(snapshot);
+        }
+
         return Task.FromResult(RestoreResult);
     }
 }
@@ -301,5 +308,27 @@ internal sealed class FakeDouyinSendProgressVerifier : IDouyinSendProgressVerifi
         ConfirmImageCallCount++;
         diagnostics["douyinImagePasteConfirmFake"] = true;
         return Task.FromResult(new DouyinSendVerifyResult(ConfirmImageOutcome, Method, Detail));
+    }
+}
+
+internal sealed class FakeDouyinImageSendDialogHandler : IDouyinImageSendDialogHandler
+{
+    public DouyinImageDialogOutcome Outcome { get; set; } = DouyinImageDialogOutcome.NotFound;
+
+    public int ConfirmCallCount { get; private set; }
+
+    public DouyinSendButtonSnapshot CaptureSendButtons(IntPtr targetWindowHandle)
+    {
+        return new DouyinSendButtonSnapshot([]);
+    }
+
+    public Task<DouyinImageDialogOutcome> TryConfirmAsync(
+        IntPtr targetWindowHandle,
+        DouyinSendButtonSnapshot before,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        ConfirmCallCount++;
+        return Task.FromResult(Outcome);
     }
 }

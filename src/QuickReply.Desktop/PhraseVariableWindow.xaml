@@ -1,0 +1,116 @@
+﻿<Window x:Class="QuickReply.Desktop.PhraseVariableWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="填写变量"
+        Width="460"
+        SizeToContent="Height"
+        MinWidth="380"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Background="Transparent"
+        FontFamily="Segoe UI Variable Text">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="4"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <StaticResource x:Key="TitleBrush" ResourceKey="AppleTitleBrush" />
+        <StaticResource x:Key="TextBrush" ResourceKey="AppleTextBrush" />
+        <StaticResource x:Key="MutedBrush" ResourceKey="AppleMutedBrush" />
+    </Window.Resources>
+
+    <Border Margin="12" Style="{StaticResource AppleWindowChromeStyle}">
+        <Border Style="{StaticResource AppleWindowInnerPanelStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
+                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <StackPanel>
+                        <TextBlock x:Name="HeaderTextBlock"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}"
+                                   Text="填写变量" />
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="Tab 切换下一项，Enter 发送，Esc 取消。不改就用默认值。"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Margin="0,0,0,12"
+                        Style="{StaticResource AppleCompactDialogBodyCardStyle}">
+                    <StackPanel>
+                        <ItemsControl x:Name="FieldsItemsControl" KeyboardNavigation.TabNavigation="Cycle">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Margin="0,0,8,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   Text="{Binding Label}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Name}" />
+                                        <TextBox Grid.Column="1"
+                                                 Style="{StaticResource AppleInputTextBoxStyle}"
+                                                 Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="{Binding Hint}"
+                                                 GotKeyboardFocus="FieldTextBox_OnGotKeyboardFocus" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="PreviewTextBlock"
+                                   Margin="0,4,0,0"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   MaxHeight="120"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="Wrap" />
+                        <TextBlock x:Name="ErrorTextBlock"
+                                   Margin="0,6,0,0"
+                                   Foreground="#D93025"
+                                   Visibility="Collapsed"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2" Style="{StaticResource AppleDialogFooterBarStyle}">
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <Button Width="78"
+                                Margin="0,0,8,0"
+                                IsCancel="True"
+                                Click="CancelButton_OnClick"
+                                Content="取消"
+                                Style="{StaticResource AppleSecondaryButtonStyle}" />
+                        <Button x:Name="ConfirmButton"
+                                Width="88"
+                                IsDefault="True"
+                                Click="ConfirmButton_OnClick"
+                                Content="发送"
+                                Style="{StaticResource ApplePrimaryButtonStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Border>
+</Window>

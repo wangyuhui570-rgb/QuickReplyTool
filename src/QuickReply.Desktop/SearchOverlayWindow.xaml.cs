@@ -286,28 +286,27 @@ public partial class SearchOverlayWindow : Window
             return;
         }
 
+        if (modifiers == ModifierKeys.Control && key is Key.Left or Key.Right)
+        {
+            e.Handled = true;
+            _viewModel.SwitchMode(key == Key.Right ? 1 : -1);
+            RefreshSearchInputHints();
+            ShowModeToast();
+            FocusSearchBox();
+            return;
+        }
+
         if (modifiers != ModifierKeys.None)
         {
             return;
         }
 
-        if (key == Key.Left)
+        // ←/→ turn pages. With a single page they fall through, so the caret still moves in the box.
+        if ((key is Key.Left or Key.Right or Key.PageUp or Key.PageDown) && _viewModel.HasMultiplePages)
         {
             e.Handled = true;
-            _viewModel.SwitchMode(-1);
-            RefreshSearchInputHints();
-            ShowModeToast();
-            FocusSearchBox();
-            return;
-        }
-
-        if (key == Key.Right)
-        {
-            e.Handled = true;
-            _viewModel.SwitchMode(1);
-            RefreshSearchInputHints();
-            ShowModeToast();
-            FocusSearchBox();
+            _viewModel.ChangePage(key is Key.Right or Key.PageDown ? 1 : -1);
+            ScrollSelectionIntoView();
             return;
         }
 
