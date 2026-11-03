@@ -161,14 +161,26 @@ public sealed class AppUpdateServiceTests
     }
 
     [Fact]
-    public async Task Check_FallsBackToManifestWhenApiFails()
+    public async Task Check_FallsBackToDirectManifestWhenApiFails()
     {
         var manifest = $$"""{"version":"99.0.0","url":"https://github.com/a/b/releases/download/v/Q.zip","sha256":"{{Sha}}"}""";
-        var handler = new RoutingHandler(uri => uri.Host == "ghfast.top" ? manifest : null);
+        var handler = new RoutingHandler(uri => uri.Host == "github.com" ? manifest : null);
         var service = new AppUpdateService(() => new HttpClient(handler), Path.GetTempPath());
         var result = await service.CheckAsync("2.1.15");
         Assert.Equal(AppUpdateCheckStatus.UpdateAvailable, result.Status);
         Assert.Equal("99.0.0", result.Update!.Version);
+    }
+
+    [Fact]
+    public async Task Check_RejectsUnsignedManifestFromMirror()
+    {
+        // The mirror could rewrite url and sha256 together, so an unsigned copy must never install.
+        var manifest = $$"""{"version":"99.0.0","url":"{{AppUpdatePolicy.ReleaseDownloadPrefix}}v99.0.0/Q.zip","sha256":"{{Sha}}"}""";
+        var handler = new RoutingHandler(uri => uri.Host == "ghfast.top" ? manifest : null);
+        var service = new AppUpdateService(() => new HttpClient(handler), Path.GetTempPath());
+        var result = await service.CheckAsync("2.1.15");
+        Assert.Equal(AppUpdateCheckStatus.Failed, result.Status);
+        Assert.Null(result.Update);
     }
 
     [Fact]
