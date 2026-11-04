@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -15,6 +15,15 @@ internal interface IDouyinVideoUploader
         SendHotkeyMode sendHotkeyMode,
         IDictionary<string, object?> diagnostics,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Sends one image through the toolbar 图片 button; fakes that do not override it fail.</summary>
+    Task<ReplyActionResult> UploadImageAsync(
+        IntPtr targetWindowHandle,
+        string imagePath,
+        SendHotkeyMode sendHotkeyMode,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ReplyActionResult(false, "当前环境不支持抖店图片按钮上传。"));
 }
 
 /// <summary>
@@ -28,20 +37,57 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
     internal const string SubmittedMessage = "视频已提交给抖店上传，通常 10–20 秒后出现在会话里；输入框已交还，可继续打字。";
     internal const string StagedMessage = "已通过抖店视频按钮选中视频，请确认预览后手动发送。";
 
-    private const string VideoButtonLabel = "发送视频";
-    private const int VideoIconIndex = 2; // 0=emoji, 1=image, 2=video
+    // Toolbar order: 0=emoji, 1=image, 2=video.
+    private sealed record ToolbarMedia(string Label, int IconIndex, string Noun, string SubmittedMessage, string StagedMessage)
+    {
+        public bool IsImage => IconIndex == 1;
+
+        public static ToolbarMedia Video { get; } = new("发送视频", 2, "视频", DouyinVideoOpenDialogUploader.SubmittedMessage, DouyinVideoOpenDialogUploader.StagedMessage);
+
+        public static ToolbarMedia Image { get; } = new("发送图片", 1, "图片", "图片已通过抖店图片按钮发送。", "已通过抖店图片按钮选中图片，请确认后手动发送。");
+    }
     private const int IconOffsetFromBottom = 146;
     private static readonly int[] IconXsIn1280 = [394, 430, 466, 498, 538, 567, 581, 627, 668];
     private static readonly TimeSpan UiaLookupTimeout = TimeSpan.FromMilliseconds(1500);
 
     private readonly IKeyboardInputSimulator _keyboard;
+    private readonly IDouyinImageSendDialogHandler _imageSendDialogHandler;
 
-    public DouyinVideoOpenDialogUploader(IKeyboardInputSimulator keyboard)
+    public DouyinVideoOpenDialogUploader(
+        IKeyboardInputSimulator keyboard,
+        IDouyinImageSendDialogHandler? imageSendDialogHandler = null)
     {
         _keyboard = keyboard;
+        _imageSendDialogHandler = imageSendDialogHandler ?? new DouyinImageSendDialogHandler();
     }
 
-    public async Task<ReplyActionResult> UploadAsync(
+    public Task<ReplyActionResult> UploadAsync(
+        IntPtr targetWindowHandle,
+        string videoPath,
+        bool sendAfterUpload,
+        SendHotkeyMode sendHotkeyMode,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        return UploadMediaAsync(ToolbarMedia.Video, targetWindowHandle, videoPath, sendAfterUpload, sendHotkeyMode, diagnostics, cancellationToken);
+    }
+
+    /// <summary>
+    /// Douyin opens a "send this image?" dialog for a pasted image, and the paste path kept
+    /// missing it. The toolbar 图片 button (left of 视频) takes the same open-file route as videos.
+    /// </summary>
+    public Task<ReplyActionResult> UploadImageAsync(
+        IntPtr targetWindowHandle,
+        string imagePath,
+        SendHotkeyMode sendHotkeyMode,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        return UploadMediaAsync(ToolbarMedia.Image, targetWindowHandle, imagePath, true, sendHotkeyMode, diagnostics, cancellationToken);
+    }
+
+    private async Task<ReplyActionResult> UploadMediaAsync(
+        ToolbarMedia media,
         IntPtr targetWindowHandle,
         string videoPath,
         bool sendAfterUpload,
@@ -50,24 +96,25 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         CancellationToken cancellationToken = default)
     {
         diagnostics["douyinVideoStrategy"] = "toolbar_open_dialog";
+        diagnostics["douyinToolbarMedia"] = media.Noun;
         diagnostics["douyinVideoPath"] = videoPath;
 
         if (targetWindowHandle == IntPtr.Zero || !IsWindow(targetWindowHandle))
         {
             return new ReplyActionResult(
                 false,
-                "未找到抖店聊天窗口，无法打开视频选择框。",
+                $"未找到抖店聊天窗口，无法打开{media.Noun}选择框。",
                 FailureKind: ReplyActionFailureKind.MissingTargetWindow,
-                UserGuidance: "请先点开抖店/飞鸽聊天输入框，再重试发送视频。");
+                UserGuidance: $"请先点开抖店/飞鸽聊天输入框，再重试发送{media.Noun}。");
         }
 
         if (!File.Exists(videoPath))
         {
             return new ReplyActionResult(
                 false,
-                $"视频文件不存在：{videoPath}",
+                $"{media.Noun}文件不存在：{videoPath}",
                 FailureKind: ReplyActionFailureKind.MissingInput,
-                UserGuidance: "请确认视频文件仍存在后再试。");
+                UserGuidance: $"请确认{media.Noun}文件仍存在后再试。");
         }
 
         // Text and images may have taken several seconds before the video starts. If the user went
@@ -75,7 +122,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         if (UserLeftTarget(targetWindowHandle))
         {
             diagnostics["douyinVideoAborted"] = "user_left_before_start";
-            return CreateUserLeftResult("视频还没开始上传");
+            return CreateUserLeftResult($"{media.Noun}还没开始上传");
         }
 
         ShowWindow(targetWindowHandle, 9);
@@ -98,16 +145,16 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         {
             return new ReplyActionResult(
                 false,
-                "抖店聊天窗口过小，无法定位视频按钮。",
+                $"抖店聊天窗口过小，无法定位{media.Noun}按钮。",
                 FailureKind: ReplyActionFailureKind.ActivationFailed,
-                UserGuidance: "请把聊天窗口放大后再发送视频。");
+                UserGuidance: $"请把聊天窗口放大后再发送{media.Noun}。");
         }
 
         // Focus composer first (bottom-center) so the toolbar is the active chat's toolbar.
         AbsoluteClick(windowRect.Left + width * 2 / 3, windowRect.Top + height - 60);
         await Task.Delay(150, cancellationToken).ConfigureAwait(false);
 
-        var uiaPoint = await TryLocateVideoButtonByAutomationAsync(targetWindowHandle).ConfigureAwait(false);
+        var uiaPoint = await TryLocateVideoButtonByAutomationAsync(targetWindowHandle, media.Label).ConfigureAwait(false);
         int screenX;
         int screenY;
         if (uiaPoint is { } point)
@@ -118,7 +165,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         else
         {
             var scaleX = width / 1280.0;
-            screenX = windowRect.Left + (int)Math.Round(IconXsIn1280[VideoIconIndex] * scaleX);
+            screenX = windowRect.Left + (int)Math.Round(IconXsIn1280[media.IconIndex] * scaleX);
             screenY = windowRect.Top + height - IconOffsetFromBottom;
             diagnostics["douyinVideoLocator"] = "coordinates_fallback";
         }
@@ -137,8 +184,14 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         if (UserLeftTarget(targetWindowHandle))
         {
             diagnostics["douyinVideoAborted"] = "user_left_before_toolbar_click";
-            return CreateUserLeftResult("视频按钮没有点击");
+            return CreateUserLeftResult($"{media.Noun}按钮没有点击");
         }
+
+        // An image may come back as Douyin's confirm dialog; its button is told apart from the
+        // composer's own 发送 by comparing against the buttons present before the upload.
+        var buttonsBeforeUpload = media.IsImage
+            ? _imageSendDialogHandler.CaptureSendButtons(targetWindowHandle)
+            : default;
 
         AbsoluteMove(screenX - 15, screenY);
         await Task.Delay(80, cancellationToken).ConfigureAwait(false);
@@ -152,9 +205,9 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         {
             return new ReplyActionResult(
                 false,
-                "已点击抖店“发送视频”，但未出现文件选择框。",
+                $"已点击抖店“发送{media.Noun}”，但未出现文件选择框。",
                 FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
-                UserGuidance: "请手动点聊天输入框上方的“发送视频”按钮，选好文件后回车发送；或把窗口放到主屏后再让工具重试。");
+                UserGuidance: $"请手动点聊天输入框上方的“发送{media.Noun}”按钮，选好文件后回车发送；或把窗口放到主屏后再让工具重试。");
         }
 
         diagnostics["douyinVideoDialogHandle"] = $"0x{dialog.ToInt64():X}";
@@ -174,9 +227,9 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero); // WM_CLOSE
             return new ReplyActionResult(
                 false,
-                "已打开视频选择框，但写入文件路径失败。",
+                $"已打开{media.Noun}选择框，但写入文件路径失败。",
                 FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
-                UserGuidance: "请在弹出的文件框里手动选择视频，确认预览后回车发送。");
+                UserGuidance: $"请在弹出的文件框里手动选择{media.Noun}，确认预览后回车发送。");
         }
 
         if (!TryClickOpenButton(dialog))
@@ -184,7 +237,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             if (UserLeftTarget(targetWindowHandle, dialog))
             {
                 diagnostics["douyinVideoAborted"] = "user_left_before_open_enter";
-                return CreateUserLeftResult("视频文件框已填好路径，但没有按打开");
+                return CreateUserLeftResult($"{media.Noun}文件框已填好路径，但没有按打开");
             }
 
             _keyboard.SendEnter();
@@ -209,9 +262,33 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             diagnostics["douyinVideoDialogClosedByTool"] = true;
             return new ReplyActionResult(
                 false,
-                "视频文件选择框没有自己关掉，已关闭该窗口并停止，没有再次点击。",
+                $"{media.Noun}文件选择框没有自己关掉，已关闭该窗口并停止，没有再次点击。",
                 FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
-                UserGuidance: "请看一下抖店：如果视频预览已经在输入框里，手动点发送即可；如果不在，再发一次。本次不会自动重试。");
+                UserGuidance: $"请看一下抖店：如果{media.Noun}预览已经在输入框里，手动点发送即可；如果不在，再发一次。本次不会自动重试。");
+        }
+
+        if (media.IsImage && sendAfterUpload)
+        {
+            var dialogOutcome = await _imageSendDialogHandler.TryConfirmAsync(
+                targetWindowHandle,
+                buttonsBeforeUpload,
+                diagnostics,
+                cancellationToken).ConfigureAwait(false);
+            diagnostics["douyinImageDialogOutcome"] = dialogOutcome.ToString();
+            if (dialogOutcome == DouyinImageDialogOutcome.Confirmed)
+            {
+                diagnostics["videoSendState"] = "image_sent_via_dialog";
+                return new ReplyActionResult(true, media.SubmittedMessage);
+            }
+
+            if (dialogOutcome == DouyinImageDialogOutcome.ConfirmFailed)
+            {
+                return new ReplyActionResult(
+                    false,
+                    "抖店弹出了发送图片的确认框，但没能自动点上发送，已停止。",
+                    FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
+                    UserGuidance: "请在抖店的确认框里手动点发送。本次不会自动重试。");
+            }
         }
 
         // Give Douyin time to stage the upload preview in the composer (restored to 2.1.11's 900ms).
@@ -220,7 +297,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         if (!sendAfterUpload)
         {
             diagnostics["videoSendState"] = "staged";
-            return new ReplyActionResult(true, StagedMessage);
+            return new ReplyActionResult(true, media.StagedMessage);
         }
 
         // The send key goes to whatever is in front. If the user switched away during the upload
@@ -230,9 +307,9 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             diagnostics["videoSendState"] = "staged_user_left";
             return new ReplyActionResult(
                 false,
-                "视频已放进抖店输入框，但你已切到别的窗口，没有按发送键。",
+                $"{media.Noun}已放进抖店输入框，但你已切到别的窗口，没有按发送键。",
                 FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
-                UserGuidance: "回到抖店后确认视频预览，手动点发送即可。本次没有抢回焦点。");
+                UserGuidance: $"回到抖店后确认{media.Noun}预览，手动点发送即可。本次没有抢回焦点。");
         }
 
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
@@ -254,7 +331,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         // Return immediately: the upload continues inside Douyin, the user gets the input box back.
         // This is "submitted", not "delivered" – Douyin gives no reliable completion signal.
         diagnostics["videoSendState"] = "submitted";
-        return new ReplyActionResult(true, SubmittedMessage);
+        return new ReplyActionResult(true, media.SubmittedMessage);
     }
 
     /// <summary>
@@ -290,7 +367,7 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             UserGuidance: "回到抖店会话后再发一次视频。本次没有抢回焦点，也没有点击。");
     }
 
-    private static Task<(int X, int Y)?> TryLocateVideoButtonByAutomationAsync(IntPtr targetWindowHandle)
+    private static Task<(int X, int Y)?> TryLocateVideoButtonByAutomationAsync(IntPtr targetWindowHandle, string buttonLabel)
     {
         var lookup = Task.Run<(int X, int Y)?>(() =>
         {
@@ -304,9 +381,9 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
 
                 var condition = new System.Windows.Automation.OrCondition(
                     new System.Windows.Automation.PropertyCondition(
-                        System.Windows.Automation.AutomationElement.NameProperty, VideoButtonLabel),
+                        System.Windows.Automation.AutomationElement.NameProperty, buttonLabel),
                     new System.Windows.Automation.PropertyCondition(
-                        System.Windows.Automation.AutomationElement.HelpTextProperty, VideoButtonLabel));
+                        System.Windows.Automation.AutomationElement.HelpTextProperty, buttonLabel));
                 var element = root.FindFirst(System.Windows.Automation.TreeScope.Descendants, condition);
                 if (element is null)
                 {

@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using QuickReply.Desktop.Models;
 using QuickReply.Desktop.Services;
 
@@ -267,6 +267,22 @@ internal sealed class FakeDouyinVideoUploader : IDouyinVideoUploader
         return Task.FromResult(OnUpload?.Invoke(videoPath) ?? new ReplyActionResult(
             true,
             sendAfterUpload ? DouyinVideoOpenDialogUploader.SubmittedMessage : DouyinVideoOpenDialogUploader.StagedMessage));
+    }
+
+    public List<string> ImageCalls { get; } = [];
+
+    public Func<string, ReplyActionResult>? OnUploadImage { get; set; }
+
+    public Task<ReplyActionResult> UploadImageAsync(
+        IntPtr targetWindowHandle,
+        string imagePath,
+        SendHotkeyMode sendHotkeyMode,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default)
+    {
+        ImageCalls.Add(imagePath);
+        OnUploadStarted?.Invoke(imagePath);
+        return Task.FromResult(OnUploadImage?.Invoke(imagePath) ?? new ReplyActionResult(true, "图片已通过抖店图片按钮发送。"));
     }
 }
 
