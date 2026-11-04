@@ -50,12 +50,14 @@ public sealed class MessageComposeService : IMessageComposeService
         IDouyinSendProgressVerifier? douyinSendProgressVerifier = null,
         IDouyinImageSendDialogHandler? douyinImageSendDialogHandler = null)
     {
-        _douyinImageSendDialogHandler = douyinImageSendDialogHandler ?? new DouyinImageSendDialogHandler();
+        // The UI Automation scan froze the user's PC on the Douyin page, so production uses no scan;
+        // Douyin images go through the toolbar route instead of the paste route that needed it.
+        _douyinImageSendDialogHandler = douyinImageSendDialogHandler ?? NoDouyinImageSendDialogHandler.Instance;
         _externalWorkbenchService = externalWorkbenchService;
         _clipboardService = clipboardService;
         _keyboardInputSimulator = keyboardInputSimulator;
         _windowFocusService = windowFocusService;
-        _douyinVideoUploader = douyinVideoUploader ?? new DouyinVideoOpenDialogUploader(keyboardInputSimulator, _douyinImageSendDialogHandler);
+        _douyinVideoUploader = douyinVideoUploader ?? new DouyinVideoOpenDialogUploader(keyboardInputSimulator);
         _douyinVideoSendGuard = douyinVideoSendGuard ?? SharedDouyinVideoSendGuard;
         _douyinSendProgressVerifier = douyinSendProgressVerifier
             ?? new DouyinSendProgressVerifier(keyboardInputSimulator, clipboardService);

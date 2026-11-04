@@ -29,7 +29,7 @@ internal interface IDouyinVideoUploader
 /// <summary>
 /// Douyin/飞鸽 ignores a FileDrop paste of a video (the Chromium composer drops it silently),
 /// so every Douyin video goes through the toolbar "发送视频" button and the native OpenFileDialog.
-/// The button is located with UI Automation (Name/HelpText "发送视频") first and falls back to
+/// Images take the same route through the toolbar 图片 button. Buttons are clicked at
 /// window-relative coordinates measured on DESKTOP-NTRMANG.
 /// </summary>
 internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
@@ -38,27 +38,22 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
     internal const string StagedMessage = "已通过抖店视频按钮选中视频，请确认预览后手动发送。";
 
     // Toolbar order: 0=emoji, 1=image, 2=video.
-    private sealed record ToolbarMedia(string Label, int IconIndex, string Noun, string SubmittedMessage, string StagedMessage)
+    private sealed record ToolbarMedia(int IconIndex, string Noun, string SubmittedMessage, string StagedMessage)
     {
         public bool IsImage => IconIndex == 1;
 
-        public static ToolbarMedia Video { get; } = new("发送视频", 2, "视频", DouyinVideoOpenDialogUploader.SubmittedMessage, DouyinVideoOpenDialogUploader.StagedMessage);
+        public static ToolbarMedia Video { get; } = new(2, "视频", DouyinVideoOpenDialogUploader.SubmittedMessage, DouyinVideoOpenDialogUploader.StagedMessage);
 
-        public static ToolbarMedia Image { get; } = new("发送图片", 1, "图片", "图片已通过抖店图片按钮发送。", "已通过抖店图片按钮选中图片，请确认后手动发送。");
+        public static ToolbarMedia Image { get; } = new(1, "图片", "图片已通过抖店图片按钮发送。", "已通过抖店图片按钮选中图片，请确认后手动发送。");
     }
     private const int IconOffsetFromBottom = 146;
     private static readonly int[] IconXsIn1280 = [394, 430, 466, 498, 538, 567, 581, 627, 668];
-    private static readonly TimeSpan UiaLookupTimeout = TimeSpan.FromMilliseconds(1500);
 
     private readonly IKeyboardInputSimulator _keyboard;
-    private readonly IDouyinImageSendDialogHandler _imageSendDialogHandler;
 
-    public DouyinVideoOpenDialogUploader(
-        IKeyboardInputSimulator keyboard,
-        IDouyinImageSendDialogHandler? imageSendDialogHandler = null)
+    public DouyinVideoOpenDialogUploader(IKeyboardInputSimulator keyboard)
     {
         _keyboard = keyboard;
-        _imageSendDialogHandler = imageSendDialogHandler ?? new DouyinImageSendDialogHandler();
     }
 
     public Task<ReplyActionResult> UploadAsync(
@@ -97,6 +92,11 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
     {
         diagnostics["douyinVideoStrategy"] = "toolbar_open_dialog";
         diagnostics["douyinToolbarMedia"] = media.Noun;
+        SearchOverlayDiagnostics.Log("message_compose", "douyin_toolbar_upload_started", new Dictionary<string, object?>
+        {
+            ["media"] = media.Noun,
+            ["path"] = videoPath
+        });
         diagnostics["douyinVideoPath"] = videoPath;
 
         if (targetWindowHandle == IntPtr.Zero || !IsWindow(targetWindowHandle))
@@ -154,44 +154,25 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
         AbsoluteClick(windowRect.Left + width * 2 / 3, windowRect.Top + height - 60);
         await Task.Delay(150, cancellationToken).ConfigureAwait(false);
 
-        var uiaPoint = await TryLocateVideoButtonByAutomationAsync(targetWindowHandle, media.Label).ConfigureAwait(false);
-        int screenX;
-        int screenY;
-        if (uiaPoint is { } point)
-        {
-            (screenX, screenY) = point;
-            diagnostics["douyinVideoLocator"] = "ui_automation";
-        }
-        else
-        {
-            var scaleX = width / 1280.0;
-            screenX = windowRect.Left + (int)Math.Round(IconXsIn1280[media.IconIndex] * scaleX);
-            screenY = windowRect.Top + height - IconOffsetFromBottom;
-            diagnostics["douyinVideoLocator"] = "coordinates_fallback";
-        }
+        // Coordinates only. Every logged send so far fell back to them anyway: the UI Automation
+        // lookup never found the button and walked the whole Douyin page, which costs a lot of CPU.
+        var scaleX = width / 1280.0;
+        var screenX = windowRect.Left + (int)Math.Round(IconXsIn1280[media.IconIndex] * scaleX);
+        var screenY = windowRect.Top + height - IconOffsetFromBottom;
+        diagnostics["douyinVideoLocator"] = "coordinates";
 
         diagnostics["douyinVideoClickX"] = screenX;
         diagnostics["douyinVideoClickY"] = screenY;
 
-        // Match 2.1.11 hover timings. Coordinates need the full hover; UIA still uses the same
-        // sequence so a near-miss hitbox still opens the dialog.
-        if (string.Equals(diagnostics["douyinVideoLocator"] as string, "coordinates_fallback", StringComparison.Ordinal))
-        {
-            // Extra activation settle before coordinate click (UIA path already spent ~1.5s looking).
-            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
-        }
+        // Match 2.1.11 hover timings: activation settle, then hover before the coordinate click so
+        // a near-miss hitbox still opens the dialog.
+        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
         if (UserLeftTarget(targetWindowHandle))
         {
             diagnostics["douyinVideoAborted"] = "user_left_before_toolbar_click";
             return CreateUserLeftResult($"{media.Noun}按钮没有点击");
         }
-
-        // An image may come back as Douyin's confirm dialog; its button is told apart from the
-        // composer's own 发送 by comparing against the buttons present before the upload.
-        var buttonsBeforeUpload = media.IsImage
-            ? _imageSendDialogHandler.CaptureSendButtons(targetWindowHandle)
-            : default;
 
         AbsoluteMove(screenX - 15, screenY);
         await Task.Delay(80, cancellationToken).ConfigureAwait(false);
@@ -267,30 +248,9 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
                 UserGuidance: $"请看一下抖店：如果{media.Noun}预览已经在输入框里，手动点发送即可；如果不在，再发一次。本次不会自动重试。");
         }
 
-        if (media.IsImage && sendAfterUpload)
-        {
-            var dialogOutcome = await _imageSendDialogHandler.TryConfirmAsync(
-                targetWindowHandle,
-                buttonsBeforeUpload,
-                diagnostics,
-                cancellationToken).ConfigureAwait(false);
-            diagnostics["douyinImageDialogOutcome"] = dialogOutcome.ToString();
-            if (dialogOutcome == DouyinImageDialogOutcome.Confirmed)
-            {
-                diagnostics["videoSendState"] = "image_sent_via_dialog";
-                return new ReplyActionResult(true, media.SubmittedMessage);
-            }
-
-            if (dialogOutcome == DouyinImageDialogOutcome.ConfirmFailed)
-            {
-                return new ReplyActionResult(
-                    false,
-                    "抖店弹出了发送图片的确认框，但没能自动点上发送，已停止。",
-                    FailureKind: ReplyActionFailureKind.ManualConfirmationRequired,
-                    UserGuidance: "请在抖店的确认框里手动点发送。本次不会自动重试。");
-            }
-        }
-
+        // Images take exactly the video steps from here: no UI Automation scan of the page. A
+        // full-tree scan of the Douyin page before the click took seconds of CPU on the user's
+        // machine (2026-11-04: the PC froze and the toolbar was never clicked).
         // Give Douyin time to stage the upload preview in the composer (restored to 2.1.11's 900ms).
         await Task.Delay(900, cancellationToken).ConfigureAwait(false);
 
@@ -365,58 +325,6 @@ internal sealed class DouyinVideoOpenDialogUploader : IDouyinVideoUploader
             $"你已切到别的窗口，{stage}，已停止。",
             FailureKind: ReplyActionFailureKind.FocusLost,
             UserGuidance: "回到抖店会话后再发一次视频。本次没有抢回焦点，也没有点击。");
-    }
-
-    private static Task<(int X, int Y)?> TryLocateVideoButtonByAutomationAsync(IntPtr targetWindowHandle, string buttonLabel)
-    {
-        var lookup = Task.Run<(int X, int Y)?>(() =>
-        {
-            try
-            {
-                var root = System.Windows.Automation.AutomationElement.FromHandle(targetWindowHandle);
-                if (root is null)
-                {
-                    return null;
-                }
-
-                var condition = new System.Windows.Automation.OrCondition(
-                    new System.Windows.Automation.PropertyCondition(
-                        System.Windows.Automation.AutomationElement.NameProperty, buttonLabel),
-                    new System.Windows.Automation.PropertyCondition(
-                        System.Windows.Automation.AutomationElement.HelpTextProperty, buttonLabel));
-                var element = root.FindFirst(System.Windows.Automation.TreeScope.Descendants, condition);
-                if (element is null)
-                {
-                    return null;
-                }
-
-                var rect = element.Current.BoundingRectangle;
-                if (rect.IsEmpty || rect.Width < 4 || rect.Height < 4)
-                {
-                    return null;
-                }
-
-                return ((int)(rect.Left + rect.Width / 2), (int)(rect.Top + rect.Height / 2));
-            }
-            catch
-            {
-                return null;
-            }
-        });
-
-        return Task.WhenAny(lookup, Task.Delay(UiaLookupTimeout)).ContinueWith(
-            finished =>
-            {
-                if (finished.Result == lookup && lookup.Status == TaskStatus.RanToCompletion)
-                {
-                    return lookup.Result;
-                }
-
-                // Observe a late failure so it never surfaces as an unobserved task exception.
-                _ = lookup.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
-                return ((int X, int Y)?)null;
-            },
-            TaskScheduler.Default);
     }
 
     private static async Task<IntPtr> WaitForOpenFileDialogAsync(
