@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using QuickReply.Core.Services;
 using QuickReply.Desktop.Commands;
 using QuickReply.Desktop.Models;
 using QuickReply.Desktop.Services;
@@ -50,6 +51,45 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
     private bool _suppressStartupConfigurationNotifications;
     private bool _appliedLaunchAtStartup;
     private bool _appliedRunAsAdministrator;
+
+    /// <summary>
+    /// Asks the agent for a phrase's variable values; null result means cancelled. Set by the app.
+    /// Without it (tests), defaults are used and a variable without a default stops the send.
+    /// </summary>
+    public Func<ReplyPhrase?, IReadOnlyList<PhraseVariable>, Task<IReadOnlyDictionary<string, string>?>>? PhraseVariablePrompt { get; set; }
+
+    /// <summary>
+    /// Replaces {名称} / {名称=默认值} before a phrase is sent, input or copied. Phrases without
+    /// variables pass through untouched. Stopped is set when the agent cancelled or left one empty.
+    /// </summary>
+    internal async Task<(string Content, ReplyActionResult? Stopped)> FillPhraseVariablesAsync(ReplyPhrase? phrase, string content)
+    {
+        var variables = PhraseTemplate.Parse(content);
+        if (variables.Count == 0)
+        {
+            return (content, null);
+        }
+
+        var values = PhraseVariablePrompt is null
+            ? variables.ToDictionary(variable => variable.Name, variable => variable.DefaultValue)
+            : await PhraseVariablePrompt(phrase, variables);
+        if (values is null)
+        {
+            return (content, new ReplyActionResult(false, "已取消，短语没有发出。"));
+        }
+
+        var missing = PhraseTemplate.FindMissing(variables, values);
+        if (missing.Count > 0)
+        {
+            return (content, new ReplyActionResult(
+                false,
+                $"变量“{string.Join("”“", missing.Select(variable => variable.Name))}”还没填，短语没有发出。",
+                FailureKind: ReplyActionFailureKind.MissingInput,
+                UserGuidance: "请填写变量后再发送，或在短语里给它写上默认值，例如 {天数=3}。"));
+        }
+
+        return (PhraseTemplate.Fill(content, values), null);
+    }
 
     public MainViewModel(
         SqliteAppDataStore dataStore,
@@ -320,8 +360,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         return Categories
             .SelectMany(category => category.Phrases)
             .Where(phrase => PhraseMatchesKeyword(phrase, normalizedKeyword))
-            .OrderBy(phrase => !phrase.Title.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(phrase => !phrase.Tags.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(phrase => ScorePhrase(phrase, normalizedKeyword))
             .ThenByDescending(phrase => GetPhraseSendCount(phrase.Id))
             .ThenByDescending(phrase => GetPhraseLastSentAt(phrase.Id) ?? DateTimeOffset.MinValue)
             .ThenBy(phrase => phrase.CategoryName)
@@ -340,9 +379,8 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         }
 
         return FileItems
-            .Where(fileItem => FileItemMatchesKeyword(fileItem, normalizedKeyword))
-            .OrderBy(fileItem => !fileItem.DisplayName.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(fileItem => !fileItem.FileName.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase))
+            .Where(fileItem => ScoreFileItem(fileItem, normalizedKeyword) > 0)
+            .OrderByDescending(fileItem => ScoreFileItem(fileItem, normalizedKeyword))
             .ThenByDescending(fileItem => GetFileUseCount(fileItem.Id))
             .ThenByDescending(fileItem => GetFileLastUsedAt(fileItem.Id) ?? DateTimeOffset.MinValue)
             .ThenBy(fileItem => fileItem.DisplayName)
@@ -469,10 +507,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return;
         }
 
+        var filled = await FillPhraseVariablesAsync(SelectedPhrase, content);
+        if (filled.Stopped is { } stopped)
+        {
+            StatusMessage = stopped.Message;
+            return;
+        }
+
         try
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.ExecuteAsync(content, Settings, ComposeActionMode.Input, ResolvePhraseImagePaths(SelectedPhrase));
+            var result = await _messageComposeService.ExecuteAsync(filled.Content, Settings, ComposeActionMode.Input, ResolvePhraseImagePaths(SelectedPhrase));
             LogSelectedPhraseUsage(triggerSource, searchKeyword, ComposeActionMode.Input, result, targetWindowHandle);
             StatusMessage = result.Message;
         }
@@ -501,10 +546,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return;
         }
 
+        var filled = await FillPhraseVariablesAsync(SelectedPhrase, content);
+        if (filled.Stopped is { } stopped)
+        {
+            StatusMessage = stopped.Message;
+            return;
+        }
+
         try
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.ExecuteAsync(content, Settings, ComposeActionMode.Send, ResolvePhraseImagePaths(SelectedPhrase));
+            var result = await _messageComposeService.ExecuteAsync(filled.Content, Settings, ComposeActionMode.Send, ResolvePhraseImagePaths(SelectedPhrase));
             if (result.Success && SelectedPhrase is not null)
             {
                 RecordPhraseSend(SelectedPhrase.Id);
@@ -543,10 +595,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return emptyResult;
         }
 
+        var filled = await FillPhraseVariablesAsync(phrase, phrase.Content);
+        if (filled.Stopped is { } stopped)
+        {
+            StatusMessage = stopped.Message;
+            return stopped;
+        }
+
         try
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.CopyToClipboardAsync(phrase.Content, ResolvePhraseImagePaths(phrase));
+            var result = await _messageComposeService.CopyToClipboardAsync(filled.Content, ResolvePhraseImagePaths(phrase));
             LogPhraseUsage(phrase, triggerSource, searchKeyword, ComposeActionMode.Copy, result, targetWindowHandle);
             StatusMessage = $"{GetPhraseDisplayName(phrase)}：{result.Message}";
             return result;
@@ -607,10 +666,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return emptyResult;
         }
 
+        var filled = await FillPhraseVariablesAsync(phrase, phrase.Content);
+        if (filled.Stopped is { } stopped)
+        {
+            StatusMessage = stopped.Message;
+            return stopped;
+        }
+
         try
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.ExecuteAsync(phrase.Content, Settings, ComposeActionMode.Input, ResolvePhraseImagePaths(phrase));
+            var result = await _messageComposeService.ExecuteAsync(filled.Content, Settings, ComposeActionMode.Input, ResolvePhraseImagePaths(phrase));
             LogPhraseUsage(phrase, triggerSource, searchKeyword, ComposeActionMode.Input, result, targetWindowHandle, recognitionOverride);
             StatusMessage = $"{GetPhraseDisplayName(phrase)}：{result.Message}";
             return result;
@@ -1189,10 +1255,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return emptyResult;
         }
 
+        var filled = await FillPhraseVariablesAsync(phrase, phrase.Content);
+        if (filled.Stopped is { } stopped)
+        {
+            StatusMessage = stopped.Message;
+            return stopped;
+        }
+
         try
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.ExecuteAsync(phrase.Content, Settings, ComposeActionMode.Send, ResolvePhraseImagePaths(phrase));
+            var result = await _messageComposeService.ExecuteAsync(filled.Content, Settings, ComposeActionMode.Send, ResolvePhraseImagePaths(phrase));
             LogPhraseUsage(phrase, triggerSource, searchKeyword, ComposeActionMode.Send, result, targetWindowHandle, recognitionOverride);
             RecordPhraseSend(phrase.Id);
             StatusMessage = $"{phrase.Title}：{result.Message}";
@@ -1824,10 +1897,17 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             return;
         }
 
+        var filled = await FillPhraseVariablesAsync(SelectedPhrase, content);
+        if (filled.Stopped is { } stopped)
+        {
+            StatusMessage = stopped.Message;
+            return;
+        }
+
         try
         {
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.CopyToClipboardAsync(content, ResolvePhraseImagePaths(SelectedPhrase));
+            var result = await _messageComposeService.CopyToClipboardAsync(filled.Content, ResolvePhraseImagePaths(SelectedPhrase));
             LogSelectedPhraseUsage("selected_phrase_copy", null, ComposeActionMode.Copy, result, targetWindowHandle);
             StatusMessage = result.Message;
         }
@@ -2228,8 +2308,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
         var results = IsSearchActive
             ? resultsQuery
-                .OrderBy(phrase => !phrase.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                .ThenBy(phrase => !phrase.Tags.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(phrase => ScorePhrase(phrase, keyword))
                 .ThenByDescending(phrase => GetPhraseSendCount(phrase.Id))
                 .ThenByDescending(phrase => GetPhraseLastSentAt(phrase.Id) ?? DateTimeOffset.MinValue)
                 .ThenBy(phrase => phrase.CategoryName)
@@ -3021,11 +3100,15 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         _ = _dataStore.RecordFileUseAsync(fileItemId, now);
     }
 
+    // Space-separated keywords must all match; letters also match pinyin initials ("th" → 退货).
     private static bool PhraseMatchesKeyword(ReplyPhrase phrase, string keyword)
     {
-        return phrase.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-               phrase.Tags.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-               phrase.Content.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+        return ScorePhrase(phrase, keyword) > 0;
+    }
+
+    internal static int ScorePhrase(ReplyPhrase phrase, string keyword)
+    {
+        return SearchKeywordMatcher.Score(keyword, phrase.Title, phrase.Tags, phrase.Content);
     }
 
     private static string GetPhraseDisplayName(ReplyPhrase phrase)
@@ -3147,11 +3230,9 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         }
     }
 
-    private static bool FileItemMatchesKeyword(LibraryFileItem fileItem, string keyword)
+    internal static int ScoreFileItem(LibraryFileItem fileItem, string keyword)
     {
-        return fileItem.DisplayName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-               fileItem.FileName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-               fileItem.FullPath.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+        return SearchKeywordMatcher.Score(keyword, fileItem.DisplayName, fileItem.FileName, fileItem.FullPath);
     }
 
     private void LogSelectedPhraseUsage(

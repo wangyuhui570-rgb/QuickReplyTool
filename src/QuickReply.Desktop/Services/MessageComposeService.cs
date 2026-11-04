@@ -47,8 +47,10 @@ public sealed class MessageComposeService : IMessageComposeService
         IWindowFocusService windowFocusService,
         IDouyinVideoUploader? douyinVideoUploader = null,
         DouyinVideoSendGuard? douyinVideoSendGuard = null,
-        IDouyinSendProgressVerifier? douyinSendProgressVerifier = null)
+        IDouyinSendProgressVerifier? douyinSendProgressVerifier = null,
+        IDouyinImageSendDialogHandler? douyinImageSendDialogHandler = null)
     {
+        _douyinImageSendDialogHandler = douyinImageSendDialogHandler ?? new DouyinImageSendDialogHandler();
         _externalWorkbenchService = externalWorkbenchService;
         _clipboardService = clipboardService;
         _keyboardInputSimulator = keyboardInputSimulator;
@@ -63,6 +65,9 @@ public sealed class MessageComposeService : IMessageComposeService
     private readonly IDouyinVideoUploader _douyinVideoUploader;
     private readonly DouyinVideoSendGuard _douyinVideoSendGuard;
     private readonly IDouyinSendProgressVerifier _douyinSendProgressVerifier;
+    private readonly IDouyinImageSendDialogHandler _douyinImageSendDialogHandler;
+    private readonly object _pendingClipboardRestoreSync = new();
+    private PendingClipboardRestore? _pendingClipboardRestore;
 
     public async Task<ReplyActionResult> CopyToClipboardAsync(string text, IReadOnlyCollection<string>? imagePaths = null)
     {
@@ -391,6 +396,7 @@ public sealed class MessageComposeService : IMessageComposeService
         }
 
         var douyinImagePasteConfirmed = false;
+        var douyinImageSentViaDialog = false;
 
         async Task<ReplyActionResult?> PasteImagesAsync(bool prepareClipboardOnly = false)
         {
@@ -421,10 +427,29 @@ public sealed class MessageComposeService : IMessageComposeService
             // One paste only. A missed confirm must not click or paste again.
             diagnostics["douyinImagePasteAttempt"] = 1;
             diagnostics["douyinImagePasteMaxAttempts"] = DouyinComposerInputHelper.MaxImagePasteAttempts;
+            var watchForImageDialog = isDouyin && mode == ComposeActionMode.Send;
+            DouyinSendButtonSnapshot buttonsBeforePaste = default;
             if (isDouyin)
             {
+                // Stop instead of pulling Douyin back to the front when the user switched away.
+                if (DidForegroundLeaveTarget(activationResult.TargetWindowHandle, diagnostics, "before_composer_focus"))
+                {
+                    return await FailAsync(
+                        "foreground_left",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.FocusLost,
+                            "焦点已离开抖店窗口，图片没有粘贴。",
+                            "请回到原来的抖店会话后再发一次。本次没有自动重试，也没有再抢焦点。"));
+                }
+
                 DouyinComposerInputHelper.TryFocusComposer(activationResult.TargetWindowHandle, diagnostics);
                 await Task.Delay(DouyinComposerInputHelper.PostFocusSettleMs).ConfigureAwait(false);
+                if (watchForImageDialog)
+                {
+                    buttonsBeforePaste = await Task.Run(
+                            () => _douyinImageSendDialogHandler.CaptureSendButtons(activationResult.TargetWindowHandle))
+                        .ConfigureAwait(false);
+                }
             }
 
             var pasteFailure = await TryPasteClipboardPayloadAsync(
@@ -454,6 +479,32 @@ public sealed class MessageComposeService : IMessageComposeService
             if (!isDouyin)
             {
                 return null;
+            }
+
+            if (watchForImageDialog)
+            {
+                var dialogOutcome = await _douyinImageSendDialogHandler.TryConfirmAsync(
+                    activationResult.TargetWindowHandle,
+                    buttonsBeforePaste,
+                    diagnostics).ConfigureAwait(false);
+                diagnostics["douyinImageDialogOutcome"] = dialogOutcome.ToString();
+                if (dialogOutcome == DouyinImageDialogOutcome.Confirmed)
+                {
+                    douyinImagePasteConfirmed = true;
+                    douyinImageSentViaDialog = true;
+                    diagnostics["douyinImagePasteConfirmed"] = true;
+                    return null;
+                }
+
+                if (dialogOutcome == DouyinImageDialogOutcome.ConfirmFailed)
+                {
+                    return await FailAsync(
+                        "image_dialog_unconfirmed",
+                        CreateFailureResult(
+                            ReplyActionFailureKind.ManualConfirmationRequired,
+                            "抖店弹出了发送图片的确认框，但没能自动点上发送，已停止。",
+                            "请在抖店的确认框里手动点发送，再把剩下的内容补上。本次不会自动重试。"));
+                }
             }
 
             var confirm = await _douyinSendProgressVerifier.ConfirmComposerHasImageAsync(
@@ -511,6 +562,16 @@ public sealed class MessageComposeService : IMessageComposeService
             DouyinSendVerifyExpectation? verifyExpectation = null,
             bool imagePasteConfirmed = false)
         {
+            // The image already went out through Douyin's confirm dialog. Enter here would hit
+            // an empty composer, and the verify probe would only risk cancelling something.
+            if (isDouyin && composerHasImages && douyinImageSentViaDialog)
+            {
+                diagnostics["douyinImageSendViaDialogSkippedHotkey"] = true;
+                sentStageCount++;
+                diagnostics["richImageSentStageCount"] = sentStageCount;
+                return null;
+            }
+
             // Never empty-Enter an image stage when Douyin paste was not confirmed.
             if (isDouyin &&
                 composerHasImages &&
@@ -549,6 +610,12 @@ public sealed class MessageComposeService : IMessageComposeService
                     diagnostics).ConfigureAwait(false);
                 diagnostics["douyinSendVerifyOutcome"] = verify.Outcome.ToString();
                 diagnostics["douyinSendVerifyMethod"] = verify.Method;
+                if (_douyinSendProgressVerifier.ClipboardFingerprintAfterLastProbe is { } probeFingerprint)
+                {
+                    // The probe put our payload back on the clipboard; the queued restore must
+                    // compare against that state or it would skip and leave the user's clipboard lost.
+                    clipboardPayloadFingerprint = probeFingerprint;
+                }
                 if (verify.Outcome == DouyinSendVerifyOutcome.StillHasContent)
                 {
                     return await FailAsync(
@@ -787,6 +854,13 @@ public sealed class MessageComposeService : IMessageComposeService
 
         diagnostics["activateWindowMs"] = stopwatch.ElapsedMilliseconds;
         diagnostics["effectiveRestoreFocusDelayMs"] = GetEffectiveRichRestoreFocusDelayMs(settings, attemptContext.HostProfile);
+        var watchForImageDialog = mode == ComposeActionMode.Send &&
+            attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
+            filePayload.ContainsImage;
+        var buttonsBeforePaste = watchForImageDialog
+            ? await Task.Run(() => _douyinImageSendDialogHandler.CaptureSendButtons(activationResult.TargetWindowHandle))
+                .ConfigureAwait(false)
+            : default;
         var pasteFailure = await TryPasteClipboardPayloadAsync(
             activationResult.TargetWindowHandle,
             "file_drop",
@@ -805,7 +879,30 @@ public sealed class MessageComposeService : IMessageComposeService
             return pasteFailure.Value;
         }
 
-        if (mode == ComposeActionMode.Send)
+        var sentViaDialog = false;
+        if (watchForImageDialog)
+        {
+            var dialogOutcome = await _douyinImageSendDialogHandler.TryConfirmAsync(
+                activationResult.TargetWindowHandle,
+                buttonsBeforePaste,
+                diagnostics).ConfigureAwait(false);
+            diagnostics["douyinImageDialogOutcome"] = dialogOutcome.ToString();
+            if (dialogOutcome == DouyinImageDialogOutcome.ConfirmFailed)
+            {
+                await TryRestoreClipboardAsync(clipboardSnapshot, clipboardPayloadFingerprint);
+                diagnostics["result"] = "image_dialog_unconfirmed";
+                diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+                SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+                return CreateFailureResult(
+                    ReplyActionFailureKind.ManualConfirmationRequired,
+                    "抖店弹出了发送图片的确认框，但没能自动点上发送，已停止。",
+                    "请在抖店的确认框里手动点发送。本次不会自动重试。");
+            }
+
+            sentViaDialog = dialogOutcome == DouyinImageDialogOutcome.Confirmed;
+        }
+
+        if (mode == ComposeActionMode.Send && !sentViaDialog)
         {
             if (transferPlan.SkipAutomaticSendHotkey)
             {
@@ -1133,6 +1230,24 @@ public sealed class MessageComposeService : IMessageComposeService
         IDictionary<string, object?> diagnostics,
         Stopwatch stopwatch)
     {
+        // A send that starts while the previous send's restore is still queued would back up the
+        // previous phrase. Take over that restore instead: it still holds the user's own clipboard.
+        var pending = TakePendingClipboardRestore();
+        if (pending is not null)
+        {
+            var currentFingerprint = await _clipboardService.CaptureCurrentFingerprintAsync().ConfigureAwait(false);
+            if (currentFingerprint is not null &&
+                string.Equals(currentFingerprint.Value, pending.ExpectedFingerprint.Value, StringComparison.Ordinal))
+            {
+                diagnostics["snapshotReusedFromPendingRestore"] = true;
+                diagnostics["snapshotMs"] = stopwatch.ElapsedMilliseconds;
+                diagnostics["snapshotCaptured"] = pending.Snapshot.CaptureSucceeded;
+                diagnostics["snapshotHasContent"] = pending.Snapshot.HasContent;
+                diagnostics["snapshotCanRestore"] = pending.Snapshot.CanRestore;
+                return pending.Snapshot;
+            }
+        }
+
         var snapshot = await _clipboardService.CaptureSnapshotAsync().ConfigureAwait(false);
         diagnostics["snapshotMs"] = stopwatch.ElapsedMilliseconds;
         diagnostics["snapshotCaptured"] = snapshot.CaptureSucceeded;
@@ -1340,6 +1455,12 @@ public sealed class MessageComposeService : IMessageComposeService
             return;
         }
 
+        var pending = new PendingClipboardRestore(snapshot, expectedCurrentFingerprint);
+        lock (_pendingClipboardRestoreSync)
+        {
+            _pendingClipboardRestore = pending;
+        }
+
         _ = Task.Run(async () =>
         {
             try
@@ -1349,6 +1470,17 @@ public sealed class MessageComposeService : IMessageComposeService
                     await Task.Delay(delayMs).ConfigureAwait(false);
                 }
 
+                lock (_pendingClipboardRestoreSync)
+                {
+                    // A newer send took this restore over; it will restore the same snapshot later.
+                    if (!ReferenceEquals(_pendingClipboardRestore, pending))
+                    {
+                        return;
+                    }
+
+                    _pendingClipboardRestore = null;
+                }
+
                 await TryRestoreClipboardAsync(snapshot, expectedCurrentFingerprint).ConfigureAwait(false);
             }
             catch
@@ -1356,6 +1488,18 @@ public sealed class MessageComposeService : IMessageComposeService
             }
         });
     }
+
+    private PendingClipboardRestore? TakePendingClipboardRestore()
+    {
+        lock (_pendingClipboardRestoreSync)
+        {
+            var pending = _pendingClipboardRestore;
+            _pendingClipboardRestore = null;
+            return pending;
+        }
+    }
+
+    private sealed record PendingClipboardRestore(ClipboardSnapshot Snapshot, ClipboardFingerprint ExpectedFingerprint);
 
     private static int GetEffectiveTextOnlyRestoreFocusDelayMs(AppSettings settings, SendHostProfile hostProfile)
     {

@@ -19,6 +19,7 @@ public sealed class ClipboardService : IClipboardService
     private const int MaxRetryDelayMs = 300;
     private const int MaxCachedImages = 24;
     private const int DispatcherOperationTimeoutMs = 4000;
+    private const long MaxClonedImageBytes = 32L * 1024 * 1024;
     private static readonly ConcurrentDictionary<string, CachedImageEntry> ImageCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object ClipboardDispatcherSyncRoot = new();
     private static Dispatcher? _clipboardDispatcher;
@@ -346,18 +347,15 @@ public sealed class ClipboardService : IClipboardService
                 return new ReplyActionResult(true, "无法确认当前剪贴板是否仍是程序写入的内容，已跳过恢复。");
             }
 
-            if (expectedCurrentFingerprint is not null)
+            // The check runs inside every retry, right before the write. A copy made while an
+            // earlier attempt was blocked on a busy clipboard must not be overwritten by a retry.
+            var restored = await RetryClipboardAccessAsync(() =>
             {
-                var currentFingerprint = await CaptureCurrentFingerprintAsync();
-                if (currentFingerprint is null ||
-                    !string.Equals(currentFingerprint.Value, expectedCurrentFingerprint.Value, StringComparison.Ordinal))
+                if (!string.Equals(CreateSequenceFingerprint().Value, expectedCurrentFingerprint.Value, StringComparison.Ordinal))
                 {
-                    return new ReplyActionResult(true, "检测到剪贴板已被更新，跳过恢复以免覆盖新的内容。");
+                    return false;
                 }
-            }
 
-            await RetryClipboardAccessAsync(() =>
-            {
                 if (!snapshot.HasContent)
                 {
                     System.Windows.Clipboard.Clear();
@@ -371,7 +369,9 @@ public sealed class ClipboardService : IClipboardService
                 return true;
             });
 
-            return new ReplyActionResult(true, "已恢复原剪贴板内容。");
+            return restored
+                ? new ReplyActionResult(true, "已恢复原剪贴板内容。")
+                : new ReplyActionResult(true, "检测到剪贴板已被更新，跳过恢复以免覆盖新的内容。");
         }
         catch (Exception ex)
         {
@@ -579,10 +579,35 @@ public sealed class ClipboardService : IClipboardService
         TryCloneTextFormat(System.Windows.TextDataFormat.Rtf, System.Windows.DataFormats.Rtf, dataObject, ref hasSupportedContent);
         TryCloneTextFormat(System.Windows.TextDataFormat.Html, System.Windows.DataFormats.Html, dataObject, ref hasSupportedContent);
         TryCloneFileDropList(dataObject, ref hasSupportedContent);
-        // Image formats are intentionally not cloned: decoding/re-encoding a large bitmap on every
-        // send cost 100-500 ms. Text and file-drop content is still backed up and restored.
+        // Images are copied as raw encoded bytes, never decoded: decoding/re-encoding a large bitmap
+        // on every send cost 100-500 ms. Without this a screenshot copied before a send was lost.
+        TryCloneRawImageFormat("PNG", dataObject, ref hasSupportedContent);
+        TryCloneRawImageFormat(System.Windows.DataFormats.Dib, dataObject, ref hasSupportedContent);
 
         return hasSupportedContent ? dataObject : null;
+    }
+
+    private static void TryCloneRawImageFormat(
+        string dataFormat,
+        System.Windows.DataObject target,
+        ref bool hasSupportedContent)
+    {
+        try
+        {
+            if (!System.Windows.Clipboard.ContainsData(dataFormat) ||
+                System.Windows.Clipboard.GetData(dataFormat) is not MemoryStream source ||
+                source.Length == 0 ||
+                source.Length > MaxClonedImageBytes)
+            {
+                return;
+            }
+
+            target.SetData(dataFormat, new MemoryStream(source.ToArray(), writable: false));
+            hasSupportedContent = true;
+        }
+        catch
+        {
+        }
     }
 
     private static void TryCloneTextFormat(

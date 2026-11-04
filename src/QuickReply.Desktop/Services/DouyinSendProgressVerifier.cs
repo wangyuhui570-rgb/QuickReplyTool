@@ -41,6 +41,9 @@ internal interface IDouyinSendProgressVerifier
         IReadOnlyList<string> imagePaths,
         IDictionary<string, object?> diagnostics,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Clipboard state after the last keyboard probe restored it; null when no probe restored.</summary>
+    ClipboardFingerprint? ClipboardFingerprintAfterLastProbe => null;
 }
 
 internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
@@ -374,6 +377,8 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
         CancellationToken cancellationToken)
     {
         ClipboardSnapshot? probeBackup = null;
+        ClipboardFingerprint? probeClipboardFingerprint = null;
+        ClipboardFingerprintAfterLastProbe = null;
         try
         {
             // Never pull the foreground back. If the user has already left the chat, Ctrl+A
@@ -387,24 +392,48 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
                     "focus_not_on_target_probe_skipped");
             }
 
+            // Image stages are never probed. Douyin shows a "send this image?" dialog after the
+            // paste, and the probe's Escape closed it, cancelling the image while the text still
+            // went out. Callers accept this outcome only when the paste itself was confirmed.
+            if (expectation.SentImagePaths is { Count: > 0 })
+            {
+                diagnostics["douyinSendVerifyProbeSkipped"] = "image_stage";
+                return new DouyinSendVerifyResult(
+                    DouyinSendVerifyOutcome.Indeterminate,
+                    "select_all_copy",
+                    "image_uncertain_probe_skipped");
+            }
+
             await Task.Delay(80, cancellationToken).ConfigureAwait(false);
 
             probeBackup = await _clipboard.CaptureSnapshotAsync().ConfigureAwait(false);
 
             // Clear clipboard first so a failed copy cannot look like "still has our text".
             await _clipboard.SetTextAsync(string.Empty, persist: false).ConfigureAwait(false);
+            probeClipboardFingerprint = await _clipboard.CaptureCurrentFingerprintAsync().ConfigureAwait(false);
             await Task.Delay(40, cancellationToken).ConfigureAwait(false);
 
-            _keyboard.SendCtrlA();
+            // Check again right before each key: the user may switch apps during the delays, and
+            // Ctrl+A / Ctrl+C would then select and copy in their document.
+            if (!TrySendKeyToTarget(targetWindowHandle, _keyboard.SendCtrlA, diagnostics))
+            {
+                return CreateFocusLeftDuringProbeResult();
+            }
+
             await Task.Delay(60, cancellationToken).ConfigureAwait(false);
-            _keyboard.SendCtrlC();
+            if (!TrySendKeyToTarget(targetWindowHandle, _keyboard.SendCtrlC, diagnostics))
+            {
+                return CreateFocusLeftDuringProbeResult();
+            }
+
             await Task.Delay(120, cancellationToken).ConfigureAwait(false);
 
             var peeked = await PeekClipboardAsync().ConfigureAwait(false);
+            probeClipboardFingerprint = await _clipboard.CaptureCurrentFingerprintAsync().ConfigureAwait(false);
             diagnostics["douyinSendVerifyPeekTextLength"] = peeked.Text?.Length ?? 0;
             diagnostics["douyinSendVerifyPeekFileCount"] = peeked.Files.Count;
 
-            _keyboard.SendEscape();
+            TrySendKeyToTarget(targetWindowHandle, _keyboard.SendEscape, diagnostics);
 
             if (!string.IsNullOrWhiteSpace(expectation.SentText))
             {
@@ -479,17 +508,51 @@ internal sealed class DouyinSendProgressVerifier : IDouyinSendProgressVerifier
         }
         finally
         {
-            if (probeBackup is { CaptureSucceeded: true, CanRestore: true })
+            // Without the fingerprint RestoreSnapshotAsync skips the restore, which left the
+            // clipboard empty after every Douyin text send.
+            if (probeBackup is { CaptureSucceeded: true, CanRestore: true } && probeClipboardFingerprint is not null)
             {
                 try
                 {
-                    await _clipboard.RestoreSnapshotAsync(probeBackup).ConfigureAwait(false);
+                    await _clipboard.RestoreSnapshotAsync(probeBackup, probeClipboardFingerprint).ConfigureAwait(false);
+                    var restoredFingerprint = await _clipboard.CaptureCurrentFingerprintAsync().ConfigureAwait(false);
+                    if (restoredFingerprint is not null)
+                    {
+                        diagnostics["douyinSendVerifyProbeClipboardRestored"] = true;
+                        ClipboardFingerprintAfterLastProbe = restoredFingerprint;
+                    }
                 }
                 catch
                 {
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The probe restores the clipboard it found, which changes the clipboard sequence number.
+    /// The caller's queued restore compares against this value instead of its own stale one.
+    /// </summary>
+    public ClipboardFingerprint? ClipboardFingerprintAfterLastProbe { get; private set; }
+
+    private static bool TrySendKeyToTarget(IntPtr targetWindowHandle, Action sendKey, IDictionary<string, object?> diagnostics)
+    {
+        if (!IsSameTopLevel(Native.NativeMethods.GetForegroundWindow(), targetWindowHandle))
+        {
+            diagnostics["douyinSendVerifyProbeAborted"] = "focus_left_during_probe";
+            return false;
+        }
+
+        sendKey();
+        return true;
+    }
+
+    private static DouyinSendVerifyResult CreateFocusLeftDuringProbeResult()
+    {
+        return new DouyinSendVerifyResult(
+            DouyinSendVerifyOutcome.Indeterminate,
+            "select_all_copy",
+            "focus_left_during_probe");
     }
 
     private static Task<(string? Text, IReadOnlyList<string> Files)> PeekClipboardAsync()

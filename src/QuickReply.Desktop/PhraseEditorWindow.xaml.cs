@@ -115,6 +115,17 @@ public partial class PhraseEditorWindow : Window, INotifyPropertyChanged
         DialogResult = false;
     }
 
+    private void InsertVariableButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        // Insert a template at the caret and select the name, so typing replaces it right away.
+        const string placeholderName = "变量名";
+        const string template = "{" + placeholderName + "=默认值}";
+        var caret = ContentTextBox.SelectionStart;
+        ContentTextBox.SelectedText = template;
+        ContentTextBox.Focus();
+        ContentTextBox.Select(caret + 1, placeholderName.Length);
+    }
+
     private void CloseButton_OnClick(object sender, RoutedEventArgs e)
     {
         WindowTransitionService.SuppressNextCloseAnimation(this);

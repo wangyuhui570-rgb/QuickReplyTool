@@ -9,6 +9,12 @@ namespace QuickReply.Desktop.ViewModels;
 
 public sealed class SearchOverlayViewModel : ObservableObject
 {
+    /// <summary>Digit keys 1–9 pick a result, so a page holds nine; ←/→ turn pages.</summary>
+    public const int PageSize = 9;
+
+    /// <summary>Upper bound on collected results (ten pages) so a one-letter search stays fast.</summary>
+    public const int MaxSearchResults = PageSize * 10;
+
     private static readonly IReadOnlyList<PhraseRecommendationSuggestion> EmptyRecommendedPhrases = Array.Empty<PhraseRecommendationSuggestion>();
     private static readonly IReadOnlyList<HistoricalReplyGroupSuggestion> EmptyReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
     private readonly MainViewModel _mainViewModel;
@@ -18,6 +24,8 @@ public sealed class SearchOverlayViewModel : ObservableObject
     private string _searchText = string.Empty;
     private string _statusMessage = string.Empty;
     private SearchOverlayResultItem? _selectedResult;
+    private IReadOnlyList<SearchOverlayResultItem> _allResults = Array.Empty<SearchOverlayResultItem>();
+    private int _pageIndex;
     private SearchOverlayMode _currentMode = SearchOverlayMode.Phrase;
     private bool _isSettingsPreviewMode;
     private bool _isActionStatusWarning;
@@ -193,16 +201,16 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public string ModeAssistText => CurrentMode switch
     {
-        SearchOverlayMode.File => "左右方向键切换模式，当前只搜索文件",
-        SearchOverlayMode.Mixed => "左右方向键切换模式，同时搜索短语和文件",
-        _ => "左右方向键切换模式，当前只搜索快捷短语"
+        SearchOverlayMode.File => "Ctrl+←/→ 切换模式，当前只搜索文件",
+        SearchOverlayMode.Mixed => "Ctrl+←/→ 切换模式，同时搜索短语和文件",
+        _ => "Ctrl+←/→ 切换模式，当前只搜索快捷短语"
     };
 
     public string SearchPlaceholderText => CurrentMode switch
     {
-        SearchOverlayMode.File => "当前是文件搜索，输入文件名；按左右方向键切换到短语或混合搜索",
-        SearchOverlayMode.Mixed => "当前是混合搜索，输入关键词；按左右方向键切换到短语或文件搜索",
-        _ => "当前是短语搜索，输入关键词；按左右方向键切换到文件或混合搜索"
+        SearchOverlayMode.File => "当前是文件搜索，输入文件名；Ctrl+←/→ 切换到短语或混合搜索",
+        SearchOverlayMode.Mixed => "当前是混合搜索，输入关键词；Ctrl+←/→ 切换到短语或文件搜索",
+        _ => "当前是短语搜索，输入关键词；Ctrl+←/→ 切换到文件或混合搜索"
     };
 
     public string SidebarModeButtonText => Settings.SidebarWorkMode == SidebarWorkMode.Compact ? "精简" : "标准";
@@ -213,9 +221,9 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public string ModeHintText => CurrentMode switch
     {
-        SearchOverlayMode.File => "文件模式  左右切换",
-        SearchOverlayMode.Mixed => "混合模式  左右切换",
-        _ => "短语模式  左右切换"
+        SearchOverlayMode.File => "文件模式  Ctrl+←/→ 切换",
+        SearchOverlayMode.Mixed => "混合模式  Ctrl+←/→ 切换",
+        _ => "短语模式  Ctrl+←/→ 切换"
     };
 
     public string RecommendationHintText => string.Empty;
@@ -291,9 +299,9 @@ public sealed class SearchOverlayViewModel : ObservableObject
         {
             return CurrentMode switch
             {
-                SearchOverlayMode.File => "文件搜索模式，按左右方向键切换模式",
+                SearchOverlayMode.File => "文件搜索模式，Ctrl+←/→ 切换模式",
                 SearchOverlayMode.Mixed => "混合搜索模式，同时搜索短语和文件",
-                _ => "短语搜索模式，按右方向键切换到文件或混合模式"
+                _ => "短语搜索模式，Ctrl+→ 切换到文件或混合模式"
             };
         }
     }
@@ -309,10 +317,35 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public string ResultsSectionTitle => SearchOverlayPanelStatusBuilder.BuildResultsSectionTitle(CurrentMode);
 
-    public string ResultsSectionSummary => SearchOverlayPanelStatusBuilder.BuildResultsSectionSummary(
-        CurrentMode,
-        SearchText,
-        Results.Count);
+    public string ResultsSectionSummary
+    {
+        get
+        {
+            var summary = SearchOverlayPanelStatusBuilder.BuildResultsSectionSummary(CurrentMode, SearchText, _allResults.Count);
+            return HasMultiplePages ? $"{summary} {PageIndicatorText}" : summary;
+        }
+    }
+
+    public int PageIndex => _pageIndex;
+
+    public int PageCount => _allResults.Count == 0 ? 0 : (_allResults.Count + PageSize - 1) / PageSize;
+
+    public bool HasMultiplePages => PageCount > 1;
+
+    public string PageIndicatorText => HasMultiplePages ? $"第 {_pageIndex + 1}/{PageCount} 页，←/→ 翻页" : string.Empty;
+
+    /// <summary>Moves one page forward (+1) or back (-1). Returns false when there is no such page.</summary>
+    public bool ChangePage(int direction, bool selectLast = false)
+    {
+        var target = _pageIndex + Math.Sign(direction);
+        if (direction == 0 || target < 0 || target >= PageCount)
+        {
+            return false;
+        }
+
+        ShowPage(target, selectLast);
+        return true;
+    }
 
     public bool HasResultsSectionSummary => !string.IsNullOrWhiteSpace(ResultsSectionSummary);
 
@@ -439,6 +472,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         OnPropertyChanged(nameof(SidebarModeButtonToolTip));
     }
 
+    /// <summary>Number is the 1–9 label on the current page.</summary>
     public SearchOverlayResultItem? GetResultByNumber(int number)
     {
         return Results.FirstOrDefault(item => item.Number == number);
@@ -563,7 +597,19 @@ public sealed class SearchOverlayViewModel : ObservableObject
             return;
         }
 
-        var nextIndex = Math.Clamp(currentIndex + offset, 0, Results.Count - 1);
+        // ↓ on the last row / ↑ on the first row continue onto the neighbouring page.
+        var rawIndex = currentIndex + offset;
+        if (rawIndex >= Results.Count && ChangePage(1))
+        {
+            return;
+        }
+
+        if (rawIndex < 0 && ChangePage(-1, selectLast: true))
+        {
+            return;
+        }
+
+        var nextIndex = Math.Clamp(rawIndex, 0, Results.Count - 1);
         SelectedResult = Results[nextIndex];
     }
 
@@ -708,20 +754,20 @@ public sealed class SearchOverlayViewModel : ObservableObject
             await _mainViewModel.DeletePhraseAsync(item.Phrase);
         }
 
-        RefreshResults();
+        RefreshResults(keepPage: true);
     }
 
     public async Task<int> DeletePhrasesAsync(IEnumerable<ReplyPhrase> phrases)
     {
         var deletedCount = await _mainViewModel.DeletePhrasesAsync(phrases);
-        RefreshResults();
+        RefreshResults(keepPage: true);
         return deletedCount;
     }
 
     public async Task<int> MovePhrasesToCategoryAsync(IEnumerable<ReplyPhrase> phrases, ReplyCategory targetCategory)
     {
         var movedCount = await _mainViewModel.MovePhrasesToCategoryAsync(phrases, targetCategory);
-        RefreshResults();
+        RefreshResults(keepPage: true);
         return movedCount;
     }
 
@@ -738,7 +784,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
 
         await _mainViewModel.UpdatePhraseAsync(item.Phrase, title, title, content, imageSourcePaths, removeImage);
-        RefreshResults();
+        RefreshResults(keepPage: true);
         SelectedResult = Results.FirstOrDefault(result => result.Phrase?.Id == item.Phrase.Id);
     }
 
@@ -774,20 +820,34 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
     }
 
-    private void RefreshResults()
+    /// <param name="keepPage">True after editing or deleting a result, so the user stays on the same page.</param>
+    private void RefreshResults(bool keepPage = false)
     {
-        Results = _isSettingsPreviewMode
+        _allResults = _isSettingsPreviewMode
             ? BuildSettingsPreviewResults(CurrentMode)
             : CurrentMode switch
             {
-                SearchOverlayMode.File => BuildFileResults(_mainViewModel.SearchFileItems(SearchText, 9)),
-                SearchOverlayMode.Mixed => BuildMixedResults(SearchText, 9),
-                _ => BuildPhraseResults(SearchText, 9)
+                SearchOverlayMode.File => BuildFileResults(_mainViewModel.SearchFileItems(SearchText, MaxSearchResults)),
+                SearchOverlayMode.Mixed => BuildMixedResults(SearchText, MaxSearchResults),
+                _ => BuildPhraseResults(SearchText, MaxSearchResults)
             };
 
-        SelectedResult = Results.FirstOrDefault();
+        ShowPage(keepPage ? Math.Min(_pageIndex, Math.Max(PageCount - 1, 0)) : 0, selectLast: false);
+    }
+
+    private void ShowPage(int pageIndex, bool selectLast)
+    {
+        _pageIndex = pageIndex;
+        Results = _allResults.Skip(pageIndex * PageSize).Take(PageSize).ToArray();
+        SelectedResult = selectLast ? Results.LastOrDefault() : Results.FirstOrDefault();
         OnPropertyChanged(nameof(HasResults));
         OnPropertyChanged(nameof(EmptyMessage));
+        OnPropertyChanged(nameof(PageIndex));
+        OnPropertyChanged(nameof(PageCount));
+        OnPropertyChanged(nameof(HasMultiplePages));
+        OnPropertyChanged(nameof(PageIndicatorText));
+        OnPropertyChanged(nameof(ResultsSectionSummary));
+        OnPropertyChanged(nameof(HasResultsSectionSummary));
     }
 
     private void Settings_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -835,7 +895,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         return phrases
             .Select((phrase, index) => new SearchOverlayResultItem
             {
-                Number = index + 1,
+                Number = index % PageSize + 1,
                 Mode = SearchOverlayMode.Phrase,
                 Phrase = phrase
             })
@@ -847,7 +907,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
         return fileItems
             .Select((fileItem, index) => new SearchOverlayResultItem
             {
-                Number = index + 1,
+                Number = index % PageSize + 1,
                 Mode = SearchOverlayMode.File,
                 FileItem = fileItem
             })
@@ -953,7 +1013,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
             return [];
         }
 
-        var candidateCount = Math.Max(maxResults * 2, 12);
+        var candidateCount = maxResults;
         var normalizedKeyword = keyword.Trim();
 
         var phraseCandidates = _mainViewModel
@@ -989,7 +1049,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
             .Take(maxResults)
             .Select((entry, index) => new SearchOverlayResultItem
             {
-                Number = index + 1,
+                Number = index % PageSize + 1,
                 Mode = entry.Item.Mode,
                 Phrase = entry.Item.Phrase,
                 FileItem = entry.Item.FileItem,
@@ -1033,6 +1093,8 @@ public sealed class SearchOverlayViewModel : ObservableObject
             score += 28;
         }
 
+        // Multi-keyword and pinyin hits score nothing above, which needs the whole keyword literally.
+        score += MainViewModel.ScorePhrase(phrase, keyword) * 30;
         score += Math.Log2(_mainViewModel.GetPhraseSendCount(phrase.Id) + 1) * 22;
         score += ComputeRecentBoost(_mainViewModel.GetPhraseLastSentAt(phrase.Id));
         score -= sourceIndex * 0.8d;
@@ -1072,6 +1134,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
             score += 22;
         }
 
+        score += MainViewModel.ScoreFileItem(fileItem, keyword) * 30;
         score += Math.Log2(_mainViewModel.GetFileUseCount(fileItem.Id) + 1) * 22;
         score += ComputeRecentBoost(_mainViewModel.GetFileLastUsedAt(fileItem.Id));
         score -= sourceIndex * 0.8d;

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using QuickReply.Desktop.Models;
 using QuickReply.Desktop.Services;
 using QuickReply.Desktop.Tests.TestSupport;
@@ -554,11 +554,99 @@ public sealed class MessageComposeServiceTests
         Assert.Equal(1, keyboard.EnterCount);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_DouyinTextWithImage_ImageSentThroughConfirmDialogSkipsItsEnter()
+    {
+        using var scope = new TestAppDataScope();
+        var imagePath = scope.CreateFile("images\\sample.png", "image");
+        var dialog = new FakeDouyinImageSendDialogHandler { Outcome = DouyinImageDialogOutcome.Confirmed };
+        var service = CreateService(out _, out var keyboard, out var workbench, out var windowFocus, dialog);
+        var handle = new IntPtr(208);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "飞鸽客服", "Chrome_WidgetWin_1", "doudian");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+
+        var result = await service.ExecuteAsync(
+            "图文测试文字",
+            TestSettingsFactory.CreateFastSettings(),
+            ComposeActionMode.Send,
+            [imagePath]);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, dialog.ConfirmCallCount);
+        Assert.Equal(2, keyboard.PasteShortcutCount);
+        // Only the text message needs Enter; the dialog's own button already sent the image.
+        Assert.Equal(1, keyboard.EnterCount);
+        Assert.Equal(0, keyboard.EscapeCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DouyinTextWithImage_StopsWhenConfirmDialogDoesNotClose()
+    {
+        using var scope = new TestAppDataScope();
+        var imagePath = scope.CreateFile("images\\sample.png", "image");
+        var dialog = new FakeDouyinImageSendDialogHandler { Outcome = DouyinImageDialogOutcome.ConfirmFailed };
+        var service = CreateService(out _, out var keyboard, out var workbench, out var windowFocus, dialog);
+        var handle = new IntPtr(209);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "飞鸽客服", "Chrome_WidgetWin_1", "doudian");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+
+        var result = await service.ExecuteAsync(
+            "图文测试文字",
+            TestSettingsFactory.CreateFastSettings(),
+            ComposeActionMode.Send,
+            [imagePath]);
+
+        Assert.False(result.Success);
+        Assert.Equal(ReplyActionFailureKind.ManualConfirmationRequired, result.FailureKind);
+        Assert.Equal(1, keyboard.PasteShortcutCount);
+        Assert.Equal(0, keyboard.EnterCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SecondSendBeforeRestore_RestoresTheUsersOriginalClipboard()
+    {
+        var service = CreateService(out var clipboard, out _, out var workbench, out var windowFocus);
+        var handle = new IntPtr(110);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "微信", "WeChatMainWndForPC", "WeChat");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+        var settings = TestSettingsFactory.CreateFastSettings();
+        // Long enough that the first restore is still queued when the second send starts.
+        settings.ClipboardRestoreDelayMs = 2000;
+
+        var usersClipboard = new ClipboardSnapshot(true, true, null, new ClipboardFingerprint("user"));
+        var firstPhrase = new ClipboardSnapshot(true, true, null, new ClipboardFingerprint("phrase-1"));
+        clipboard.SnapshotToReturn = usersClipboard;
+        Assert.True((await service.ExecuteAsync("第一条", settings, ComposeActionMode.Send)).Success);
+
+        // The first restore has not run yet, so the clipboard still holds the first phrase.
+        clipboard.SnapshotToReturn = firstPhrase;
+        Assert.True((await service.ExecuteAsync("第二条", settings, ComposeActionMode.Send)).Success);
+
+        var deadline = Stopwatch.StartNew();
+        while (clipboard.RestoreCallCount == 0 && deadline.ElapsedMilliseconds < 8000)
+        {
+            await Task.Delay(50);
+        }
+
+        await Task.Delay(300);
+        lock (clipboard.RestoredSnapshots)
+        {
+            Assert.Equal([usersClipboard], clipboard.RestoredSnapshots);
+        }
+    }
+
     private static MessageComposeService CreateService(
         out FakeClipboardService clipboard,
         out FakeKeyboardInputSimulator keyboard,
         out FakeExternalWorkbenchService workbench,
-        out FakeWindowFocusService windowFocus)
+        out FakeWindowFocusService windowFocus,
+        FakeDouyinImageSendDialogHandler? dialogHandler = null)
     {
         clipboard = new FakeClipboardService();
         keyboard = new FakeKeyboardInputSimulator();
@@ -570,7 +658,8 @@ public sealed class MessageComposeServiceTests
             clipboard,
             keyboard,
             windowFocus,
-            douyinSendProgressVerifier: new FakeDouyinSendProgressVerifier());
+            douyinSendProgressVerifier: new FakeDouyinSendProgressVerifier(),
+            douyinImageSendDialogHandler: dialogHandler ?? new FakeDouyinImageSendDialogHandler());
     }
 
     private static WindowDockTargetInfo CreateWindowInfo(IntPtr handle, string title, string className, string processName)

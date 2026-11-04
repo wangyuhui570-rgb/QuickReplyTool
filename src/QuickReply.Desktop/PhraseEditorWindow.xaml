@@ -153,9 +153,17 @@
                                 <TextBlock Foreground="{StaticResource AppleTextBrush}"
                                            FontWeight="SemiBold"
                                            Text="快捷短语内容" />
-                                <TextBlock Grid.Column="1"
-                                           Foreground="{StaticResource AppleMutedBrush}"
-                                           Text="支持多行内容" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <TextBlock Margin="0,0,8,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource AppleMutedBrush}"
+                                               Text="支持多行；{单号} 为变量，{天数=3} 带默认值" />
+                                    <Button Padding="8,2"
+                                            Click="InsertVariableButton_OnClick"
+                                            Content="插入变量"
+                                            ToolTip="在光标处插入 {变量名=默认值}，发送时会弹出填写框"
+                                            Style="{StaticResource SubtleButtonStyle}" />
+                                </StackPanel>
                             </Grid>
 
                             <TextBox x:Name="ContentTextBox"

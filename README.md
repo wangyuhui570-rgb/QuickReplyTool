@@ -22,11 +22,13 @@ packaging/
 
 ## 正式发布
 
-版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.17）。合并到 `main` 之后，在该提交上推送标签 `v2.1.17`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
+版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.18）。合并到 `main` 之后，在该提交上推送标签 `v2.1.18`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
 
-- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.17.zip`（根目录下有 `app/QuickReplyTool.exe`）
+- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.18.zip`（根目录下有 `app/QuickReplyTool.exe`）
 - 创建非草稿、非预发布的 GitHub Release，说明里写 `SHA256: <64位小写>`，更新器只认这种写法
-- 用同一份信息覆盖 `update-manifest` 发布里的 `latest.json`（这个发布不能删）
+- 用同一份信息覆盖 `update-manifest` 发布里的 `latest.json`（这个发布不能删），并用仓库密钥 `UPDATE_SIGNING_KEY` 给它签名
+
+客户端先直连 GitHub；连不上时才经 `ghfast.top` 镜像取 `latest.json`，而镜像来的清单必须带有效签名（ECDSA P-256，公钥在 `AppUpdatePolicy.ManifestSigningPublicKey`），且下载地址必须在本仓库的 Releases 里，否则不认。没配 `UPDATE_SIGNING_KEY` 时清单不带签名，只能直连 GitHub 的用户才能更新。
 
 已安装的 2.1.15 客户端比较的是程序集版本和标签里的数字。标签、zip 文件名或说明里的 SHA256 对不上时，检查会跳过这次发布，继续停在旧包上。
 
@@ -64,8 +66,22 @@ SQLite 数据库默认位于 `%AppData%\\QuickReplyTool\\quick-reply.db`。
 - 使用 WPF 的 `System.Windows.Clipboard`
 - 发送或输入前先备份当前剪贴板
 - 将短语内容写入系统剪贴板
-- 粘贴完成后尽量恢复原剪贴板
+- 粘贴完成后尽量恢复原剪贴板；图片按原始字节备份（不解码），截图不会因为发了一条短语而丢失
 - 对剪贴板访问增加简单重试，降低被其他程序暂时占用时的失败概率
+- 恢复前在每次重试里都重新确认剪贴板仍是本工具写入的内容，用户中途复制的新内容不会被旧内容覆盖
+- 连续发送时，后一次接管前一次还没执行的恢复，最终恢复的是用户自己原来的剪贴板，而不是上一条短语
+
+### 抖店发送方案
+
+- 抖店粘贴图片后会弹出"发送图片"确认框：粘贴前后对比界面上的"发送/确定"按钮，找到确认框新出现的那个按钮直接点它，并确认框已关闭；找不到确认框时按原来的输入框方式发送
+- 图片阶段不再做 Ctrl+A / Ctrl+C / Esc 的检查（Esc 会把确认框关掉，图片就没发出去）
+- 发送开始时只切一次抖店窗口；之后任何一步发现用户已切到别的软件就停下来，不再抢焦点，也不再按键或点击
+
+### 搜索与短语变量
+
+- 搜索支持空格分隔多个关键词（都要命中），以及拼音首字母（输入 `th` 找"退货"，只匹配标题和标签），结果里命中的关键词会高亮
+- 搜索浮层每页 9 条，数字键 1–9 选当前页；`←/→`（或 `PageUp/PageDown`）翻页，`Ctrl+←/→` 切换短语/文件/混合搜索
+- 短语里写 `{单号}` 或 `{天数=3}` 就是变量：选中后弹出填写框，Tab 切换、Enter 发送、Esc 取消；不改就用默认值，没有默认值的必须填；每次都从默认值开始，不记住上次填的内容
 
 ### 按键模拟方案
 

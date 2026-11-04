@@ -1,4 +1,4 @@
-using QuickReply.Desktop.Models;
+﻿using QuickReply.Desktop.Models;
 using QuickReply.Desktop.Services;
 using QuickReply.Desktop.Tests.TestSupport;
 
@@ -522,7 +522,8 @@ public sealed class DouyinVideoComposeTests
             windowFocus,
             uploader,
             guard ?? new DouyinVideoSendGuard(),
-            verifier ?? new FakeDouyinSendProgressVerifier());
+            verifier ?? new FakeDouyinSendProgressVerifier(),
+            new FakeDouyinImageSendDialogHandler());
     }
 
     private static void Arrange(FakeExternalWorkbenchService workbench, FakeWindowFocusService windowFocus, IntPtr handle, WindowDockTargetInfo info)

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using QuickReply.Core.Services;
 using QuickReply.Desktop.Models;
 using System.Diagnostics;
 using QuickReply.Desktop.Services;
@@ -105,6 +106,7 @@ public partial class App : System.Windows.Application
             windowDockService,
             GetConversationLoggingService,
             _exceptionLogService);
+        _mainViewModel.PhraseVariablePrompt = PromptPhraseVariablesAsync;
         var searchOverlayViewModel = new SearchOverlayViewModel(_mainViewModel);
         var searchOverlayWindow = new SearchOverlayWindow(externalWorkbenchService, searchOverlayViewModel);
         StartupTrace.Mark("app.windows_constructed");
@@ -500,5 +502,20 @@ public partial class App : System.Windows.Application
         }
 
         return _conversationLoggingService.Value;
+    }
+
+    private Task<IReadOnlyDictionary<string, string>?> PromptPhraseVariablesAsync(
+        ReplyPhrase? phrase,
+        IReadOnlyList<PhraseVariable> variables)
+    {
+        return Dispatcher.InvokeAsync(() =>
+        {
+            var window = new PhraseVariableWindow(
+                phrase?.DisplayTitle ?? string.Empty,
+                phrase?.Content ?? string.Empty,
+                variables,
+                "确定");
+            return window.ShowDialog() == true ? window.Values : null;
+        }).Task;
     }
 }

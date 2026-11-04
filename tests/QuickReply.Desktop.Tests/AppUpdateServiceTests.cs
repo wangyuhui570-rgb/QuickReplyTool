@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using QuickReply.Desktop.Services;
 
 namespace QuickReply.Desktop.Tests;
@@ -83,6 +85,31 @@ public sealed class AppUpdateServiceTests
     }
 
     [Fact]
+    public void ParseSignedManifest_AcceptsOnlyValidSignatureForThisRepository()
+    {
+        using var signer = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(signer.ExportSubjectPublicKeyInfo());
+        var url = AppUpdatePolicy.ReleaseDownloadPrefix + "v2.1.18/Q.zip";
+
+        string Manifest(string manifestUrl, string sha, string signature) =>
+            $$"""{"version":"2.1.18","tag":"v2.1.18","zipName":"Q.zip","url":"{{manifestUrl}}","sha256":"{{sha}}","size":1,"signature":"{{signature}}"}""";
+
+        string Sign(string manifestUrl, string sha) => Convert.ToBase64String(signer.SignData(
+            Encoding.UTF8.GetBytes(AppUpdatePolicy.BuildManifestSigningPayload("2.1.18", "Q.zip", manifestUrl, sha)),
+            HashAlgorithmName.SHA256));
+
+        Assert.NotNull(AppUpdatePolicy.ParseSignedManifest(Manifest(url, Sha, Sign(url, Sha)), publicKey));
+
+        // A mirror swapping the hash, pointing elsewhere, or dropping the signature is rejected.
+        var otherSha = new string('0', 64);
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(url, otherSha, Sign(url, Sha)), publicKey));
+        var evilUrl = "https://evil.example/Q.zip";
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(evilUrl, Sha, Sign(evilUrl, Sha)), publicKey));
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(url, Sha, ""), publicKey));
+        Assert.Null(AppUpdatePolicy.ParseSignedManifest(Manifest(url, Sha, "not-base64!"), publicKey));
+    }
+
+    [Fact]
     public void ResolveInstallRoot_RequiresAppFolder()
     {
         var root = Path.Combine(Path.GetTempPath(), "QuickReplyTool");
@@ -134,14 +161,26 @@ public sealed class AppUpdateServiceTests
     }
 
     [Fact]
-    public async Task Check_FallsBackToManifestWhenApiFails()
+    public async Task Check_FallsBackToDirectManifestWhenApiFails()
     {
         var manifest = $$"""{"version":"99.0.0","url":"https://github.com/a/b/releases/download/v/Q.zip","sha256":"{{Sha}}"}""";
-        var handler = new RoutingHandler(uri => uri.Host == "ghfast.top" ? manifest : null);
+        var handler = new RoutingHandler(uri => uri.Host == "github.com" ? manifest : null);
         var service = new AppUpdateService(() => new HttpClient(handler), Path.GetTempPath());
         var result = await service.CheckAsync("2.1.15");
         Assert.Equal(AppUpdateCheckStatus.UpdateAvailable, result.Status);
         Assert.Equal("99.0.0", result.Update!.Version);
+    }
+
+    [Fact]
+    public async Task Check_RejectsUnsignedManifestFromMirror()
+    {
+        // The mirror could rewrite url and sha256 together, so an unsigned copy must never install.
+        var manifest = $$"""{"version":"99.0.0","url":"{{AppUpdatePolicy.ReleaseDownloadPrefix}}v99.0.0/Q.zip","sha256":"{{Sha}}"}""";
+        var handler = new RoutingHandler(uri => uri.Host == "ghfast.top" ? manifest : null);
+        var service = new AppUpdateService(() => new HttpClient(handler), Path.GetTempPath());
+        var result = await service.CheckAsync("2.1.15");
+        Assert.Equal(AppUpdateCheckStatus.Failed, result.Status);
+        Assert.Null(result.Update);
     }
 
     [Fact]
