@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
@@ -588,8 +588,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 function Log([string]$m) { try { Add-Content -LiteralPath $LogPath -Value ("{0} {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m) -Encoding UTF8 } catch {} }
-function Retry([scriptblock]$Action, [string]$What) {
-    for ($i = 1; $i -le 20; $i++) {
+function Retry([scriptblock]$Action, [string]$What, [int]$Attempts = 20) {
+    for ($i = 1; $i -le $Attempts; $i++) {
         try { & $Action; return } catch { Log "$What attempt $i failed: $($_.Exception.Message)"; Start-Sleep -Milliseconds 750 }
     }
     throw "$What failed"
@@ -605,16 +605,45 @@ try {
     $p = Get-Process -Id $WaitPid -ErrorAction SilentlyContinue
     if ($p) { if (-not $p.WaitForExit(30000)) { Log 'app did not exit, killing'; Stop-Process -Id $WaitPid -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 } }
 } catch { Log "wait failed: $($_.Exception.Message)" }
-# Any other instance started from this app folder must be gone too.
-Get-Process -Name 'QuickReplyTool' -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -and $_.Path.StartsWith($appDir, [StringComparison]::OrdinalIgnoreCase) } catch { $false } } | ForEach-Object { Log "killing leftover $($_.Id)"; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+# Anything still running from the app folder blocks renaming it: other instances, and the
+# screenshot tool (pythonw.exe running app\ScreenshotTool\lite_shot.py). Match by exe path or
+# command line, since pythonw itself lives outside the app folder.
+function Stop-AppFolderProcesses {
+    try {
+        Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.ProcessId -ne $PID -and (
+                ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($appDir, [StringComparison]::OrdinalIgnoreCase)) -or
+                ($_.CommandLine -and $_.CommandLine.IndexOf($appDir, [StringComparison]::OrdinalIgnoreCase) -ge 0))
+        } | ForEach-Object { Log "killing leftover $($_.ProcessId) $($_.Name)"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch {
+        Log "process scan failed: $($_.Exception.Message)"
+        Get-Process -Name 'QuickReplyTool' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    }
+}
+Stop-AppFolderProcesses
 Start-Sleep -Milliseconds 500
 
 $replaced = $false
+$mode = 'rename'
 try {
     if (-not (Test-Path -LiteralPath (Join-Path $newApp 'QuickReplyTool.exe'))) { throw 'staging app missing' }
     if (Test-Path -LiteralPath $bakDir) { Retry { Remove-Item -LiteralPath $bakDir -Recurse -Force } 'remove old app.bak' }
-    if (Test-Path -LiteralPath $appDir) { Retry { Rename-Item -LiteralPath $appDir -NewName 'app.bak' } 'backup app' }
-    Retry { Copy-Item -LiteralPath $newApp -Destination $appDir -Recurse -Force } 'copy new app'
+    if (Test-Path -LiteralPath $appDir) {
+        try {
+            Retry { Stop-AppFolderProcesses; Rename-Item -LiteralPath $appDir -NewName 'app.bak' } 'backup app' 8
+        } catch {
+            # The folder itself can stay held open (a working directory, an Explorer window,
+            # antivirus) while its files are free. Back up by copying and overwrite in place.
+            Log 'rename blocked, falling back to in-place copy'
+            $mode = 'copy'
+            Retry { Copy-Item -LiteralPath $appDir -Destination $bakDir -Recurse -Force } 'copy backup'
+        }
+    }
+    if ($mode -eq 'rename') {
+        Retry { Copy-Item -LiteralPath $newApp -Destination $appDir -Recurse -Force } 'copy new app'
+    } else {
+        Retry { Copy-Item -Path (Join-Path $newApp '*') -Destination $appDir -Recurse -Force } 'overwrite app'
+    }
     if (-not (Test-Path -LiteralPath $exe)) { throw 'new exe missing after copy' }
     $replaced = $true
     # Refresh helper files next to the app folder (no user data lives there).
@@ -624,9 +653,13 @@ try {
     Log "replace failed: $($_.Exception.Message); rolling back"
     try {
         if (Test-Path -LiteralPath $bakDir) {
-            if (Test-Path -LiteralPath $appDir) { Remove-Item -LiteralPath $appDir -Recurse -Force -ErrorAction SilentlyContinue }
-            Rename-Item -LiteralPath $bakDir -NewName 'app'
-            Log 'rollback ok'
+            if ($mode -eq 'copy') {
+                Copy-Item -Path (Join-Path $bakDir '*') -Destination $appDir -Recurse -Force
+            } else {
+                if (Test-Path -LiteralPath $appDir) { Remove-Item -LiteralPath $appDir -Recurse -Force -ErrorAction SilentlyContinue }
+                Rename-Item -LiteralPath $bakDir -NewName 'app'
+            }
+            Log "rollback ok ($mode)"
         }
     } catch { Log "rollback failed: $($_.Exception.Message)" }
 }
