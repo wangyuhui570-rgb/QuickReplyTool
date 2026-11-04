@@ -84,67 +84,85 @@ public sealed class DouyinVideoComposeTests
     }
 
     [Fact]
-    public async Task ToolbarImages_ImageFirstDefault_UploadsImageThenSendsText()
+    public async Task SeparateImages_ImageFirstDefault_PastesImageConfirmsThenSendsText()
     {
         using var scope = new TestAppDataScope();
         var image = scope.CreateFile("images\\a.png", "image");
         var events = new List<string>();
-        var service = CreateDouyinService(320, out var clipboard, out var keyboard, out var uploader, out _, toolbarImages: true);
+        var service = CreateDouyinService(320, out var clipboard, out var keyboard, out var uploader, out _, separateImages: true);
         clipboard.OnSetText = (_, _) => { events.Add("text"); return new ReplyActionResult(true, "ok"); };
+        clipboard.OnSetFileDropList = (_, _) => { events.Add("image"); return new ReplyActionResult(true, "ok"); };
         keyboard.OnSendKey = () => events.Add("send");
-        uploader.OnUploadStarted = path => events.Add(path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image" : "video");
 
         var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal(new[] { "image", "text", "send" }, events);
-        Assert.Single(uploader.ImageCalls);
-        // The image never goes through the clipboard, so Douyin's paste dialog cannot appear.
-        Assert.Equal(0, clipboard.SetFileDropListCallCount);
+        // Ctrl+V opens Douyin's "send this image?" dialog; Enter confirms it. No toolbar click.
+        Assert.Equal(new[] { "image", "send", "text", "send" }, events);
+        Assert.Empty(uploader.ImageCalls);
+        Assert.Equal(1, clipboard.SetFileDropListCallCount);
     }
 
     [Fact]
-    public async Task ToolbarImages_TextFirst_SendsTextThenUploadsImageThenVideo()
+    public async Task SeparateImages_TextFirst_SendsTextThenImageThenVideo()
     {
         using var scope = new TestAppDataScope();
         var image = scope.CreateFile("images\\a.png", "image");
         var video = scope.CreateFile("videos\\a.mp4", "video");
         var events = new List<string>();
-        var service = CreateDouyinService(321, out var clipboard, out var keyboard, out var uploader, out _, toolbarImages: true);
+        var service = CreateDouyinService(321, out var clipboard, out var keyboard, out var uploader, out _, separateImages: true);
         clipboard.OnSetText = (_, _) => { events.Add("text"); return new ReplyActionResult(true, "ok"); };
+        clipboard.OnSetFileDropList = (_, _) => { events.Add("image"); return new ReplyActionResult(true, "ok"); };
         keyboard.OnSendKey = () => events.Add("send");
-        uploader.OnUploadStarted = path => events.Add(path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image" : "video");
+        uploader.OnUploadStarted = _ => events.Add("video");
         var settings = TestSettingsFactory.CreateFastSettings();
         settings.PhraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
 
         var result = await service.ExecuteAsync("文字", settings, ComposeActionMode.Send, [video, image]);
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal(new[] { "text", "send", "image", "video" }, events);
+        Assert.Equal(new[] { "text", "send", "image", "send", "video" }, events);
     }
 
     [Fact]
-    public async Task ToolbarImages_ImageFailureStopsBeforeText()
+    public async Task SeparateImages_ImageFailureStopsBeforeText()
     {
         using var scope = new TestAppDataScope();
         var image = scope.CreateFile("images\\a.png", "image");
-        var service = CreateDouyinService(322, out var clipboard, out var keyboard, out var uploader, out _, toolbarImages: true);
-        uploader.OnUploadImage = _ => new ReplyActionResult(false, "未出现文件选择框", FailureKind: ReplyActionFailureKind.ManualConfirmationRequired);
+        var service = CreateDouyinService(322, out var clipboard, out var keyboard, out _, out _, separateImages: true);
+        clipboard.SetFileDropListResult = new ReplyActionResult(false, "剪贴板被占用", FailureKind: ReplyActionFailureKind.ClipboardBusy);
 
         var result = await service.ExecuteAsync("文字", TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Send, [image]);
 
         Assert.False(result.Success);
-        Assert.Single(uploader.ImageCalls);
         Assert.Equal(0, clipboard.SetTextCallCount);
         Assert.Equal(0, keyboard.EnterCount);
     }
 
     [Fact]
-    public async Task ToolbarImages_InputModeStillPastesImage()
+    public async Task SeparateImages_UserLeftAfterText_DoesNotPullDouyinBack()
     {
         using var scope = new TestAppDataScope();
         var image = scope.CreateFile("images\\a.png", "image");
-        var service = CreateDouyinService(323, out var clipboard, out _, out var uploader, out _, toolbarImages: true);
+        var service = CreateDouyinService(324, out var clipboard, out var keyboard, out _, out var windowFocus, separateImages: true);
+        keyboard.OnSendKey = () => windowFocus.ForegroundWindow = new IntPtr(9999);
+        var settings = TestSettingsFactory.CreateFastSettings();
+        settings.PhraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
+
+        var result = await service.ExecuteAsync("文字", settings, ComposeActionMode.Send, [image]);
+
+        Assert.False(result.Success);
+        Assert.Equal(ReplyActionFailureKind.ManualConfirmationRequired, result.FailureKind);
+        Assert.Equal(0, clipboard.SetFileDropListCallCount);
+        Assert.Equal(new IntPtr(9999), windowFocus.ForegroundWindow);
+    }
+
+    [Fact]
+    public async Task SeparateImages_InputModeStillPastesImage()
+    {
+        using var scope = new TestAppDataScope();
+        var image = scope.CreateFile("images\\a.png", "image");
+        var service = CreateDouyinService(323, out var clipboard, out _, out var uploader, out _, separateImages: true);
 
         var result = await service.ExecuteFilesAsync([image], TestSettingsFactory.CreateFastSettings(), ComposeActionMode.Input);
 
@@ -577,7 +595,7 @@ public sealed class DouyinVideoComposeTests
         out FakeWindowFocusService windowFocus,
         DouyinVideoSendGuard? guard = null,
         FakeDouyinSendProgressVerifier? verifier = null,
-        bool toolbarImages = false)
+        bool separateImages = false)
     {
         clipboard = new FakeClipboardService();
         keyboard = new FakeKeyboardInputSimulator();
@@ -586,7 +604,7 @@ public sealed class DouyinVideoComposeTests
         windowFocus = new FakeWindowFocusService();
         var handle = new IntPtr(handleValue);
         Arrange(workbench, windowFocus, handle, CreateWindowInfo(handle, "飞鸽客服", "Chrome_WidgetWin_1", "doudian"));
-        // These tests cover the clipboard-paste route for images; the toolbar route has its own tests.
+        // These tests cover the in-composer image route; the separate image send has its own tests.
         return new MessageComposeService(
             workbench,
             clipboard,
@@ -597,7 +615,7 @@ public sealed class DouyinVideoComposeTests
             verifier ?? new FakeDouyinSendProgressVerifier(),
             new FakeDouyinImageSendDialogHandler())
         {
-            UseDouyinToolbarForImages = toolbarImages
+            UseDouyinSeparateImageSend = separateImages
         };
     }
 

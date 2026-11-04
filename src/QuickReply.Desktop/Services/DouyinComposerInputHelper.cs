@@ -1,4 +1,3 @@
-using System.Windows.Automation;
 using QuickReply.Desktop.Native;
 
 namespace QuickReply.Desktop.Services;
@@ -39,26 +38,7 @@ internal static class DouyinComposerInputHelper
             return false;
         }
 
-        if (TryFocusViaAutomation(targetWindowHandle, diagnostics))
-        {
-            return true;
-        }
-
-        // A blind click while another app is in front lands in the wrong window and steals the cursor.
-        try
-        {
-            if (!IsTargetForeground(targetWindowHandle))
-            {
-                diagnostics["douyinComposerFocus"] = "click_skipped_not_foreground";
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            diagnostics["douyinComposerFocus"] = "foreground_check_error:" + ex.GetType().Name;
-            return false;
-        }
-
+        // Click only. A UI Automation walk of the Douyin (Chromium) page costs seconds of CPU.
         return TryClickComposer(targetWindowHandle, diagnostics);
     }
 
@@ -77,81 +57,6 @@ internal static class DouyinComposerInputHelper
 
         var root = NativeMethods.GetAncestor(foreground, NativeMethods.GaRootowner);
         return root != IntPtr.Zero && root == targetWindowHandle;
-    }
-
-    private static bool TryFocusViaAutomation(IntPtr targetWindowHandle, IDictionary<string, object?> diagnostics)
-    {
-        try
-        {
-            var root = AutomationElement.FromHandle(targetWindowHandle);
-            if (root is null)
-            {
-                diagnostics["douyinComposerFocus"] = "uia_no_root";
-                return false;
-            }
-
-            AutomationElement? best = null;
-            try
-            {
-                var focused = AutomationElement.FocusedElement;
-                if (focused is not null &&
-                    (Equals(focused.Current.ControlType, ControlType.Edit) ||
-                     Equals(focused.Current.ControlType, ControlType.Document)))
-                {
-                    best = focused;
-                }
-            }
-            catch
-            {
-            }
-
-            if (best is null)
-            {
-                var edits = root.FindAll(
-                    TreeScope.Descendants,
-                    new OrCondition(
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit),
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document)));
-                // Prefer a larger edit near the bottom (chat composer).
-                double bestScore = double.MinValue;
-                foreach (AutomationElement edit in edits)
-                {
-                    try
-                    {
-                        var rect = edit.Current.BoundingRectangle;
-                        if (rect.Width < 80 || rect.Height < 20 || rect.IsEmpty)
-                        {
-                            continue;
-                        }
-
-                        var score = rect.Width * rect.Height + rect.Y;
-                        if (score > bestScore)
-                        {
-                            bestScore = score;
-                            best = edit;
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-
-            if (best is null)
-            {
-                diagnostics["douyinComposerFocus"] = "uia_no_edit";
-                return false;
-            }
-
-            best.SetFocus();
-            diagnostics["douyinComposerFocus"] = "uia_setfocus";
-            return true;
-        }
-        catch (Exception ex)
-        {
-            diagnostics["douyinComposerFocus"] = "uia_error:" + ex.GetType().Name;
-            return false;
-        }
     }
 
     private static bool TryClickComposer(IntPtr targetWindowHandle, IDictionary<string, object?> diagnostics)

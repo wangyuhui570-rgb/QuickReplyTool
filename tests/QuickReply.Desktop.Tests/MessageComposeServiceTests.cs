@@ -641,6 +641,32 @@ public sealed class MessageComposeServiceTests
         }
     }
 
+    [Fact]
+    public async Task ExecuteAsync_TextThenImage_WaitsForTheTextPasteToBeReadBeforeWritingTheImage()
+    {
+        // Qianniu/Dongdong read the clipboard only when they handle Ctrl+V. Replacing it with the
+        // image before that pasted the image twice and lost the text.
+        using var scope = new TestAppDataScope();
+        var imagePath = scope.CreateFile("images\\a.png", "image");
+        var service = CreateService(out var clipboard, out _, out var workbench, out var windowFocus);
+        var handle = new IntPtr(111);
+        workbench.LastHandle = handle;
+        workbench.LastWindowInfo = CreateWindowInfo(handle, "千牛接待台", "Qt5152QWindowIcon", "AliWorkbench");
+        windowFocus.ValidHandles.Add(handle);
+        windowFocus.ForegroundWindow = handle;
+        var settings = TestSettingsFactory.CreateFastSettings();
+        settings.PhraseImageSendMode = PhraseImageSendMode.TextThenImageThenSend;
+
+        var result = await service.ExecuteAsync("文字", settings, ComposeActionMode.Send, [imagePath]);
+
+        Assert.True(result.Success, result.Message);
+        var textAt = clipboard.Timeline.IndexOf("text");
+        var filesAt = clipboard.Timeline.IndexOf("files");
+        Assert.True(textAt >= 0 && filesAt > textAt, string.Join(",", clipboard.Timeline));
+        Assert.Equal(["paste", "wait"], clipboard.Timeline.Skip(textAt + 1).Take(2));
+        Assert.Equal("files", clipboard.Timeline[textAt + 3]);
+    }
+
     private static MessageComposeService CreateService(
         out FakeClipboardService clipboard,
         out FakeKeyboardInputSimulator keyboard,
@@ -662,7 +688,7 @@ public sealed class MessageComposeServiceTests
             douyinImageSendDialogHandler: dialogHandler ?? new FakeDouyinImageSendDialogHandler())
         {
             // The Douyin image tests here cover the clipboard-paste route.
-            UseDouyinToolbarForImages = false
+            UseDouyinSeparateImageSend = false
         };
     }
 
