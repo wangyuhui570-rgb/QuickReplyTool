@@ -209,6 +209,8 @@ public sealed class AppUpdateServiceTests
         Assert.Contains("Retry { Stop-AppFolderProcesses; Rename-Item", AppUpdateService.UpdaterScript);
         // A folder that still cannot be renamed is updated by overwriting its files instead.
         Assert.Contains("falling back to in-place copy", AppUpdateService.UpdaterScript);
+        // The script itself must not keep app\ busy as its working directory.
+        Assert.Contains("Set-Location -LiteralPath ([System.IO.Path]::GetTempPath())", AppUpdateService.UpdaterScript);
     }
 
     private sealed class StaticHandler(byte[] payload) : HttpMessageHandler
