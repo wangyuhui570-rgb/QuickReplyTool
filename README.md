@@ -22,9 +22,9 @@ packaging/
 
 ## 正式发布
 
-版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.19）。合并到 `main` 之后，在该提交上推送标签 `v2.1.19`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
+版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.20）。合并到 `main` 之后，在该提交上推送标签 `v2.1.20`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
 
-- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.19.zip`（根目录下有 `app/QuickReplyTool.exe`）
+- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.20.zip`（根目录下有 `app/QuickReplyTool.exe`）
 - 创建非草稿、非预发布的 GitHub Release，说明里写 `SHA256: <64位小写>`，更新器只认这种写法
 - 用同一份信息覆盖 `update-manifest` 发布里的 `latest.json`（这个发布不能删），并用仓库密钥 `UPDATE_SIGNING_KEY` 给它签名
 

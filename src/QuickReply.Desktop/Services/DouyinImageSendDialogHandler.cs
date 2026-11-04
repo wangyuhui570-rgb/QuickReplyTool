@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Windows;
 using System.Windows.Automation;
 using QuickReply.Desktop.Native;
@@ -33,6 +33,21 @@ internal interface IDouyinImageSendDialogHandler
         DouyinSendButtonSnapshot before,
         IDictionary<string, object?> diagnostics,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>Does nothing: the image is treated as having gone into the composer, as before.</summary>
+internal sealed class NoDouyinImageSendDialogHandler : IDouyinImageSendDialogHandler
+{
+    public static NoDouyinImageSendDialogHandler Instance { get; } = new();
+
+    public DouyinSendButtonSnapshot CaptureSendButtons(IntPtr targetWindowHandle) => new([]);
+
+    public Task<DouyinImageDialogOutcome> TryConfirmAsync(
+        IntPtr targetWindowHandle,
+        DouyinSendButtonSnapshot before,
+        IDictionary<string, object?> diagnostics,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(DouyinImageDialogOutcome.NotFound);
 }
 
 internal sealed class DouyinImageSendDialogHandler : IDouyinImageSendDialogHandler

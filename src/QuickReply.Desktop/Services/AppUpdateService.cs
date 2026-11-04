@@ -439,6 +439,10 @@ internal sealed class AppUpdateService
         var startInfo = new ProcessStartInfo
         {
             FileName = "powershell.exe",
+            // Without this the script inherits the app's working directory, which is app\ itself.
+            // A process whose current directory is app\ keeps it from being renamed, so every
+            // update failed "in use" and rolled back, with nothing else running.
+            WorkingDirectory = _workRoot,
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
@@ -587,6 +591,8 @@ param(
     [string]$LogPath
 )
 $ErrorActionPreference = 'Stop'
+# Never sit inside the folder being replaced, whatever directory this was started from.
+try { Set-Location -LiteralPath ([System.IO.Path]::GetTempPath()) } catch {}
 function Log([string]$m) { try { Add-Content -LiteralPath $LogPath -Value ("{0} {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m) -Encoding UTF8 } catch {} }
 function Retry([scriptblock]$Action, [string]$What, [int]$Attempts = 20) {
     for ($i = 1; $i -le $Attempts; $i++) {
