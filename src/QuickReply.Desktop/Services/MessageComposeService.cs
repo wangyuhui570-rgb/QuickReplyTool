@@ -323,7 +323,7 @@ public sealed class MessageComposeService : IMessageComposeService
         ComposeAttemptContext attemptContext)
     {
         if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
-            (imagePaths.Any(IsVideoPath) || UsesDouyinToolbarForImages(mode, imagePaths)))
+            (imagePaths.Any(IsVideoPath) || UsesDouyinSeparateImageSend(mode, imagePaths)))
         {
             return await ExecuteDouyinPayloadWithVideosAsync(text, imagePaths, settings, mode, attemptContext);
         }
@@ -809,7 +809,7 @@ public sealed class MessageComposeService : IMessageComposeService
 
         // Douyin ignores a FileDrop'd video: every video goes through the toolbar uploader.
         if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
-            (filePayload.ContainsVideo || UsesDouyinToolbarForImages(mode, normalizedPaths)))
+            (filePayload.ContainsVideo || UsesDouyinSeparateImageSend(mode, normalizedPaths)))
         {
             return await ExecuteDouyinPayloadWithVideosAsync(string.Empty, normalizedPaths, settings, mode, attemptContext);
         }
@@ -989,9 +989,9 @@ public sealed class MessageComposeService : IMessageComposeService
         ComposeActionMode mode,
         ComposeAttemptContext attemptContext)
     {
-        // Images go through the toolbar 图片 button when sending: a pasted image only opens Douyin's
-        // "send this image?" dialog, which the paste path kept missing. Images before videos.
-        var toolbarImages = UsesDouyinToolbarForImages(mode, paths);
+        // Images are sent on their own when sending: click the input, Ctrl+V, Enter confirms Douyin's
+        // "send this image?" dialog. Images before videos.
+        var toolbarImages = UsesDouyinSeparateImageSend(mode, paths);
         var videoPaths = paths
             .Where(path => IsVideoPath(path) || (toolbarImages && IsImagePath(path)))
             .OrderBy(IsVideoPath)
@@ -1041,7 +1041,7 @@ public sealed class MessageComposeService : IMessageComposeService
             var videoPath = videoPaths[index];
             if (IsImagePath(videoPath) && !IsVideoPath(videoPath))
             {
-                var imageResult = await UploadDouyinImageAsync(videoPath, settings, mode, attemptContext);
+                var imageResult = await PasteDouyinImageAsync(videoPath, settings, mode, attemptContext, earlierPartsDone);
                 if (!imageResult.Success)
                 {
                     return earlierPartsDone
@@ -1140,12 +1140,12 @@ public sealed class MessageComposeService : IMessageComposeService
         return new ReplyActionResult(true, string.Join("；", messages));
     }
 
-    /// <summary>Douyin images go through the toolbar 图片 button when sending (not when only inputting).</summary>
-    internal bool UseDouyinToolbarForImages { get; set; } = true;
+    /// <summary>Douyin images are sent on their own (paste, then Enter on the confirm dialog) when sending.</summary>
+    internal bool UseDouyinSeparateImageSend { get; set; } = true;
 
-    private bool UsesDouyinToolbarForImages(ComposeActionMode mode, IEnumerable<string> paths)
+    private bool UsesDouyinSeparateImageSend(ComposeActionMode mode, IEnumerable<string> paths)
     {
-        return UseDouyinToolbarForImages && mode == ComposeActionMode.Send && paths.Any(IsImagePath);
+        return UseDouyinSeparateImageSend && mode == ComposeActionMode.Send && paths.Any(IsImagePath);
     }
 
     private static bool IsImagePath(string path)
@@ -1154,32 +1154,133 @@ public sealed class MessageComposeService : IMessageComposeService
         return payload.ContainsImage && !payload.ContainsVideo;
     }
 
-    private async Task<ReplyActionResult> UploadDouyinImageAsync(
+    /// <summary>Upper bound for waiting until the target app has read a pasted payload.</summary>
+    internal const int PasteConsumeTimeoutMs = 700;
+
+    /// <summary>How long Douyin gets to open its "send this image?" dialog after Ctrl+V.</summary>
+    internal const int DouyinImageDialogWaitMs = 900;
+
+    /// <summary>
+    /// Douyin image, done the way a person does it: click the chat input, Ctrl+V, and Enter
+    /// confirms the "send this image?" dialog Douyin opens for a pasted image. Enter is harmless
+    /// either way: with no dialog the composer either holds the image (sent) or is empty.
+    /// </summary>
+    private async Task<ReplyActionResult> PasteDouyinImageAsync(
         string imagePath,
         AppSettings settings,
         ComposeActionMode mode,
-        ComposeAttemptContext attemptContext)
+        ComposeAttemptContext attemptContext,
+        bool followsEarlierPart)
     {
         var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
         var stopwatch = Stopwatch.StartNew();
         PopulateAttemptDiagnostics(diagnostics, attemptContext);
-        diagnostics["selectedSendPath"] = "douyin_image_toolbar_open_dialog";
+        diagnostics["selectedSendPath"] = "douyin_image_paste_confirm_dialog";
         diagnostics["fileContainsImage"] = true;
+        diagnostics["lastImagePath"] = imagePath;
+
+        ReplyActionResult Finish(string resultCode, ReplyActionResult result)
+        {
+            diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+            diagnostics["result"] = resultCode;
+            diagnostics["message"] = result.Message;
+            SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+            return result;
+        }
+
+        ReplyActionResult UserLeft(string stage) => Finish(
+            "foreground_left",
+            CreateFailureResult(
+                ReplyActionFailureKind.FocusLost,
+                $"焦点已离开抖店窗口，图片没有发送（{stage}）。",
+                "请回到抖店会话后再发一次图片。本次没有抢回焦点，也没有自动重试。"));
+
+        // After the text went out, a user who switched apps must not be pulled back to Douyin.
+        var knownTarget = NormalizeTargetWindowHandle(
+            attemptContext.TargetWindowInfo?.Handle ?? _externalWorkbenchService.GetLastExternalWindowHandle());
+        if (followsEarlierPart && knownTarget != IntPtr.Zero &&
+            DidForegroundLeaveTarget(knownTarget, diagnostics, "before_image_activation"))
+        {
+            return UserLeft("发送前");
+        }
 
         var activation = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
-        var result = activation.Success
-            ? await _douyinVideoUploader.UploadImageAsync(
-                activation.TargetWindowHandle,
-                imagePath,
-                settings.SendHotkeyMode,
-                diagnostics).ConfigureAwait(false)
-            : CreateTargetWindowUnavailableResult(activation.UserMessage);
+        if (!activation.Success)
+        {
+            return Finish(activation.FailureCode, CreateTargetWindowUnavailableResult(activation.UserMessage));
+        }
 
-        diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
-        diagnostics["result"] = result.Success ? "success" : "failed";
-        diagnostics["message"] = result.Message;
-        SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
-        return result;
+        var clipboardSnapshot = await CaptureClipboardSnapshotAsync(diagnostics, stopwatch);
+        var write = await TryWriteClipboardPayloadAsync(
+            () => _clipboardService.SetFileDropListAsync([imagePath], persist: false),
+            "file_drop",
+            diagnostics,
+            stopwatch,
+            ReplyActionFailureKind.ClipboardBusy,
+            "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。",
+            imagePath);
+        if (write.FailureResult is not null)
+        {
+            return Finish("clipboard_write_failed", write.FailureResult.Value);
+        }
+
+        // Douyin ignores Ctrl+V until the chat input has been clicked.
+        if (DidForegroundLeaveTarget(activation.TargetWindowHandle, diagnostics, "before_composer_click"))
+        {
+            await TryRestoreClipboardAsync(clipboardSnapshot, write.Fingerprint);
+            return UserLeft("点击输入框前");
+        }
+
+        DouyinComposerInputHelper.TryFocusComposer(activation.TargetWindowHandle, diagnostics);
+        await Task.Delay(DouyinComposerInputHelper.PostFocusSettleMs).ConfigureAwait(false);
+
+        var pasteFailure = await TryPasteClipboardPayloadAsync(
+            activation.TargetWindowHandle,
+            "file_drop",
+            settleMs: 0,
+            GetEffectiveImagePasteDelayMs(settings, attemptContext.HostProfile),
+            attemptContext.HostProfile.PollIntervalMs,
+            diagnostics,
+            stopwatch,
+            settleMsDiagnosticKey: "effectiveImageSettleDelayMs");
+        if (pasteFailure is not null)
+        {
+            await TryRestoreClipboardAsync(clipboardSnapshot, write.Fingerprint);
+            return Finish("send_failed", pasteFailure.Value);
+        }
+
+        if (mode == ComposeActionMode.Send)
+        {
+            // Wait until Douyin has read the files off the clipboard, then give the dialog time to open.
+            var consumed = await _clipboardService.WaitForPasteConsumedAsync(PasteConsumeTimeoutMs).ConfigureAwait(false);
+            diagnostics["douyinImagePasteConsumed"] = consumed;
+            await Task.Delay(DouyinImageDialogWaitMs).ConfigureAwait(false);
+            if (DidForegroundLeaveTarget(activation.TargetWindowHandle, diagnostics, "before_dialog_enter"))
+            {
+                QueueClipboardRestore(clipboardSnapshot, GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile), write.Fingerprint);
+                return Finish(
+                    "foreground_left",
+                    CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        "图片已粘贴，但焦点离开了抖店窗口，没有按回车确认。",
+                        "请回到抖店，在发送图片的确认框里按回车或点发送。本次不会自动重试。"));
+            }
+
+            _keyboardInputSimulator.SendEnter();
+            diagnostics["douyinImageDialogConfirmKey"] = "enter";
+            diagnostics["sendHotkeyMs"] = stopwatch.ElapsedMilliseconds;
+        }
+
+        var restoreDelayMs = GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile);
+        QueueClipboardRestore(clipboardSnapshot, restoreDelayMs, write.Fingerprint);
+        diagnostics["queuedClipboardRestoreDelayMs"] = restoreDelayMs;
+        return Finish(
+            "success",
+            new ReplyActionResult(
+                true,
+                mode == ComposeActionMode.Send
+                    ? "图片已粘贴到抖店，并按回车确认发送。"
+                    : "图片已粘贴到抖店输入框。"));
     }
 
     private async Task<ReplyActionResult> ExecuteTextOnlyAsync(
@@ -1357,6 +1458,17 @@ public sealed class MessageComposeService : IMessageComposeService
         string guidance,
         string? lastImagePath = null)
     {
+        // Chat apps read the clipboard when they get round to the Ctrl+V, not when it is pressed.
+        // Replacing the clipboard before that pastes the next payload twice (two images, no text),
+        // so wait until the previous paste has been read.
+        var consumeWait = Stopwatch.StartNew();
+        var consumed = await _clipboardService.WaitForPasteConsumedAsync(PasteConsumeTimeoutMs).ConfigureAwait(false);
+        if (consumed is not null)
+        {
+            diagnostics["previousPasteConsumed"] = consumed;
+            diagnostics["previousPasteConsumeWaitMs"] = consumeWait.ElapsedMilliseconds;
+        }
+
         var writeResult = AnnotateFailure(
             await writeAsync().ConfigureAwait(false),
             defaultFailureKind,
@@ -1401,6 +1513,7 @@ public sealed class MessageComposeService : IMessageComposeService
             return CreateFocusLostResult();
         }
 
+        _clipboardService.NotePasteIssued();
         _keyboardInputSimulator.SendPasteShortcut();
         diagnostics["lastPasteKind"] = clipboardKind;
         diagnostics["lastPasteIssuedAtMs"] = stopwatch.ElapsedMilliseconds;

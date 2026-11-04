@@ -23,6 +23,11 @@ public sealed class ClipboardService : IClipboardService
     private static readonly ConcurrentDictionary<string, CachedImageEntry> ImageCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object ClipboardDispatcherSyncRoot = new();
     private static Dispatcher? _clipboardDispatcher;
+    private static volatile ClipboardPasteTracker? _pasteTracker;
+    // A reader got the payload before our Ctrl+V, so the paste itself cannot be observed: wait this long.
+    private const int UnobservablePasteWaitMs = 250;
+    // The read hands the data over on return; leave the target a moment before replacing it.
+    private const int PasteConsumedGraceMs = 20;
 
     public async Task<ClipboardSnapshot> CaptureSnapshotAsync()
     {
@@ -95,7 +100,7 @@ public sealed class ClipboardService : IClipboardService
                 var dataObject = new System.Windows.DataObject();
                 dataObject.SetData(System.Windows.DataFormats.UnicodeText, text);
                 dataObject.SetData(System.Windows.DataFormats.Text, text);
-                System.Windows.Clipboard.SetDataObject(dataObject, false);
+                SetTrackedDataObject(dataObject);
                 return true;
             });
 
@@ -299,10 +304,14 @@ public sealed class ClipboardService : IClipboardService
 
                     var dataObject = new System.Windows.DataObject();
                     dataObject.SetFileDropList(collection);
-                    System.Windows.Clipboard.SetDataObject(dataObject, persist);
                     if (persist)
                     {
+                        System.Windows.Clipboard.SetDataObject(dataObject, true);
                         System.Windows.Clipboard.Flush();
+                    }
+                    else
+                    {
+                        SetTrackedDataObject(dataObject);
                     }
 
                     return true;
@@ -320,6 +329,59 @@ public sealed class ClipboardService : IClipboardService
                 FailureKind: ReplyActionFailureKind.ClipboardBusy,
                 UserGuidance: "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");
         }
+    }
+
+    public void NotePasteIssued() => _pasteTracker?.NotePasteIssued();
+
+    public async Task<bool?> WaitForPasteConsumedAsync(int timeoutMs)
+    {
+        var tracker = _pasteTracker;
+        if (tracker is null || !tracker.PasteIssued)
+        {
+            return null;
+        }
+
+        if (tracker.Consumed.IsCompleted)
+        {
+            return true;
+        }
+
+        if (tracker.ReadBeforePaste)
+        {
+            await Task.Delay(Math.Min(UnobservablePasteWaitMs, timeoutMs)).ConfigureAwait(false);
+            return false;
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < timeoutMs)
+        {
+            if (tracker.Consumed.IsCompleted)
+            {
+                await Task.Delay(PasteConsumedGraceMs).ConfigureAwait(false);
+                return true;
+            }
+
+            if (NativeMethods.GetClipboardSequenceNumber() != tracker.Sequence)
+            {
+                // Rendering or someone else's copy changed the clipboard: nothing left to wait for.
+                return tracker.Consumed.IsCompleted;
+            }
+
+            await Task.WhenAny(tracker.Consumed, Task.Delay(15)).ConfigureAwait(false);
+        }
+
+        return tracker.Consumed.IsCompleted;
+    }
+
+    /// <summary>Puts a transient payload on the clipboard without copying it, so reads can be observed.</summary>
+    private static void SetTrackedDataObject(System.Windows.DataObject dataObject)
+    {
+        var tracker = new ClipboardPasteTracker();
+        System.Windows.Clipboard.SetDataObject(
+            new System.Windows.DataObject(new TrackingDataObject(dataObject, tracker)),
+            false);
+        tracker.Sequence = NativeMethods.GetClipboardSequenceNumber();
+        _pasteTracker = tracker;
     }
 
     public async Task<ReplyActionResult> RestoreSnapshotAsync(

@@ -107,6 +107,7 @@ internal sealed class FakeClipboardService : IClipboardService
     {
         SetTextCallCount++;
         LastText = text;
+        Timeline.Add("text");
         return Task.FromResult(OnSetText?.Invoke(text, persist) ?? SetTextResult);
     }
 
@@ -128,7 +129,19 @@ internal sealed class FakeClipboardService : IClipboardService
     {
         SetFileDropListCallCount++;
         LastFiles = filePaths.ToArray();
+        Timeline.Add("files");
         return Task.FromResult(OnSetFileDropList?.Invoke(filePaths, persist) ?? SetFileDropListResult);
+    }
+
+    /// <summary>Order of clipboard writes, pastes and paste-consumed waits.</summary>
+    public List<string> Timeline { get; } = [];
+
+    public void NotePasteIssued() => Timeline.Add("paste");
+
+    public Task<bool?> WaitForPasteConsumedAsync(int timeoutMs)
+    {
+        Timeline.Add("wait");
+        return Task.FromResult<bool?>(Timeline.Contains("paste") ? true : null);
     }
 
     public List<ClipboardSnapshot> RestoredSnapshots { get; } = [];
