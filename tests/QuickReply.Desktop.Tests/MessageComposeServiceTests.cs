@@ -659,7 +659,11 @@ public sealed class MessageComposeServiceTests
             keyboard,
             windowFocus,
             douyinSendProgressVerifier: new FakeDouyinSendProgressVerifier(),
-            douyinImageSendDialogHandler: dialogHandler ?? new FakeDouyinImageSendDialogHandler());
+            douyinImageSendDialogHandler: dialogHandler ?? new FakeDouyinImageSendDialogHandler())
+        {
+            // The Douyin image tests here cover the clipboard-paste route.
+            UseDouyinToolbarForImages = false
+        };
     }
 
     private static WindowDockTargetInfo CreateWindowInfo(IntPtr handle, string title, string className, string processName)

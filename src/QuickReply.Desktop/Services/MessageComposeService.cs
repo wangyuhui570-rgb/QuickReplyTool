@@ -55,7 +55,7 @@ public sealed class MessageComposeService : IMessageComposeService
         _clipboardService = clipboardService;
         _keyboardInputSimulator = keyboardInputSimulator;
         _windowFocusService = windowFocusService;
-        _douyinVideoUploader = douyinVideoUploader ?? new DouyinVideoOpenDialogUploader(keyboardInputSimulator);
+        _douyinVideoUploader = douyinVideoUploader ?? new DouyinVideoOpenDialogUploader(keyboardInputSimulator, _douyinImageSendDialogHandler);
         _douyinVideoSendGuard = douyinVideoSendGuard ?? SharedDouyinVideoSendGuard;
         _douyinSendProgressVerifier = douyinSendProgressVerifier
             ?? new DouyinSendProgressVerifier(keyboardInputSimulator, clipboardService);
@@ -321,7 +321,7 @@ public sealed class MessageComposeService : IMessageComposeService
         ComposeAttemptContext attemptContext)
     {
         if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
-            imagePaths.Any(IsVideoPath))
+            (imagePaths.Any(IsVideoPath) || UsesDouyinToolbarForImages(mode, imagePaths)))
         {
             return await ExecuteDouyinPayloadWithVideosAsync(text, imagePaths, settings, mode, attemptContext);
         }
@@ -806,7 +806,8 @@ public sealed class MessageComposeService : IMessageComposeService
             settings);
 
         // Douyin ignores a FileDrop'd video: every video goes through the toolbar uploader.
-        if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench && filePayload.ContainsVideo)
+        if (attemptContext.HostProfile.Kind == SendHostKind.DouyinWorkbench &&
+            (filePayload.ContainsVideo || UsesDouyinToolbarForImages(mode, normalizedPaths)))
         {
             return await ExecuteDouyinPayloadWithVideosAsync(string.Empty, normalizedPaths, settings, mode, attemptContext);
         }
@@ -986,14 +987,27 @@ public sealed class MessageComposeService : IMessageComposeService
         ComposeActionMode mode,
         ComposeAttemptContext attemptContext)
     {
-        var videoPaths = paths.Where(IsVideoPath).ToArray();
-        var otherPaths = paths.Where(path => !IsVideoPath(path)).ToArray();
+        // Images go through the toolbar 图片 button when sending: a pasted image only opens Douyin's
+        // "send this image?" dialog, which the paste path kept missing. Images before videos.
+        var toolbarImages = UsesDouyinToolbarForImages(mode, paths);
+        var videoPaths = paths
+            .Where(path => IsVideoPath(path) || (toolbarImages && IsImagePath(path)))
+            .OrderBy(IsVideoPath)
+            .ToArray();
+        var otherPaths = paths.Where(path => !videoPaths.Contains(path)).ToArray();
         var hasText = !string.IsNullOrWhiteSpace(text);
         var messages = new List<string>();
         var earlierPartsDone = false;
+        var imageFirst = settings.PhraseImageSendMode != PhraseImageSendMode.TextThenImageThenSend;
+        var leadingAfterMedia = toolbarImages && imageFirst && videoPaths.Any(IsImagePath);
 
-        if (hasText || otherPaths.Length > 0)
+        async Task<ReplyActionResult?> SendLeadingAsync()
         {
+            if (!hasText && otherPaths.Length == 0)
+            {
+                return null;
+            }
+
             var leading = hasText && otherPaths.Length > 0
                 ? await ExecuteTextWithFileBackedImagesAsync(text, otherPaths, settings, mode, attemptContext)
                 : hasText
@@ -1001,17 +1015,46 @@ public sealed class MessageComposeService : IMessageComposeService
                     : await ExecuteFilesCoreAsync(otherPaths, settings, mode, attemptContext);
             if (!leading.Success)
             {
-                return leading;
+                return earlierPartsDone
+                    ? CreateFailureResult(
+                        ReplyActionFailureKind.ManualConfirmationRequired,
+                        $"{string.Join("；", messages)}；文字没有发出：{leading.Message}",
+                        "图片已经发出，请手动补上文字。本次不会自动重试。")
+                    : leading;
             }
 
             messages.Add(leading.Message);
             earlierPartsDone = true;
+            return null;
+        }
+
+        if (!leadingAfterMedia && await SendLeadingAsync() is { } leadingFailure)
+        {
+            return leadingFailure;
         }
 
         var sendAfterUpload = mode == ComposeActionMode.Send;
         for (var index = 0; index < videoPaths.Length; index++)
         {
             var videoPath = videoPaths[index];
+            if (IsImagePath(videoPath) && !IsVideoPath(videoPath))
+            {
+                var imageResult = await UploadDouyinImageAsync(videoPath, settings, mode, attemptContext);
+                if (!imageResult.Success)
+                {
+                    return earlierPartsDone
+                        ? CreateFailureResult(
+                            ReplyActionFailureKind.ManualConfirmationRequired,
+                            $"{string.Join("；", messages)}；图片 {Path.GetFileName(videoPath)} 失败：{imageResult.Message}",
+                            imageResult.UserGuidance)
+                        : imageResult;
+                }
+
+                messages.Add(imageResult.Message);
+                earlierPartsDone = true;
+                continue;
+            }
+
             var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
             var stopwatch = Stopwatch.StartNew();
             PopulateAttemptDiagnostics(diagnostics, attemptContext);
@@ -1087,7 +1130,54 @@ public sealed class MessageComposeService : IMessageComposeService
             earlierPartsDone = true;
         }
 
+        if (leadingAfterMedia && await SendLeadingAsync() is { } trailingFailure)
+        {
+            return trailingFailure;
+        }
+
         return new ReplyActionResult(true, string.Join("；", messages));
+    }
+
+    /// <summary>Douyin images go through the toolbar 图片 button when sending (not when only inputting).</summary>
+    internal bool UseDouyinToolbarForImages { get; set; } = true;
+
+    private bool UsesDouyinToolbarForImages(ComposeActionMode mode, IEnumerable<string> paths)
+    {
+        return UseDouyinToolbarForImages && mode == ComposeActionMode.Send && paths.Any(IsImagePath);
+    }
+
+    private static bool IsImagePath(string path)
+    {
+        var payload = ComposeFilePayloadClassifier.Classify([path]);
+        return payload.ContainsImage && !payload.ContainsVideo;
+    }
+
+    private async Task<ReplyActionResult> UploadDouyinImageAsync(
+        string imagePath,
+        AppSettings settings,
+        ComposeActionMode mode,
+        ComposeAttemptContext attemptContext)
+    {
+        var diagnostics = CreateComposeDiagnosticsPayload("files", mode);
+        var stopwatch = Stopwatch.StartNew();
+        PopulateAttemptDiagnostics(diagnostics, attemptContext);
+        diagnostics["selectedSendPath"] = "douyin_image_toolbar_open_dialog";
+        diagnostics["fileContainsImage"] = true;
+
+        var activation = await EnsureTargetWindowReadyAsync(settings, diagnostics, stopwatch, attemptContext);
+        var result = activation.Success
+            ? await _douyinVideoUploader.UploadImageAsync(
+                activation.TargetWindowHandle,
+                imagePath,
+                settings.SendHotkeyMode,
+                diagnostics).ConfigureAwait(false)
+            : CreateTargetWindowUnavailableResult(activation.UserMessage);
+
+        diagnostics["totalMs"] = stopwatch.ElapsedMilliseconds;
+        diagnostics["result"] = result.Success ? "success" : "failed";
+        diagnostics["message"] = result.Message;
+        SearchOverlayDiagnostics.Log("message_compose", "compose_files_completed", diagnostics);
+        return result;
     }
 
     private async Task<ReplyActionResult> ExecuteTextOnlyAsync(

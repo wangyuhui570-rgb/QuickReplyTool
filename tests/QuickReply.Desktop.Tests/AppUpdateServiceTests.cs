@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using QuickReply.Desktop.Services;
@@ -197,6 +197,18 @@ public sealed class AppUpdateServiceTests
         Assert.Contains("app.bak", AppUpdateService.UpdaterScript);
         Assert.Contains("rolling back", AppUpdateService.UpdaterScript);
         Assert.Contains("Start-Process -FilePath $exe", AppUpdateService.UpdaterScript);
+    }
+
+    [Fact]
+    public void UpdaterScript_StopsEverythingRunningFromTheAppFolder()
+    {
+        // pythonw.exe for the screenshot tool lives outside app\ but runs a script inside it;
+        // matching only QuickReplyTool.exe left it running and every rename of app\ failed.
+        Assert.Contains("Win32_Process", AppUpdateService.UpdaterScript);
+        Assert.Contains("$_.CommandLine.IndexOf($appDir", AppUpdateService.UpdaterScript);
+        Assert.Contains("Retry { Stop-AppFolderProcesses; Rename-Item", AppUpdateService.UpdaterScript);
+        // A folder that still cannot be renamed is updated by overwriting its files instead.
+        Assert.Contains("falling back to in-place copy", AppUpdateService.UpdaterScript);
     }
 
     private sealed class StaticHandler(byte[] payload) : HttpMessageHandler

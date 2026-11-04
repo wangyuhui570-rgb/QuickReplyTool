@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -272,6 +272,21 @@ public sealed class ScreenshotToolService : IDisposable
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Stops the screenshot tool before an update. Its pythonw process runs with the app\ScreenshotTool
+    /// folder as working directory, which keeps the updater from renaming app\ and made every update
+    /// roll back to the old version.
+    /// </summary>
+    public void StopForUpdate()
+    {
+        lock (_syncRoot)
+        {
+            _watchdogTimer?.Dispose();
+            _watchdogTimer = null;
+            _ = StopCore(forceStop: true, appExit: false);
         }
     }
 

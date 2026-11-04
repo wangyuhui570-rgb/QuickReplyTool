@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using QuickReply.Core.Services;
 using QuickReply.Desktop.Models;
@@ -275,6 +275,16 @@ public partial class App : System.Windows.Application
             var stagingRoot = await service.DownloadAndStageAsync(update, progress);
             status.Text = "下载完成，正在重启…";
             AppUpdateLog.Write("staged " + stagingRoot);
+            try
+            {
+                _screenshotToolService?.StopForUpdate();
+                AppUpdateLog.Write("screenshot tool stopped");
+            }
+            catch (Exception stopError)
+            {
+                AppUpdateLog.Write($"screenshot tool stop failed: {stopError.Message}");
+            }
+
             service.LaunchUpdater(stagingRoot, installRoot, Environment.ProcessId);
             PrepareForRestart();
             // OnExit blocks the UI thread on ShutdownAsync().GetResult(), so the process never
