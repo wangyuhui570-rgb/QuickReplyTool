@@ -236,7 +236,11 @@ public partial class App : System.Windows.Application
                 return;
             }
 
-            var sizeText = update.SizeBytes > 0 ? $"（约 {update.SizeBytes / 1024 / 1024} MB）" : string.Empty;
+            var patchApplies = update.Patch is { } patch &&
+                AppUpdatePolicy.TryParseVersion(patch.FromVersion) == AppUpdatePolicy.TryParseVersion(AppIdentity.Version);
+            var sizeText = patchApplies && update.Patch!.SizeBytes > 0
+                ? $"（增量补丁约 {Math.Max(1, update.Patch.SizeBytes / 1024)} KB）"
+                : update.SizeBytes > 0 ? $"（约 {update.SizeBytes / 1024 / 1024} MB）" : string.Empty;
             var answer = System.Windows.MessageBox.Show(
                 MainWindow,
                 $"发现新版本 {update.Version}{sizeText}，当前版本 {AppIdentity.Version}。\n\n现在更新吗？\n会自动下载、替换并重启软件，设置和话术都不会受影响。\n选「否」稍后再说。",
@@ -272,7 +276,7 @@ public partial class App : System.Windows.Application
             };
             statusWindow.Show();
             var progress = new Progress<string>(message => status.Text = message);
-            var stagingRoot = await service.DownloadAndStageAsync(update, progress);
+            var stagingRoot = await service.DownloadAndStageAsync(update, progress, installRoot: installRoot, currentVersion: AppIdentity.Version);
             status.Text = "下载完成，正在重启…";
             AppUpdateLog.Write("staged " + stagingRoot);
             try

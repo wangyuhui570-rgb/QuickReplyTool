@@ -60,6 +60,34 @@ jobs:
         shell: pwsh
         run: ./scripts/build-portable.ps1 -Configuration Release
 
+      # Optional: a failure here only means clients download the full zip, as before.
+      - name: Build incremental patch from the previous release
+        id: patch
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $current = [version]$env:version
+          $previous = gh release list --repo "${{ github.repository }}" --limit 50 --json tagName,isDraft,isPrerelease |
+            ConvertFrom-Json |
+            Where-Object { -not $_.isDraft -and -not $_.isPrerelease -and $_.tagName -match '^v(\d+\.\d+\.\d+)$' } |
+            ForEach-Object { [pscustomobject]@{ Tag = $_.tagName; Version = [version]($_.tagName.Substring(1)) } } |
+            Where-Object { $_.Version -lt $current } |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+          if ($null -eq $previous) { Write-Warning "No previous formal release: no patch."; exit 0 }
+          $fromVersion = $previous.Version.ToString(3)
+          $previousDir = Join-Path $env:RUNNER_TEMP "previous-release"
+          New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
+          gh release download $previous.Tag --repo "${{ github.repository }}" --pattern "QuickReplyTool-Portable-$fromVersion.zip" --dir $previousDir --clobber
+          $previousZip = Join-Path $previousDir "QuickReplyTool-Portable-$fromVersion.zip"
+          if (-not (Test-Path -LiteralPath $previousZip)) { Write-Warning "Previous zip not found: no patch."; exit 0 }
+          $patchName = "QuickReplyTool-Patch-$fromVersion-to-$env:version.zip"
+          $patchPath = Join-Path "artifacts" $patchName
+          ./scripts/build-update-patch.ps1 -PreviousZip $previousZip -CurrentZip (Join-Path "artifacts" "QuickReplyTool-Portable-$env:version.zip") -FromVersion $fromVersion -ToVersion $env:version -OutputPath $patchPath
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "patchFrom=$fromVersion`npatchName=$patchName`n")
+
       - name: Write release notes and update manifest
         shell: pwsh
         env:
@@ -73,6 +101,17 @@ jobs:
           $url = "https://github.com/${{ github.repository }}/releases/download/$env:tag/$zipName"
           # AppUpdatePolicy.ExtractSha256 requires "SHA256:" then the 64-hex digest.
           $notes = "客服效率工具 $env:version`r`n`r`nSHA256: $sha`r`nSize: $size bytes`r`n"
+          # Incremental patch (AppUpdatePatcher). "PatchSHA256:" must come after the full "SHA256:" line.
+          $patch = $null
+          if ($env:patchName -and (Test-Path -LiteralPath (Join-Path "artifacts" $env:patchName))) {
+            $patchPath = Join-Path "artifacts" $env:patchName
+            $patchSha = (Get-FileHash -LiteralPath $patchPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $patchSize = (Get-Item -LiteralPath $patchPath).Length
+            $patchUrl = "https://github.com/${{ github.repository }}/releases/download/$env:tag/$env:patchName"
+            $notes += "`r`nPatchFrom: $env:patchFrom`r`nPatchSHA256: $patchSha`r`nPatchSize: $patchSize bytes`r`n"
+            $patch = [ordered]@{ from = $env:patchFrom; zipName = $env:patchName; url = $patchUrl; sha256 = $patchSha; size = [int64]$patchSize; signature = "" }
+            "$patchSha  $env:patchName" | Set-Content -LiteralPath "$patchPath.sha256" -Encoding ascii -NoNewline
+          }
           $notesPath = Join-Path "artifacts" "release-notes.md"
           [System.IO.File]::WriteAllText($notesPath, $notes, [System.Text.UTF8Encoding]::new($false))
           # AppUpdatePolicy.ParseSignedManifest: the mirror copy of latest.json is trusted only with
@@ -86,6 +125,11 @@ jobs:
             $bytesRead = 0
             $ecdsa.ImportPkcs8PrivateKey([Convert]::FromBase64String($env:UPDATE_SIGNING_KEY.Trim()), [ref]$bytesRead)
             $signature = [Convert]::ToBase64String($ecdsa.SignData([System.Text.Encoding]::UTF8.GetBytes($payload), [System.Security.Cryptography.HashAlgorithmName]::SHA256))
+            if ($patch) {
+              # AppUpdatePolicy.BuildPatchSigningPayload: "patch", from, zipName, url, sha256.
+              $patchPayload = "patch`n$($patch.from)`n$($patch.zipName)`n$($patch.url)`n$($patch.sha256)"
+              $patch.signature = [Convert]::ToBase64String($ecdsa.SignData([System.Text.Encoding]::UTF8.GetBytes($patchPayload), [System.Security.Cryptography.HashAlgorithmName]::SHA256))
+            }
             $ecdsa.Dispose()
           }
           $manifest = [ordered]@{
@@ -97,7 +141,9 @@ jobs:
             size = [int64]$size
             notes = "客服效率工具 $env:version"
             signature = $signature
-          } | ConvertTo-Json
+          }
+          if ($patch) { $manifest.patch = $patch }
+          $manifest = $manifest | ConvertTo-Json -Depth 4
           $manifestPath = Join-Path "artifacts" "latest.json"
           [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
           Get-Content -LiteralPath $notesPath
@@ -111,7 +157,12 @@ jobs:
         run: |
           $zipName = "QuickReplyTool-Portable-$env:version.zip"
           $zip = Join-Path "artifacts" $zipName
-          gh release create $env:tag $zip "$zip.sha256" `
+          $assets = @($zip, "$zip.sha256")
+          if ($env:patchName -and (Test-Path -LiteralPath (Join-Path "artifacts" $env:patchName))) {
+            $patchPath = Join-Path "artifacts" $env:patchName
+            $assets += @($patchPath, "$patchPath.sha256")
+          }
+          gh release create $env:tag @assets `
             --repo "${{ github.repository }}" `
             --title "客服效率工具 $env:version" `
             --notes-file (Join-Path "artifacts" "release-notes.md") `

@@ -17,7 +17,19 @@ internal sealed record AppUpdateInfo(
     string ZipUrl,
     string Sha256,
     long SizeBytes,
-    string Notes);
+    string Notes,
+    AppUpdatePatch? Patch = null);
+
+/// <summary>
+/// Changed files only, built by CI against the release before. Usable only when the installed
+/// version equals <see cref="FromVersion"/>; anything else falls back to the full zip.
+/// </summary>
+internal sealed record AppUpdatePatch(
+    string FromVersion,
+    string ZipName,
+    string Url,
+    string Sha256,
+    long SizeBytes);
 
 internal enum AppUpdateCheckStatus
 {
@@ -39,6 +51,8 @@ internal static class AppUpdatePolicy
     public const string ManifestTag = "update-manifest";
     public const string ManifestFileName = "latest.json";
     public const string ZipPrefix = "QuickReplyTool-Portable-";
+    public const string PatchPrefix = "QuickReplyTool-Patch-";
+    public const string PatchManifestFileName = "patch-manifest.json";
 
     public static string ReleasesApiUrl => $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases?per_page=15";
 
@@ -46,7 +60,10 @@ internal static class AppUpdatePolicy
         $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{ManifestTag}/{ManifestFileName}";
 
     private static readonly Regex VersionRegex = new(@"^\s*[vV]?(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?", RegexOptions.Compiled);
-    private static readonly Regex ShaRegex = new(@"(?i)sha-?256[^0-9a-f]{0,40}([0-9a-f]{64})", RegexOptions.Compiled);
+    // The lookbehind keeps "PatchSHA256:" from being read as the full zip's digest.
+    private static readonly Regex ShaRegex = new(@"(?i)(?<!patch-?)sha-?256[^0-9a-f]{0,40}([0-9a-f]{64})", RegexOptions.Compiled);
+    private static readonly Regex PatchShaRegex = new(@"(?i)patch-?sha-?256[^0-9a-f]{0,40}([0-9a-f]{64})", RegexOptions.Compiled);
+    private static readonly Regex PatchNameRegex = new(@"^QuickReplyTool-Patch-(?<from>[0-9.]+)-to-(?<to>[0-9.]+)\.zip$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>Parses "v2.1.15-douyin-test" / "2.1.15" into a comparable version (suffix ignored).</summary>
     public static Version? TryParseVersion(string? text)
@@ -76,6 +93,17 @@ internal static class AppUpdatePolicy
         }
 
         return currentVersion is null || candidateVersion > currentVersion;
+    }
+
+    public static string? ExtractPatchSha256(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = PatchShaRegex.Match(text);
+        return match.Success ? match.Groups[1].Value.ToLowerInvariant() : null;
     }
 
     public static string? ExtractSha256(string? text)
@@ -140,18 +168,31 @@ internal static class AppUpdatePolicy
             string? zipName = null;
             string? zipUrl = null;
             long size = 0;
+            AppUpdatePatch? patch = null;
             if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
             {
                 foreach (var asset in assets.EnumerateArray())
                 {
                     var name = GetString(asset, "name");
-                    if (name.StartsWith(ZipPrefix, StringComparison.OrdinalIgnoreCase)
+                    var assetSize = asset.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetInt64(out var s) ? s : 0;
+                    if (zipName is null
+                        && name.StartsWith(ZipPrefix, StringComparison.OrdinalIgnoreCase)
                         && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                     {
                         zipName = name;
                         zipUrl = GetString(asset, "browser_download_url");
-                        size = asset.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetInt64(out var s) ? s : 0;
-                        break;
+                        size = assetSize;
+                    }
+                    else if (patch is null
+                             && PatchNameRegex.Match(name) is { Success: true } patchName
+                             && ExtractPatchSha256(body) is { } patchSha)
+                    {
+                        patch = new AppUpdatePatch(
+                            patchName.Groups["from"].Value,
+                            name,
+                            GetString(asset, "browser_download_url"),
+                            patchSha,
+                            assetSize);
                     }
                 }
             }
@@ -165,7 +206,7 @@ internal static class AppUpdatePolicy
             if (bestVersion is null || version > bestVersion)
             {
                 bestVersion = version;
-                best = new AppUpdateInfo(VersionText(version), tag, zipName, zipUrl, sha, size, body);
+                best = new AppUpdateInfo(VersionText(version), tag, zipName, zipUrl, sha, size, body, patch);
             }
         }
 
@@ -218,14 +259,46 @@ internal static class AppUpdatePolicy
                 GetString(root, "sha256"));
             using var ecdsa = ECDsa.Create();
             ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKeyBase64), out _);
-            return ecdsa.VerifyData(Encoding.UTF8.GetBytes(payload), Convert.FromBase64String(signatureText), HashAlgorithmName.SHA256)
+            if (!ecdsa.VerifyData(Encoding.UTF8.GetBytes(payload), Convert.FromBase64String(signatureText), HashAlgorithmName.SHA256))
+            {
+                return null;
+            }
+
+            // The patch carries its own signature. Without a valid one only the full zip is used.
+            return info.Patch is { } patch && VerifyPatchSignature(ecdsa, root, patch)
                 ? info
-                : null;
+                : info with { Patch = null };
         }
         catch (Exception ex) when (ex is FormatException or CryptographicException)
         {
             return null;
         }
+    }
+
+    /// <summary>The text CI signs for a patch: from version, zipName, url and sha256, one per line.</summary>
+    public static string BuildPatchSigningPayload(string fromVersion, string zipName, string url, string sha256) =>
+        string.Join("\n", "patch", fromVersion.Trim(), zipName.Trim(), url.Trim(), sha256.Trim().ToLowerInvariant());
+
+    private static bool VerifyPatchSignature(ECDsa ecdsa, JsonElement root, AppUpdatePatch patch)
+    {
+        if (!patch.Url.StartsWith(ReleaseDownloadPrefix, StringComparison.Ordinal) ||
+            !root.TryGetProperty("patch", out var element))
+        {
+            return false;
+        }
+
+        var signature = GetString(element, "signature").Trim();
+        if (signature.Length == 0)
+        {
+            return false;
+        }
+
+        var payload = BuildPatchSigningPayload(
+            GetString(element, "from"),
+            GetString(element, "zipName"),
+            GetString(element, "url"),
+            GetString(element, "sha256"));
+        return ecdsa.VerifyData(Encoding.UTF8.GetBytes(payload), Convert.FromBase64String(signature), HashAlgorithmName.SHA256);
     }
 
     /// <summary>Parses the latest.json manifest published by CI.</summary>
@@ -253,7 +326,27 @@ internal static class AppUpdatePolicy
         }
 
         var size = root.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetInt64(out var s) ? s : 0;
-        return new AppUpdateInfo(VersionText(version), GetString(root, "tag"), zipName, url, sha, size, GetString(root, "notes"));
+        return new AppUpdateInfo(VersionText(version), GetString(root, "tag"), zipName, url, sha, size, GetString(root, "notes"), ParsePatch(root));
+    }
+
+    private static AppUpdatePatch? ParsePatch(JsonElement root)
+    {
+        if (!root.TryGetProperty("patch", out var patch) || patch.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var from = TryParseVersion(GetString(patch, "from"));
+        var sha = GetString(patch, "sha256").Trim().ToLowerInvariant();
+        var url = GetString(patch, "url");
+        var zipName = GetString(patch, "zipName");
+        if (from is null || !Regex.IsMatch(sha, "^[0-9a-f]{64}$") || string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(zipName))
+        {
+            return null;
+        }
+
+        var size = patch.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetInt64(out var s) ? s : 0;
+        return new AppUpdatePatch(VersionText(from), zipName, url, sha, size);
     }
 
     /// <summary>The running exe must live in a folder named "app"; its parent is the install root.</summary>
@@ -361,56 +454,44 @@ internal sealed class AppUpdateService
         }
     }
 
-    /// <summary>Downloads (mirror first) and verifies the zip, then extracts it to a staging folder. Returns the staging root.</summary>
-    public async Task<string> DownloadAndStageAsync(AppUpdateInfo update, IProgress<string>? progress, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Stages the update and returns the staging root. With <paramref name="installRoot"/> and
+    /// <paramref name="currentVersion"/> it first tries the small patch built against the installed
+    /// version; any problem there falls back to downloading the full zip.
+    /// </summary>
+    public async Task<string> DownloadAndStageAsync(
+        AppUpdateInfo update,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken = default,
+        string? installRoot = null,
+        string? currentVersion = null)
     {
         Directory.CreateDirectory(_workRoot);
         CleanupOldStaging();
-        var zipPath = Path.Combine(_workRoot, update.ZipName);
-        var errors = new List<string>();
-        var downloaded = false;
 
-        if (File.Exists(zipPath) && string.Equals(await ComputeSha256Async(zipPath, cancellationToken), update.Sha256, StringComparison.OrdinalIgnoreCase))
-        {
-            downloaded = true;
-        }
-
-        AppUpdateLog.Write($"download start version={update.Version} zip={update.ZipName} url={update.ZipUrl} expectedSha={update.Sha256}");
-        foreach (var url in downloaded ? Array.Empty<string>() : AppUpdatePolicy.BuildDownloadCandidates(update.ZipUrl))
+        if (update.Patch is { } patch &&
+            installRoot is not null &&
+            currentVersion is not null &&
+            AppUpdatePolicy.TryParseVersion(currentVersion) is { } installed &&
+            AppUpdatePolicy.TryParseVersion(patch.FromVersion) is { } patchFrom &&
+            installed == patchFrom)
         {
             try
             {
-                progress?.Report($"正在下载 {update.Version}（{SafeHost(url)}）…");
-                AppUpdateLog.Write("GET " + url);
-                await DownloadFileAsync(url, zipPath + ".part", update.SizeBytes, progress, cancellationToken);
-                var sha = await ComputeSha256Async(zipPath + ".part", cancellationToken);
-                AppUpdateLog.Write($"sha256 {SafeHost(url)} {sha}");
-                if (!string.Equals(sha, update.Sha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    errors.Add($"{SafeHost(url)} 校验不一致");
-                    AppUpdateLog.Write($"sha mismatch {SafeHost(url)} expected={update.Sha256} actual={sha}");
-                    TryDeleteFile(zipPath + ".part");
-                    continue;
-                }
-
-                File.Move(zipPath + ".part", zipPath, overwrite: true);
-                downloaded = true;
-                break;
+                var stagedFromPatch = await StageFromPatchAsync(update, patch, installRoot, progress, cancellationToken);
+                AppUpdateLog.Write($"staged from patch {patch.ZipName}");
+                return stagedFromPatch;
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                errors.Add($"{SafeHost(url)} {ex.Message}");
-                AppUpdateLog.Write($"download failed {SafeHost(url)} {ex.GetType().Name}: {ex.Message}");
-                TryDeleteFile(zipPath + ".part");
+                AppUpdateLog.Write($"patch failed, using full zip: {ex.GetType().Name}: {ex.Message}");
+                CleanupOldStaging();
             }
         }
 
-        if (!downloaded)
-        {
-            var failure = "下载失败：" + string.Join("；", errors);
-            AppUpdateLog.Write(failure);
-            throw new InvalidOperationException(failure);
-        }
+        var zipPath = Path.Combine(_workRoot, update.ZipName);
+        AppUpdateLog.Write($"download start version={update.Version} zip={update.ZipName} url={update.ZipUrl} expectedSha={update.Sha256}");
+        await DownloadVerifiedAsync(update.ZipUrl, zipPath, update.Sha256, update.SizeBytes, $"正在下载 {update.Version}", progress, cancellationToken);
 
         progress?.Report("下载完成，正在解压…");
         var stagingRoot = Path.Combine(_workRoot, "staging-" + update.Version);
@@ -426,6 +507,79 @@ internal sealed class AppUpdateService
         }
 
         TryDeleteFile(zipPath);
+        return stagingRoot;
+    }
+
+    /// <summary>Downloads (mirror first) until one copy matches <paramref name="expectedSha"/>; throws when none does.</summary>
+    private async Task DownloadVerifiedAsync(
+        string sourceUrl,
+        string targetPath,
+        string expectedSha,
+        long expectedSize,
+        string progressLabel,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (File.Exists(targetPath) &&
+            string.Equals(await ComputeSha256Async(targetPath, cancellationToken), expectedSha, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var errors = new List<string>();
+        foreach (var url in AppUpdatePolicy.BuildDownloadCandidates(sourceUrl))
+        {
+            try
+            {
+                progress?.Report($"{progressLabel}（{SafeHost(url)}）…");
+                AppUpdateLog.Write("GET " + url);
+                await DownloadFileAsync(url, targetPath + ".part", expectedSize, progress, cancellationToken);
+                var sha = await ComputeSha256Async(targetPath + ".part", cancellationToken);
+                AppUpdateLog.Write($"sha256 {SafeHost(url)} {sha}");
+                if (!string.Equals(sha, expectedSha, StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add($"{SafeHost(url)} 校验不一致");
+                    AppUpdateLog.Write($"sha mismatch {SafeHost(url)} expected={expectedSha} actual={sha}");
+                    TryDeleteFile(targetPath + ".part");
+                    continue;
+                }
+
+                File.Move(targetPath + ".part", targetPath, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                errors.Add($"{SafeHost(url)} {ex.Message}");
+                AppUpdateLog.Write($"download failed {SafeHost(url)} {ex.GetType().Name}: {ex.Message}");
+                TryDeleteFile(targetPath + ".part");
+            }
+        }
+
+        var failure = "下载失败：" + string.Join("；", errors);
+        AppUpdateLog.Write(failure);
+        throw new InvalidOperationException(failure);
+    }
+
+    /// <summary>
+    /// Copies the installed app into staging, lays the patch's changed files over it, removes files
+    /// the new version no longer has, and checks every file against the hashes in the patch
+    /// manifest. The result is byte-for-byte what the full zip would have extracted.
+    /// </summary>
+    private async Task<string> StageFromPatchAsync(
+        AppUpdateInfo update,
+        AppUpdatePatch patch,
+        string installRoot,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var patchPath = Path.Combine(_workRoot, patch.ZipName);
+        AppUpdateLog.Write($"patch download from={patch.FromVersion} zip={patch.ZipName} url={patch.Url} expectedSha={patch.Sha256}");
+        await DownloadVerifiedAsync(patch.Url, patchPath, patch.Sha256, patch.SizeBytes, $"正在下载 {update.Version} 增量补丁", progress, cancellationToken);
+
+        progress?.Report("补丁下载完成，正在应用…");
+        var stagingRoot = Path.Combine(_workRoot, "staging-" + update.Version);
+        await Task.Run(() => AppUpdatePatcher.Apply(installRoot, patchPath, stagingRoot, patch.FromVersion, update.Version), cancellationToken);
+        TryDeleteFile(patchPath);
         return stagingRoot;
     }
 

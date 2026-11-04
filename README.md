@@ -22,11 +22,15 @@ packaging/
 
 ## 正式发布
 
-版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.20）。合并到 `main` 之后，在该提交上推送标签 `v2.1.20`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
+版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.21）。合并到 `main` 之后，在该提交上推送标签 `v2.1.21`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
 
-- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.20.zip`（根目录下有 `app/QuickReplyTool.exe`）
+- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.21.zip`（根目录下有 `app/QuickReplyTool.exe`）
 - 创建非草稿、非预发布的 GitHub Release，说明里写 `SHA256: <64位小写>`，更新器只认这种写法
 - 用同一份信息覆盖 `update-manifest` 发布里的 `latest.json`（这个发布不能删），并用仓库密钥 `UPDATE_SIGNING_KEY` 给它签名
+
+- 用 `scripts/build-update-patch.ps1` 和上一个正式版比较，打出只含变化文件的 `QuickReplyTool-Patch-<上一版>-to-<本版>.zip`（通常不到 1 MB），说明里写 `PatchSHA256:`，`latest.json` 里写 `patch`（单独签名）。这一步失败不影响发布，客户端会下完整包
+
+装的正好是上一版时，客户端只下补丁：复制当前 `app` 到临时目录、覆盖变化文件、按补丁里的清单逐个核对新版所有文件的 SHA256，全部一致才替换；任何一步不对就改下完整包。跨版本升级也下完整包。
 
 客户端先直连 GitHub；连不上时才经 `ghfast.top` 镜像取 `latest.json`，而镜像来的清单必须带有效签名（ECDSA P-256，公钥在 `AppUpdatePolicy.ManifestSigningPublicKey`），且下载地址必须在本仓库的 Releases 里，否则不认。没配 `UPDATE_SIGNING_KEY` 时清单不带签名，只能直连 GitHub 的用户才能更新。
 
