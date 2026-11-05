@@ -24,9 +24,11 @@ public sealed class ScreenshotToolService : IDisposable
     private bool _startedByApp;
     private bool _disposed;
     private ScreenshotToolConfiguration? _desiredConfiguration;
+    private PythonLauncherSelection? _selectedLauncher;
     private System.Threading.Timer? _watchdogTimer;
     private string _lastReportedHotkeyFailure = string.Empty;
     private bool _restartLimitReported;
+    private string _lastWatchdogFailureMessage = string.Empty;
     private bool _systemEventsHooked;
 
     /// <summary>Raised (on a worker thread) with a user-facing message when the watchdog finds a problem.</summary>
@@ -133,12 +135,13 @@ public sealed class ScreenshotToolService : IDisposable
     {
         if (!ScreenshotToolHealthEvaluator.CanRestart(_recentRestarts, DateTimeOffset.Now))
         {
-            ScreenshotToolLog.Write("watchdog_restart_suppressed", new { reason });
+            // Logged once per outage: the watchdog ticks every 15 s and used to write this line each time.
             if (_restartLimitReported)
             {
                 return null;
             }
 
+            ScreenshotToolLog.Write("watchdog_restart_suppressed", new { reason });
             _restartLimitReported = true;
             return $"截图工具反复退出，已暂停自动重启。日志：{ScreenshotToolLog.DirectoryPath}";
         }
@@ -163,9 +166,17 @@ public sealed class ScreenshotToolService : IDisposable
         if (result.Success)
         {
             _restartLimitReported = false;
+            _lastWatchdogFailureMessage = string.Empty;
             return null;
         }
 
+        // Same cause as last time (e.g. a missing package): one notification is enough.
+        if (string.Equals(result.Message, _lastWatchdogFailureMessage, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        _lastWatchdogFailureMessage = result.Message;
         return result.Message;
     }
 
@@ -191,6 +202,8 @@ public sealed class ScreenshotToolService : IDisposable
             _lastReportedHotkeyFailure = string.Empty;
             _recentRestarts.Clear();
             _restartLimitReported = false;
+            _lastWatchdogFailureMessage = string.Empty;
+            _selectedLauncher = null;
             ScreenshotToolLog.Write("apply_configuration", new { normalizedConfiguration.Enabled, normalizedConfiguration.Hotkey });
             var settingsWriteResult = TryWriteSettings(normalizedConfiguration);
             if (!settingsWriteResult.Success)
@@ -327,11 +340,23 @@ public sealed class ScreenshotToolService : IDisposable
             return new ScreenshotToolStateChangeResult(false, "未找到截图工具脚本，无法自动启动截图功能。");
         }
 
-        if (!TryResolvePythonLauncher(out var launcherPath, out var launcherArguments))
+        var selection = _selectedLauncher ?? SelectPythonLauncher();
+        if (selection is null)
         {
             ScreenshotToolLog.Write("python_missing");
             return new ScreenshotToolStateChangeResult(false, "未找到可用的 Python 启动器，无法启动截图工具。");
         }
+
+        if (!selection.IsComplete)
+        {
+            // Not cached: the user may install the packages, and the next attempt should see it.
+            ScreenshotToolLog.Write("python_dependencies_missing", new { launcherPath = selection.Candidate.Path, missing = selection.MissingModules });
+            return new ScreenshotToolStateChangeResult(false, ScreenshotPythonLauncher.BuildMissingModulesMessage(selection));
+        }
+
+        _selectedLauncher = selection;
+        var launcherPath = selection.Candidate.Path;
+        var launcherArguments = selection.Candidate.Arguments;
 
         var arguments = string.IsNullOrWhiteSpace(launcherArguments)
             ? $"{QuoteArgument(scriptPath)} --managed"
@@ -370,6 +395,7 @@ public sealed class ScreenshotToolService : IDisposable
             ? $"截图工具启动后立即退出，退出码 {_managedProcess.ExitCode}（可能缺少 Python 依赖 PySide6/Pillow/pywin32）。日志：{ScreenshotToolLog.DirectoryPath}"
             : "截图工具未在预期时间内完成启动。";
         ScreenshotToolLog.Write("start_failed", new { message, launcherPath, scriptPath });
+        _selectedLauncher = null;
 
         CleanupManagedProcess();
         _startedByApp = false;
@@ -495,26 +521,22 @@ public sealed class ScreenshotToolService : IDisposable
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
-    private static bool TryResolvePythonLauncher(out string path, out string arguments)
+    private static PythonLauncherSelection? SelectPythonLauncher()
     {
-        foreach (var candidate in EnumeratePythonCandidates())
+        // pythonw.exe and python.exe in one folder are the same interpreter: probe it once.
+        var candidates = EnumeratePythonCandidates()
+            .Where(candidate => File.Exists(candidate.Path))
+            .DistinctBy(candidate => (ScreenshotPythonLauncher.ConsolePythonFor(candidate.Path).ToUpperInvariant(), candidate.Arguments));
+        var selection = ScreenshotPythonLauncher.Select(candidates, ScreenshotPythonLauncher.ProbeMissingModules);
+        if (selection is not null)
         {
-            if (!File.Exists(candidate.Path))
-            {
-                continue;
-            }
-
-            path = candidate.Path;
-            arguments = candidate.Arguments;
-            return true;
+            ScreenshotToolLog.Write("python_selected", new { launcherPath = selection.Candidate.Path, missing = selection.MissingModules });
         }
 
-        path = string.Empty;
-        arguments = string.Empty;
-        return false;
+        return selection;
     }
 
-    private static IEnumerable<(string Path, string Arguments)> EnumeratePythonCandidates()
+    private static IEnumerable<PythonCandidate> EnumeratePythonCandidates()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var pythonRoot = Path.Combine(localAppData, "Programs", "Python");
@@ -522,22 +544,22 @@ public sealed class ScreenshotToolService : IDisposable
         {
             foreach (var pythonwPath in Directory.EnumerateFiles(pythonRoot, "pythonw.exe", SearchOption.AllDirectories).OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase))
             {
-                yield return (pythonwPath, string.Empty);
+                yield return new PythonCandidate(pythonwPath, string.Empty);
             }
 
             foreach (var pythonPath in Directory.EnumerateFiles(pythonRoot, "python.exe", SearchOption.AllDirectories).OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase))
             {
-                yield return (pythonPath, string.Empty);
+                yield return new PythonCandidate(pythonPath, string.Empty);
             }
 
             foreach (var pywPath in Directory.EnumerateFiles(pythonRoot, "pyw.exe", SearchOption.AllDirectories).OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase))
             {
-                yield return (pywPath, "-3");
+                yield return new PythonCandidate(pywPath, "-3");
             }
 
             foreach (var pyPath in Directory.EnumerateFiles(pythonRoot, "py.exe", SearchOption.AllDirectories).OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase))
             {
-                yield return (pyPath, "-3");
+                yield return new PythonCandidate(pyPath, "-3");
             }
         }
 
@@ -548,25 +570,25 @@ public sealed class ScreenshotToolService : IDisposable
             var pythonw = Path.Combine(directory, "pythonw.exe");
             if (File.Exists(pythonw))
             {
-                yield return (pythonw, string.Empty);
+                yield return new PythonCandidate(pythonw, string.Empty);
             }
 
             var python = Path.Combine(directory, "python.exe");
             if (File.Exists(python))
             {
-                yield return (python, string.Empty);
+                yield return new PythonCandidate(python, string.Empty);
             }
 
             var pyw = Path.Combine(directory, "pyw.exe");
             if (File.Exists(pyw))
             {
-                yield return (pyw, "-3");
+                yield return new PythonCandidate(pyw, "-3");
             }
 
             var py = Path.Combine(directory, "py.exe");
             if (File.Exists(py))
             {
-                yield return (py, "-3");
+                yield return new PythonCandidate(py, "-3");
             }
         }
     }
