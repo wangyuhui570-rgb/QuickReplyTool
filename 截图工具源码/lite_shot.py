@@ -12,28 +12,50 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-from PIL import Image, ImageGrab
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QCursor, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (
-    QApplication,
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QKeySequenceEdit,
-    QMenu,
-    QMessageBox,
-    QSystemTrayIcon,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
-import win32con
-import win32gui
-import win32process
+
+def _log_import_failure(error: BaseException) -> None:
+    """Third-party imports fail before the normal logger exists; leave the reason in the log anyway."""
+    try:
+        log_dir = Path(os.getenv("APPDATA") or str(Path.home())) / "QuickReplyTool" / "logs" / "screenshot"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        record = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source": "liteshot",
+            "event": "import_failed",
+            "details": {"error": f"{type(error).__name__}: {error}", "python": sys.executable},
+        }
+        with open(log_dir / f"liteshot-{time.strftime('%Y%m%d')}.jsonl", "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+try:
+    from PIL import Image, ImageGrab
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QPoint, QRect, Qt, QTimer, Signal
+    from PySide6.QtGui import QAction, QColor, QCursor, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap
+    from PySide6.QtWidgets import (
+        QApplication,
+        QDialog,
+        QDialogButtonBox,
+        QFileDialog,
+        QFrame,
+        QHBoxLayout,
+        QLabel,
+        QKeySequenceEdit,
+        QMenu,
+        QMessageBox,
+        QSystemTrayIcon,
+        QToolButton,
+        QVBoxLayout,
+        QWidget,
+    )
+    import win32con
+    import win32gui
+    import win32process
+except ImportError as import_error:
+    _log_import_failure(import_error)
+    sys.exit(1)
 
 try:
     from pywinauto.uia_element_info import UIAElementInfo
