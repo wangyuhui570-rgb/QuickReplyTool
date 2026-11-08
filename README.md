@@ -22,9 +22,9 @@ packaging/
 
 ## 正式发布
 
-版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.23）。合并到 `main` 之后，在该提交上推送标签 `v2.1.23`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
+版本号以 `src/QuickReply.Desktop/QuickReply.Desktop.csproj` 的 `<Version>` 为准（当前 2.1.24）。合并到 `main` 之后，在该提交上推送标签 `v2.1.24`（必须是 `vX.Y.Z`，不要带 `-test` 后缀）。`.github/workflows/release.yml` 会：
 
-- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.23.zip`（根目录下有 `app/QuickReplyTool.exe`）
+- 用 `scripts/build-portable.ps1` 打出 `QuickReplyTool-Portable-2.1.24.zip`（根目录下有 `app/QuickReplyTool.exe`）
 - 创建非草稿、非预发布的 GitHub Release，说明里写 `SHA256: <64位小写>`，更新器只认这种写法
 - 用同一份信息覆盖 `update-manifest` 发布里的 `latest.json`（这个发布不能删），并用仓库密钥 `UPDATE_SIGNING_KEY` 给它签名
 
@@ -74,11 +74,11 @@ SQLite 数据库默认位于 `%AppData%\\QuickReplyTool\\quick-reply.db`。
 - 对剪贴板访问增加简单重试，降低被其他程序暂时占用时的失败概率
 - 恢复前在每次重试里都重新确认剪贴板仍是本工具写入的内容，用户中途复制的新内容不会被旧内容覆盖
 - 连续发送时，后一次接管前一次还没执行的恢复，最终恢复的是用户自己原来的剪贴板，而不是上一条短语
-- 图文分步粘贴时，等目标软件真正读走上一段（文字）再换成下一段（图片）：千牛、咚咚、拼多多是在处理 Ctrl+V 时才读剪贴板，换得太早会把图片贴两遍、文字丢失。临时内容用 OLE 延迟提供，读取时即可得知；最多等 0.7 秒，被剪贴板管理器抢先读过时改为固定等 0.25 秒
+- 图文分步粘贴时，等目标软件真正读走上一段（文字）再换成下一段（图片）：千牛、咚咚、拼多多是在处理 Ctrl+V 时才读剪贴板，换得太早会把图片贴两遍、文字丢失。临时内容用 OLE 延迟提供，能看到每次读取；但 Ctrl+V 后最先那次读取往往只是软件对"剪贴板变了"的响应，不是粘贴本身，所以粘贴后至少隔 0.45 秒、且最后一次读取后安静 0.15 秒才换下一段；没看到粘贴后的读取时等到 0.7～0.9 秒。发送日志的 `pasteGapLog` 记录每一段前的等待
 
 ### 抖店发送方案
 
-- 发送图片和人工操作一样：先点一下聊天输入框（不点的话抖店不响应粘贴），Ctrl+V 弹出"发送图片"确认框，等抖店读完剪贴板并留 0.9 秒给确认框，再按回车确认；不再去点工具栏的图片按钮
+- 发送图片和人工操作一样：先点一下聊天输入框（不点的话抖店不响应粘贴），Ctrl+V 弹出"发送图片"确认框，从粘贴起共留 0.9 秒给确认框（含等待剪贴板读取的时间），再按回车确认；不再去点工具栏的图片按钮
 - 图片阶段不再做 Ctrl+A / Ctrl+C / Esc 的检查（Esc 会把确认框关掉，图片就没发出去）；点输入框只按坐标点击，不再用 UI Automation 遍历页面
 - 发送开始时只切一次抖店窗口；之后任何一步发现用户已切到别的软件就停下来，不再抢焦点，也不再按键或点击
 

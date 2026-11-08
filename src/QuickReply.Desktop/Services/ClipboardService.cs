@@ -24,10 +24,6 @@ public sealed class ClipboardService : IClipboardService
     private static readonly object ClipboardDispatcherSyncRoot = new();
     private static Dispatcher? _clipboardDispatcher;
     private static volatile ClipboardPasteTracker? _pasteTracker;
-    // A reader got the payload before our Ctrl+V, so the paste itself cannot be observed: wait this long.
-    private const int UnobservablePasteWaitMs = 250;
-    // The read hands the data over on return; leave the target a moment before replacing it.
-    private const int PasteConsumedGraceMs = 20;
 
     public async Task<ClipboardSnapshot> CaptureSnapshotAsync()
     {
@@ -341,36 +337,30 @@ public sealed class ClipboardService : IClipboardService
             return null;
         }
 
-        if (tracker.Consumed.IsCompleted)
+        while (!PasteGapPolicy.MayReplace(
+                   tracker.MillisecondsSincePaste,
+                   tracker.MillisecondsSinceLastRead,
+                   tracker.ReadBeforePaste,
+                   timeoutMs))
         {
-            return true;
-        }
-
-        if (tracker.ReadBeforePaste)
-        {
-            await Task.Delay(Math.Min(UnobservablePasteWaitMs, timeoutMs)).ConfigureAwait(false);
-            return false;
-        }
-
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        while (stopwatch.ElapsedMilliseconds < timeoutMs)
-        {
-            if (tracker.Consumed.IsCompleted)
-            {
-                await Task.Delay(PasteConsumedGraceMs).ConfigureAwait(false);
-                return true;
-            }
-
             if (NativeMethods.GetClipboardSequenceNumber() != tracker.Sequence)
             {
-                // Rendering or someone else's copy changed the clipboard: nothing left to wait for.
-                return tracker.Consumed.IsCompleted;
+                // Someone else replaced the clipboard: the paste can no longer read our payload anyway.
+                break;
             }
 
-            await Task.WhenAny(tracker.Consumed, Task.Delay(15)).ConfigureAwait(false);
+            await Task.Delay(15).ConfigureAwait(false);
         }
 
         return tracker.Consumed.IsCompleted;
+    }
+
+    public PasteWaitSnapshot? DescribeLastPaste()
+    {
+        var tracker = _pasteTracker;
+        return tracker is null || !tracker.PasteIssued
+            ? null
+            : new PasteWaitSnapshot(tracker.ReadBeforePaste, tracker.ReadsAfterPaste, tracker.MillisecondsSincePaste);
     }
 
     /// <summary>Puts a transient payload on the clipboard without copying it, so reads can be observed.</summary>
