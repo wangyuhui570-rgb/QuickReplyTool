@@ -20,12 +20,17 @@ internal interface IClipboardService
     }
 
     /// <summary>
-    /// Waits until the target app has read the payload pasted last. Null when nothing is pending;
-    /// false when the read could not be observed within <paramref name="timeoutMs"/>.
+    /// Waits until the payload pasted last may be replaced (see <see cref="PasteGapPolicy"/>). Null when
+    /// nothing is pending; otherwise whether any read after the paste was seen.
     /// </summary>
     Task<bool?> WaitForPasteConsumedAsync(int timeoutMs) => Task.FromResult<bool?>(null);
+
+    /// <summary>What was seen of the payload pasted last, for the send log.</summary>
+    PasteWaitSnapshot? DescribeLastPaste() => null;
 
     Task<ReplyActionResult> RestoreSnapshotAsync(
         ClipboardSnapshot snapshot,
         ClipboardFingerprint? expectedCurrentFingerprint = null);
 }
+
+public sealed record PasteWaitSnapshot(bool ReadBeforePaste, int ReadsAfterPaste, long MillisecondsSincePaste);

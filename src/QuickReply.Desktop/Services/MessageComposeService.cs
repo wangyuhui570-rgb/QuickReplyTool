@@ -1155,7 +1155,7 @@ public sealed class MessageComposeService : IMessageComposeService
     }
 
     /// <summary>Upper bound for waiting until the target app has read a pasted payload.</summary>
-    internal const int PasteConsumeTimeoutMs = 700;
+    internal const int PasteConsumeTimeoutMs = 900;
 
     /// <summary>How long Douyin gets to open its "send this image?" dialog after Ctrl+V.</summary>
     internal const int DouyinImageDialogWaitMs = 900;
@@ -1252,9 +1252,14 @@ public sealed class MessageComposeService : IMessageComposeService
         if (mode == ComposeActionMode.Send)
         {
             // Wait until Douyin has read the files off the clipboard, then give the dialog time to open.
+            var dialogWait = Stopwatch.StartNew();
             var consumed = await _clipboardService.WaitForPasteConsumedAsync(PasteConsumeTimeoutMs).ConfigureAwait(false);
             diagnostics["douyinImagePasteConsumed"] = consumed;
-            await Task.Delay(DouyinImageDialogWaitMs).ConfigureAwait(false);
+            var remainingDialogWaitMs = DouyinImageDialogWaitMs - (int)dialogWait.ElapsedMilliseconds;
+            if (remainingDialogWaitMs > 0)
+            {
+                await Task.Delay(remainingDialogWaitMs).ConfigureAwait(false);
+            }
             if (DidForegroundLeaveTarget(activation.TargetWindowHandle, diagnostics, "before_dialog_enter"))
             {
                 QueueClipboardRestore(clipboardSnapshot, GetEffectiveClipboardRestoreDelayMs(settings, attemptContext.HostProfile), write.Fingerprint);
@@ -1467,6 +1472,14 @@ public sealed class MessageComposeService : IMessageComposeService
         {
             diagnostics["previousPasteConsumed"] = consumed;
             diagnostics["previousPasteConsumeWaitMs"] = consumeWait.ElapsedMilliseconds;
+            // One entry per clipboard write, so a two-part message shows the wait before each part.
+            var seen = _clipboardService.DescribeLastPaste();
+            var entry = seen is null
+                ? $"{clipboardKind}:wait={consumeWait.ElapsedMilliseconds}"
+                : $"{clipboardKind}:wait={consumeWait.ElapsedMilliseconds},sincePaste={seen.MillisecondsSincePaste},readsAfter={seen.ReadsAfterPaste},readBefore={seen.ReadBeforePaste}";
+            diagnostics["pasteGapLog"] = diagnostics.TryGetValue("pasteGapLog", out var previous) && previous is string text
+                ? $"{text}; {entry}"
+                : entry;
         }
 
         var writeResult = AnnotateFailure(
