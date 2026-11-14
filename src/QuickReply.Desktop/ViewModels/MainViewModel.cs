@@ -35,6 +35,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
     private readonly HashSet<string> _dismissedPlainTextSuggestionKeys = [];
     private readonly HashSet<string> _pendingPlainTextSuggestionKeys = [];
 
+    private readonly RangeObservableCollection<ReplyPhrase> _filteredPhrases = [];
     private AppData _data = new();
     private string _searchText = string.Empty;
     private ReplyCategory? _selectedCategory;
@@ -124,7 +125,6 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         };
         _saveTimer.Tick += async (_, _) => await FlushPendingSaveAsync();
 
-        FilteredPhrases = [];
         SendHotkeyModes = Enum.GetValues<SendHotkeyMode>();
         SendDelayOptions = [80, 120, 160, 220, 300, 450];
 
@@ -180,7 +180,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     public ObservableCollection<LibraryFileItem> FileItems => _data.FileItems;
 
-    public ObservableCollection<ReplyPhrase> FilteredPhrases { get; }
+    public ObservableCollection<ReplyPhrase> FilteredPhrases => _filteredPhrases;
 
     public AppSettings Settings => _data.Settings;
 
@@ -2374,33 +2374,14 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         var previousSelection = SelectedPhrase;
         var keyword = SearchText.Trim();
 
-        IEnumerable<ReplyPhrase> source = IsSearchActive
-            ? Categories.SelectMany(category => category.Phrases)
-            : SelectedCategory?.Phrases ?? [];
-
-        var resultsQuery = source.Where(phrase =>
-            string.IsNullOrWhiteSpace(keyword) ||
-            PhraseMatchesKeyword(phrase, keyword));
-
         var results = IsSearchActive
-            ? resultsQuery
-                .OrderByDescending(phrase => ScorePhrase(phrase, keyword))
-                .ThenByDescending(phrase => GetPhraseSendCount(phrase.Id))
-                .ThenByDescending(phrase => GetPhraseLastSentAt(phrase.Id) ?? DateTimeOffset.MinValue)
-                .ThenBy(phrase => phrase.CategoryName)
-                .ThenBy(phrase => phrase.SortOrder)
-                .ThenBy(phrase => phrase.CreatedAt)
-                .ToList()
-            : resultsQuery
+            ? SearchPhrases(keyword, int.MaxValue)
+            : SelectedCategory?.Phrases
                 .OrderBy(phrase => phrase.SortOrder)
                 .ThenBy(phrase => phrase.CreatedAt)
-                .ToList();
+                .ToList() ?? [];
 
-        FilteredPhrases.Clear();
-        foreach (var phrase in results)
-        {
-            FilteredPhrases.Add(phrase);
-        }
+        _filteredPhrases.ReplaceAll(results);
 
         SelectedPhrase = previousSelection is not null && results.Contains(previousSelection)
             ? previousSelection

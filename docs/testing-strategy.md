@@ -248,3 +248,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\new-release-eviden
 - 为 `IssueReportService` 增补重试上传与安装标记测试
 - 为 `MessageComposeService` 增补更多焦点恢复与剪贴板恢复场景
 - 在自动化稳定后，再考虑 WinAppDriver/FlaUI 一类的桌面 UI 自动化
+
+## 本地数据与搜索回归
+
+Windows 上可运行以下定向回归，结果写入 TRX，完整发布门禁继续使用现有脚本。
+
+```powershell
+dotnet test tests\QuickReply.Desktop.Tests\QuickReply.Desktop.Tests.csproj --filter "FullyQualifiedName~PhraseExcelServiceTests|FullyQualifiedName~PhraseImageActionTests|FullyQualifiedName~UsageRecordingTests|FullyQualifiedName~PhraseImportCategoryTests|FullyQualifiedName~FileLibraryCatalogServiceTests|FullyQualifiedName~SearchResultRefreshTests|FullyQualifiedName~PhraseEditorLayoutTests" --logger "trx;LogFileName=data-and-search.trx"
+```
+
+- 导出回归覆盖 XLS/CSV、重复导出、无图导出、来源图片被占用、目标表格被占用、缺图、独立标签和旧文件兼容。
+- 图文操作使用模拟剪贴板和按键，覆盖主界面、搜索浮层及快捷标签。三张图缺一张时，检查没有发送或复制任何内容，次数和最近发送时间保持原值。
+- 同名分类导入覆盖明确选择、取消、无效选择、无关分类重名、重复导入拦截及事务失败后图片清理。
+- 文件库同步覆盖失败回滚、重试、并发加入同一路径。500 文件测量输出为 TRX 中的 `FILE_SYNC`。
+- 界面测试在 STA 线程使用应用资源和主界面的话术列表，测量 100、5000 条话术的搜索刷新和滚动，输出 `SEARCH`、`SCROLL`。同一测试在优化前后运行，耗时受 CI 负载影响。
+- 搜索结果发生变化时批量通知一次，结果相同时保留现有列表。搜索同步更新，快速改词后立即发送和数字键选结果的回归检查使用最新结果。
+- 自动回归通过后，发布前仍按手工矩阵验收真实客服工作台。

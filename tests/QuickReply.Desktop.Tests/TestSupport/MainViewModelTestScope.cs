@@ -46,6 +46,7 @@ internal sealed class StubMessageComposeService : IMessageComposeService
 {
     public ReplyActionResult Result { get; set; } = new(true, "ok");
     public int CallCount { get; private set; }
+    public string? LastText { get; private set; }
 
     private Task<ReplyActionResult> Complete()
     {
@@ -54,7 +55,11 @@ internal sealed class StubMessageComposeService : IMessageComposeService
     }
 
     public Task<ReplyActionResult> CopyToClipboardAsync(string text, IReadOnlyCollection<string>? imagePaths = null) => Complete();
-    public Task<ReplyActionResult> ExecuteAsync(string text, AppSettings settings, ComposeActionMode mode, IReadOnlyCollection<string>? imagePaths = null) => Complete();
+    public Task<ReplyActionResult> ExecuteAsync(string text, AppSettings settings, ComposeActionMode mode, IReadOnlyCollection<string>? imagePaths = null)
+    {
+        LastText = text;
+        return Complete();
+    }
     public Task<ReplyActionResult> CopyFilesToClipboardAsync(IReadOnlyCollection<string> filePaths) => Complete();
     public Task<ReplyActionResult> ExecuteFilesAsync(IReadOnlyCollection<string> filePaths, AppSettings settings, ComposeActionMode mode) => Complete();
 }

@@ -76,6 +76,8 @@ public sealed class PhraseImageActionTests
         }
 
         Assert.Contains("未找到", main.StatusMessage);
+        Assert.Equal(0, main.GetPhraseSendCount(phrase.Id));
+        Assert.Null(main.GetPhraseLastSentAt(phrase.Id));
         Assert.Equal(0, clipboard.SetTextCallCount);
         Assert.Equal(0, clipboard.SetTextAndFilesCallCount);
         Assert.Equal(0, clipboard.SetFileDropListCallCount);
