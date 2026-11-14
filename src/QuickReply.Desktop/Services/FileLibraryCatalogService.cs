@@ -24,11 +24,6 @@ internal sealed class FileLibraryCatalogService
             .Where(fileItem => !File.Exists(fileItem.FullPath))
             .ToList();
 
-        foreach (var removedItem in removedItems)
-        {
-            await _dataStore.DeleteFileItemAsync(removedItem.Id);
-        }
-
         var knownPaths = existingItems
             .Select(fileItem => Path.GetFullPath(fileItem.FullPath))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -51,11 +46,12 @@ internal sealed class FileLibraryCatalogService
                 UpdatedAt = now
             };
 
-            await _dataStore.UpsertFileItemAsync(fileItem);
             addedItems.Add(fileItem);
         }
 
-        return new FileLibrarySyncResult(removedItems, addedItems);
+        var savedItems = await _dataStore.ApplyFileItemChangesAsync(
+            removedItems.Select(item => item.Id).ToArray(), addedItems);
+        return new FileLibrarySyncResult(removedItems, savedItems);
     }
 
     public async Task<IReadOnlyList<LibraryFileItem>> AddItemsAsync(
@@ -63,6 +59,7 @@ internal sealed class FileLibraryCatalogService
         IReadOnlyCollection<LibraryFileItem> existingItems)
     {
         var addedItems = new List<LibraryFileItem>();
+        var knownPaths = existingItems.Select(item => item.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var normalizedPaths = filePaths
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Select(path => Path.GetFullPath(path.Trim()))
@@ -71,7 +68,7 @@ internal sealed class FileLibraryCatalogService
 
         foreach (var path in normalizedPaths)
         {
-            if (!File.Exists(path) || existingItems.Any(item => string.Equals(item.FullPath, path, StringComparison.OrdinalIgnoreCase)))
+            if (!File.Exists(path) || !knownPaths.Add(path))
             {
                 continue;
             }
@@ -86,11 +83,10 @@ internal sealed class FileLibraryCatalogService
                 UpdatedAt = now
             };
 
-            await _dataStore.UpsertFileItemAsync(fileItem);
             addedItems.Add(fileItem);
         }
 
-        return addedItems;
+        return await _dataStore.ApplyFileItemChangesAsync([], addedItems);
     }
 
     public Task DeleteItemAsync(Guid fileItemId)

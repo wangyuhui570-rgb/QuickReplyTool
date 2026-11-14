@@ -433,9 +433,13 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         {
             await MutateCollectionsAsync(() =>
             {
+                var knownIds = FileItems.Select(item => item.Id).ToHashSet();
                 foreach (var fileItem in addedItems)
                 {
-                    FileItems.Add(fileItem);
+                    if (knownIds.Add(fileItem.Id))
+                    {
+                        FileItems.Add(fileItem);
+                    }
                 }
 
                 return Task.CompletedTask;
@@ -1275,9 +1279,13 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         {
             await MutateCollectionsAsync(() =>
             {
+                var knownIds = FileItems.Select(item => item.Id).ToHashSet();
                 foreach (var fileItem in addedItems)
                 {
-                    FileItems.Add(fileItem);
+                    if (knownIds.Add(fileItem.Id))
+                    {
+                        FileItems.Add(fileItem);
+                    }
                 }
 
                 return Task.CompletedTask;

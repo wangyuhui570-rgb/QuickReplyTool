@@ -32,6 +32,60 @@ public sealed class FileLibraryCatalogServiceTests
     }
 
     [Fact]
+    public async Task SyncFailureRollsBackDatabaseAndLeavesViewUnchangedThenCanRetry()
+    {
+        await using var scope = new MainViewModelTestScope();
+        await scope.Store.LoadAsync();
+        var missing = new LibraryFileItem { DisplayName = "missing.txt", FullPath = Path.Combine(scope.Data.RootPath, "missing.txt") };
+        await scope.Store.UpsertFileItemAsync(missing);
+        scope.Main.FileItems.Add(missing);
+        scope.Main.Settings.FileLibraryFolderPath = scope.Data.LibraryRootPath;
+        scope.Data.CreateLibraryFile("one.txt");
+        scope.Data.CreateLibraryFile("two.txt");
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={scope.Store.DatabasePath}");
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TRIGGER reject_files BEFORE INSERT ON file_items
+            WHEN NEW.display_name = 'two.txt'
+            BEGIN SELECT RAISE(ABORT, 'simulated sync failure'); END;
+            """;
+        await command.ExecuteNonQueryAsync();
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => scope.Main.SyncFileLibraryAsync());
+
+        Assert.Same(missing, Assert.Single(scope.Main.FileItems));
+        Assert.Equal(missing.Id, Assert.Single((await scope.Store.LoadAsync()).FileItems).Id);
+        command.CommandText = "DROP TRIGGER reject_files;";
+        await command.ExecuteNonQueryAsync();
+        await scope.Main.SyncFileLibraryAsync();
+        Assert.Equal(2, scope.Main.FileItems.Count);
+        Assert.DoesNotContain(scope.Main.FileItems, item => item.Id == missing.Id);
+        Assert.Equal(scope.Main.FileItems.Select(item => item.Id).Order(),
+            (await scope.Store.LoadAsync()).FileItems.Select(item => item.Id).Order());
+    }
+
+    [Fact]
+    public async Task ConcurrentAddsReturnSameStoredIdentityAndRetriesStayConsistent()
+    {
+        using var scope = new TestAppDataScope();
+        var store = scope.CreateDataStore();
+        await store.LoadAsync();
+        var path = scope.CreateLibraryFile("same.txt");
+        var service = new FileLibraryCatalogService(store);
+
+        var results = await Task.WhenAll(
+            Task.Run(() => service.AddItemsAsync([path], [])),
+            Task.Run(() => service.AddItemsAsync([path], [])));
+
+        var stored = Assert.Single((await store.LoadAsync()).FileItems);
+        Assert.All(results, items => Assert.Equal(stored.Id, Assert.Single(items).Id));
+        var retried = await service.AddItemsAsync([path], []);
+        Assert.Equal(stored.Id, Assert.Single(retried).Id);
+        Assert.Single((await store.LoadAsync()).FileItems);
+    }
+
+    [Fact]
     public async Task SyncAsync_RemovesMissingItemsAndAddsNewManagedFiles()
     {
         using var scope = new TestAppDataScope();

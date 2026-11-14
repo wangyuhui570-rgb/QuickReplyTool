@@ -371,36 +371,73 @@ public sealed class SqliteAppDataStore
 
     public async Task UpsertFileItemAsync(LibraryFileItem fileItem)
     {
-        fileItem.UpdatedAt = DateTimeOffset.Now;
+        var saved = await ApplyFileItemChangesAsync([], [fileItem]);
+        fileItem.UpdatedAt = saved.Single().UpdatedAt;
+    }
 
-        const string sql = """
+    public async Task DeleteFileItemAsync(Guid fileItemId)
+    {
+        await ApplyFileItemChangesAsync([fileItemId], []);
+    }
+
+    public async Task<IReadOnlyList<LibraryFileItem>> ApplyFileItemChangesAsync(
+        IReadOnlyCollection<Guid> removedIds,
+        IReadOnlyCollection<LibraryFileItem> fileItems)
+    {
+        if (removedIds.Count == 0 && fileItems.Count == 0)
+        {
+            return [];
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        using var transaction = connection.BeginTransaction();
+        await using var deleteCommand = connection.CreateCommand();
+        deleteCommand.Transaction = transaction;
+        deleteCommand.CommandText = "DELETE FROM file_items WHERE id = $id;";
+        var deletedId = deleteCommand.Parameters.Add("$id", SqliteType.Text);
+        foreach (var id in removedIds)
+        {
+            deletedId.Value = id.ToString();
+            await deleteCommand.ExecuteNonQueryAsync();
+        }
+
+        await using var upsertCommand = connection.CreateCommand();
+        upsertCommand.Transaction = transaction;
+        upsertCommand.CommandText = """
             INSERT INTO file_items (id, display_name, full_path, created_at, updated_at)
             VALUES ($id, $displayName, $fullPath, $createdAt, $updatedAt)
             ON CONFLICT(full_path) DO UPDATE SET
                 display_name = excluded.display_name,
                 updated_at = excluded.updated_at;
             """;
+        var itemId = upsertCommand.Parameters.Add("$id", SqliteType.Text);
+        var displayName = upsertCommand.Parameters.Add("$displayName", SqliteType.Text);
+        var fullPath = upsertCommand.Parameters.Add("$fullPath", SqliteType.Text);
+        var createdAt = upsertCommand.Parameters.Add("$createdAt", SqliteType.Text);
+        var updatedAt = upsertCommand.Parameters.Add("$updatedAt", SqliteType.Text);
+        var now = ToDbDateTime(DateTimeOffset.Now);
+        foreach (var item in fileItems)
+        {
+            itemId.Value = item.Id.ToString();
+            displayName.Value = item.DisplayName;
+            fullPath.Value = item.FullPath;
+            createdAt.Value = ToDbDateTime(item.CreatedAt);
+            updatedAt.Value = now;
+            await upsertCommand.ExecuteNonQueryAsync();
+        }
 
-        await using var connection = await OpenConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.Parameters.AddWithValue("$id", fileItem.Id.ToString());
-        command.Parameters.AddWithValue("$displayName", fileItem.DisplayName);
-        command.Parameters.AddWithValue("$fullPath", fileItem.FullPath);
-        command.Parameters.AddWithValue("$createdAt", ToDbDateTime(fileItem.CreatedAt));
-        command.Parameters.AddWithValue("$updatedAt", ToDbDateTime(fileItem.UpdatedAt));
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task DeleteFileItemAsync(Guid fileItemId)
-    {
-        const string sql = "DELETE FROM file_items WHERE id = $id;";
-
-        await using var connection = await OpenConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.Parameters.AddWithValue("$id", fileItemId.ToString());
-        await command.ExecuteNonQueryAsync();
+        // Read canonical IDs inside the same transaction. A concurrent import of the same path
+        // must reuse its stored ID, so callers cannot add a second in-memory identity for it.
+        IReadOnlyList<LibraryFileItem> saved = [];
+        if (fileItems.Count > 0)
+        {
+            var requestedPaths = fileItems.Select(item => item.FullPath).ToHashSet(StringComparer.Ordinal);
+            saved = (await LoadFileItemsAsync(connection, transaction))
+                .Where(item => requestedPaths.Contains(item.FullPath))
+                .ToArray();
+        }
+        await transaction.CommitAsync();
+        return saved;
     }
 
     public async Task InsertQuickTagAsync(QuickTag quickTag)
@@ -1274,11 +1311,14 @@ public sealed class SqliteAppDataStore
         return quickTags;
     }
 
-    private static async Task<List<LibraryFileItem>> LoadFileItemsAsync(SqliteConnection connection)
+    private static async Task<List<LibraryFileItem>> LoadFileItemsAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction = null)
     {
         var fileItems = new List<LibraryFileItem>();
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT id, display_name, full_path, created_at, updated_at
             FROM file_items
