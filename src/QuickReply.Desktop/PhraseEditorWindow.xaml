@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:QuickReply.Desktop"
         Title="短语编辑"
-        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Icon="pack://application:,,,/QuickReplyTool;component/Assets/quickreply.ico"
         Width="760"
         Height="720"
         MinWidth="700"
