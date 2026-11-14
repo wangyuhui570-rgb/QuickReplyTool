@@ -64,7 +64,15 @@ public sealed class PhraseExcelServiceTests
         using (var lockedFile = new FileStream(
             lockDestination ? path : nextImage, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            Assert.ThrowsAny<IOException>(() => service.Export(path, [CreateCategory("after", 2)], _ => [image, nextImage]));
+            Action export = () => service.Export(path, [CreateCategory("after", 2)], _ => [image, nextImage]);
+            if (lockDestination)
+            {
+                Assert.Throws<UnauthorizedAccessException>(export);
+            }
+            else
+            {
+                Assert.Throws<IOException>(export);
+            }
         }
 
         Assert.Equal(oldBytes, File.ReadAllBytes(path));
@@ -84,7 +92,15 @@ public sealed class PhraseExcelServiceTests
         var missing = Path.Combine(scope.RootPath, "missing.png");
         var service = new PhraseExcelService();
 
-        Assert.ThrowsAny<IOException>(() => service.Export(path, [CreateCategory("图文", 2)], _ => filtered ? [image] : [image, missing]));
+        Action export = () => service.Export(path, [CreateCategory("图文", 2)], _ => filtered ? [image] : [image, missing]);
+        if (filtered)
+        {
+            Assert.Throws<InvalidDataException>(export);
+        }
+        else
+        {
+            Assert.Throws<FileNotFoundException>(export);
+        }
 
         Assert.False(File.Exists(path));
         Assert.Empty(Directory.GetDirectories(scope.RootPath, "export_assets_*"));

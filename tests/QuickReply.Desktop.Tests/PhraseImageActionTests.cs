@@ -8,18 +8,29 @@ namespace QuickReply.Desktop.Tests;
 public sealed class PhraseImageActionTests
 {
     [Theory]
-    [InlineData("selected_send")]
-    [InlineData("selected_input")]
-    [InlineData("selected_copy")]
-    [InlineData("direct_send")]
-    [InlineData("direct_input")]
-    [InlineData("direct_copy")]
-    [InlineData("images_copy")]
-    [InlineData("overlay_send")]
-    [InlineData("overlay_copy")]
-    [InlineData("overlay_images")]
-    [InlineData("quick_tag")]
-    public async Task EveryPhraseEntryPointBlocksMissingImage(string entry)
+    [InlineData("selected_send", false)]
+    [InlineData("selected_send", true)]
+    [InlineData("selected_input", false)]
+    [InlineData("selected_input", true)]
+    [InlineData("selected_copy", false)]
+    [InlineData("selected_copy", true)]
+    [InlineData("direct_send", false)]
+    [InlineData("direct_send", true)]
+    [InlineData("direct_input", false)]
+    [InlineData("direct_input", true)]
+    [InlineData("direct_copy", false)]
+    [InlineData("direct_copy", true)]
+    [InlineData("images_copy", false)]
+    [InlineData("images_copy", true)]
+    [InlineData("overlay_send", false)]
+    [InlineData("overlay_send", true)]
+    [InlineData("overlay_copy", false)]
+    [InlineData("overlay_copy", true)]
+    [InlineData("overlay_images", false)]
+    [InlineData("overlay_images", true)]
+    [InlineData("quick_tag", false)]
+    [InlineData("quick_tag", true)]
+    public async Task EveryPhraseEntryPointBlocksMissingImage(string entry, bool imageOnly)
     {
         using var scope = new TestAppDataScope();
         var store = scope.CreateDataStore();
@@ -34,10 +45,13 @@ public sealed class PhraseImageActionTests
         var imageStore = new PhraseImageStore(scope.AppRootPath);
         var paths = await imageStore.SavePhraseImagesAsync(Guid.NewGuid(),
             [scope.CreateFile("one.png"), scope.CreateFile("two.png"), scope.CreateFile("three.png")]);
-        var phrase = new ReplyPhrase { Title = "缺图", Content = "请按下图操作" };
+        var phrase = new ReplyPhrase { Title = "缺图", Content = imageOnly ? "" : "请按下图操作" };
         phrase.SetImageRelativePaths(paths);
         var category = new ReplyCategory { Name = "售后" };
+        phrase.CategoryId = category.Id;
         category.Phrases.Add(phrase);
+        await store.InsertCategoryAsync(category);
+        await store.InsertPhraseAsync(phrase);
         main.Categories.Add(category);
         main.SelectedCategory = category;
         main.SelectedPhrase = phrase;
