@@ -46,6 +46,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
     private bool _isSidebarSettingsPreviewActive;
     private bool _isCompactSidebarExpanded;
     private bool _savePending;
+    private bool _isImportingPhrases;
     private bool _settingsDirty;
     private bool _suppressPersistenceNotifications;
     private bool _suppressStartupConfigurationNotifications;
@@ -1746,8 +1747,19 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         }
     }
 
-    public async Task<ReplyActionResult> ImportPhrasesFromXlsAsync(string filePath, IProgress<PhraseImportProgress>? progress = null)
+    public async Task<ReplyActionResult> ImportPhrasesFromXlsAsync(
+        string filePath,
+        IProgress<PhraseImportProgress>? progress = null,
+        Func<string, IReadOnlyList<ReplyCategory>, Task<Guid?>>? chooseCategory = null)
     {
+        if (_isImportingPhrases)
+        {
+            return new ReplyActionResult(false, "已有短语导入正在进行，请等待完成。");
+        }
+
+        _isImportingPhrases = true;
+        var preparedPhraseIds = new List<Guid>();
+        var committed = false;
         try
         {
             progress?.Report(new PhraseImportProgress(5, "正在读取导入文件..."));
@@ -1760,7 +1772,44 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             progress?.Report(new PhraseImportProgress(12, $"正在准备导入... 0/{rows.Count}"));
 
             var now = DateTimeOffset.Now;
-            var existingCategoryLookup = Categories.ToDictionary(category => category.Name, StringComparer.OrdinalIgnoreCase);
+            var existingCategoryGroups = Categories.ToLookup(category => category.Name, StringComparer.OrdinalIgnoreCase);
+            var existingCategoryLookup = new Dictionary<string, ReplyCategory>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in rows.Select(row => row.CategoryName).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var candidates = existingCategoryGroups[name].ToArray();
+                if (candidates.Length == 1)
+                {
+                    existingCategoryLookup[name] = candidates[0];
+                }
+                else if (candidates.Length > 1)
+                {
+                    if (chooseCategory is null)
+                    {
+                        return new ReplyActionResult(false, $"分类“{name}”存在多个同名分类，请选择导入位置。");
+                    }
+
+                    var selectedId = await chooseCategory(name, candidates);
+                    if (selectedId is null)
+                    {
+                        return new ReplyActionResult(false, "已取消导入，话术和图片均未写入。");
+                    }
+
+                    var selected = candidates.FirstOrDefault(category => category.Id == selectedId);
+                    if (selected is null)
+                    {
+                        return new ReplyActionResult(false, $"分类“{name}”的选择无效，请重新导入。");
+                    }
+                    existingCategoryLookup[name] = selected;
+                }
+            }
+
+            if (existingCategoryLookup.Any(pair =>
+                !Categories.Contains(pair.Value) ||
+                !string.Equals(pair.Key, pair.Value.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                return new ReplyActionResult(false, "分类在选择期间已变化，请重新导入。");
+            }
+
             var categoryOrderLookup = Categories.ToDictionary(category => category.Id, category => category.Phrases.Count);
             var categoriesToInsert = new List<ReplyCategory>();
             var phrasesToInsert = new List<ReplyPhrase>();
@@ -1798,6 +1847,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
                     UpdatedAt = now
                 };
 
+                preparedPhraseIds.Add(phrase.Id);
                 var savedImagePaths = await _phraseImageStore.SavePhraseImagesAsync(phrase.Id, row.ImagePaths);
                 if (savedImagePaths.Count > 0)
                 {
@@ -1818,6 +1868,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
                 });
 
             await _dataStore.BulkImportPhrasesAsync(categoriesToInsert, phrasesToInsert, storeProgress);
+            committed = true;
             await ReloadDataFromStoreAsync(categoriesToInsert.LastOrDefault()?.Id ?? SelectedCategory?.Id);
 
             progress?.Report(new PhraseImportProgress(100, $"导入成功，一共 {phrasesToInsert.Count} 条快捷短语"));
@@ -1825,7 +1876,20 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         }
         catch (Exception ex)
         {
+            if (committed)
+            {
+                return new ReplyActionResult(true, $"话术已导入，界面刷新失败：{ex.Message}。请重启查看，避免重复导入。");
+            }
+
+            foreach (var phraseId in preparedPhraseIds)
+            {
+                _phraseImageStore.DeletePhraseImageFolder(phraseId);
+            }
             return new ReplyActionResult(false, $"导入失败：{ex.Message}");
+        }
+        finally
+        {
+            _isImportingPhrases = false;
         }
     }
 

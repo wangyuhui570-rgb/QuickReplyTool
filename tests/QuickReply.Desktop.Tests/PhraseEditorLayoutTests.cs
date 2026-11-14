@@ -48,6 +48,23 @@ public sealed class PhraseEditorLayoutTests
                         }
                     }
                 }
+                var firstCategory = new QuickReply.Desktop.Models.ReplyCategory { Name = "售后" };
+                var secondCategory = new QuickReply.Desktop.Models.ReplyCategory { Name = "售后" };
+                var selection = new ImportCategorySelectionWindow("售后",
+                    [firstCategory, secondCategory], [firstCategory, secondCategory]);
+                selection.Measure(new Size(520, 360));
+                selection.Arrange(new Rect(0, 0, 520, 360));
+                selection.UpdateLayout();
+                var choices = (ListBox)selection.FindName("Choices");
+                var confirm = (Button)selection.FindName("ConfirmButton");
+                Assert.Null(selection.SelectedCategoryId);
+                Assert.False(confirm.IsEnabled);
+                choices.SelectedIndex = 1;
+                Assert.Equal(secondCategory.Id, selection.SelectedCategoryId);
+                Assert.True(confirm.IsEnabled);
+                choices.SelectedIndex = -1;
+                Assert.False(confirm.IsEnabled);
+                selection.Close();
                 app.Shutdown();
             }
             catch (Exception ex) { failure = ex; }

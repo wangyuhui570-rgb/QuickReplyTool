@@ -2277,7 +2277,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
         progressWindow.Show();
 
         var progress = new Progress<PhraseImportProgress>(progressWindow.UpdateProgress);
-        var result = await _viewModel.ImportPhrasesFromXlsAsync(dialog.FileName, progress);
+        var result = await _viewModel.ImportPhrasesFromXlsAsync(
+            dialog.FileName,
+            progress,
+            (name, candidates) =>
+            {
+                var selection = new ImportCategorySelectionWindow(name, candidates, _viewModel.Categories.ToList())
+                {
+                    Owner = progressWindow
+                };
+                return Task.FromResult(selection.ShowDialog() == true ? selection.SelectedCategoryId : null);
+            });
         progressWindow.Close();
 
         System.Windows.MessageBox.Show(

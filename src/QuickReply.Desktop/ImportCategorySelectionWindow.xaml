@@ -1,0 +1,31 @@
+<Window x:Class="QuickReply.Desktop.ImportCategorySelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="选择导入分类" Width="520" Height="360" MinWidth="420" MinHeight="300"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        Background="{DynamicResource AppleWindowBackgroundBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="Heading" Margin="0,0,0,14" TextWrapping="Wrap"
+                   Foreground="{DynamicResource AppleTextBrush}" FontSize="15"/>
+        <ListBox x:Name="Choices" Grid.Row="1" DisplayMemberPath="Description"
+                 HorizontalContentAlignment="Stretch" SelectionChanged="Choices_OnSelectionChanged">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="10"/>
+                    <Setter Property="Margin" Value="0,0,0,4"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
+        </ListBox>
+        <StackPanel Grid.Row="2" Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Margin="0,0,8,0" Padding="16,7" Content="取消导入" IsCancel="True"
+                    Style="{StaticResource SubtleButtonStyle}"/>
+            <Button x:Name="ConfirmButton" Padding="16,7" Content="导入此分类" IsDefault="True"
+                    IsEnabled="False" Click="ConfirmButton_OnClick" Style="{StaticResource PrimaryButtonStyle}"/>
+        </StackPanel>
+    </Grid>
+</Window>
