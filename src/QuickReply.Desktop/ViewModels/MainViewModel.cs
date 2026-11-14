@@ -545,33 +545,13 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     public async Task SendSelectedPhraseAsync(string triggerSource = "selected_phrase_send", string? searchKeyword = null)
     {
-        if (!TryGetSelectedPhraseContent(out var content))
+        if (SelectedPhrase is not { } phrase)
         {
+            StatusMessage = "请先选择一条短语。";
             return;
         }
 
-        var filled = await FillPhraseVariablesAsync(SelectedPhrase, content);
-        if (filled.Stopped is { } stopped)
-        {
-            StatusMessage = stopped.Message;
-            return;
-        }
-
-        try
-        {
-            var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
-            var result = await _messageComposeService.ExecuteAsync(filled.Content, Settings, ComposeActionMode.Send, ResolvePhraseImagePaths(SelectedPhrase));
-            if (result.Success && SelectedPhrase is not null)
-            {
-                RecordPhraseSend(SelectedPhrase.Id);
-            }
-            LogSelectedPhraseUsage(triggerSource, searchKeyword, ComposeActionMode.Send, result, targetWindowHandle);
-            StatusMessage = result.Message;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"发送失败：{ex.Message}";
-        }
+        await SendPhraseDirectAsync(phrase, triggerSource, searchKeyword);
     }
 
     public async Task InputPhraseAsync(ReplyPhrase phrase, string triggerSource = "phrase_list_input", string? searchKeyword = null)
@@ -1271,7 +1251,10 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
             var result = await _messageComposeService.ExecuteAsync(filled.Content, Settings, ComposeActionMode.Send, ResolvePhraseImagePaths(phrase));
             LogPhraseUsage(phrase, triggerSource, searchKeyword, ComposeActionMode.Send, result, targetWindowHandle, recognitionOverride);
-            RecordPhraseSend(phrase.Id);
+            if (result.Success)
+            {
+                RecordPhraseSend(phrase.Id);
+            }
             StatusMessage = $"{phrase.Title}：{result.Message}";
             return result;
         }
@@ -1335,7 +1318,10 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
             var result = await _messageComposeService.ExecuteFilesAsync([fileItem.FullPath], Settings, ComposeActionMode.Send);
             LogFileUsage(fileItem, triggerSource, searchKeyword, ComposeActionMode.Send, result, targetWindowHandle);
-            RecordFileUse(fileItem.Id);
+            if (result.Success)
+            {
+                RecordFileUse(fileItem.Id);
+            }
             StatusMessage = $"{fileItem.DisplayName}：{result.Message}";
             return result;
         }
@@ -1364,7 +1350,10 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
             var result = await _messageComposeService.CopyFilesToClipboardAsync([fileItem.FullPath]);
             LogFileUsage(fileItem, triggerSource, searchKeyword, ComposeActionMode.Copy, result, targetWindowHandle);
-            RecordFileUse(fileItem.Id);
+            if (result.Success)
+            {
+                RecordFileUse(fileItem.Id);
+            }
             StatusMessage = $"{fileItem.DisplayName}：{result.Message}";
             return result;
         }
@@ -1394,7 +1383,10 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
             var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
             var result = await _messageComposeService.ExecuteFilesAsync([fileItem.FullPath], Settings, ComposeActionMode.Input);
             LogFileUsage(fileItem, triggerSource, searchKeyword, ComposeActionMode.Input, result, targetWindowHandle);
-            RecordFileUse(fileItem.Id);
+            if (result.Success)
+            {
+                RecordFileUse(fileItem.Id);
+            }
             StatusMessage = $"{fileItem.DisplayName}：{result.Message}";
             return result;
         }
@@ -1799,7 +1791,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
                     CategoryId = category.Id,
                     CategoryName = category.Name,
                     Title = NormalizePhraseTitle(row.Remark),
-                    Tags = NormalizePhraseTags(row.Remark),
+                    Tags = NormalizePhraseTags(row.Tags ?? row.Remark),
                     Content = row.Content.Trim(),
                     SortOrder = ++categoryOrderLookup[category.Id],
                     CreatedAt = now,

@@ -46,6 +46,7 @@ public sealed class PhraseExcelService
         headerRow.CreateCell(3).SetCellValue("图片1");
         headerRow.CreateCell(4).SetCellValue("图片2");
         headerRow.CreateCell(5).SetCellValue("图片3");
+        headerRow.CreateCell(6).SetCellValue("检索标签");
 
         var rowIndex = 1;
         foreach (var category in categories.OrderBy(item => item.SortOrder).ThenBy(item => item.CreatedAt))
@@ -56,6 +57,7 @@ public sealed class PhraseExcelService
                 row.CreateCell(0).SetCellValue(string.IsNullOrWhiteSpace(category.Name) ? DefaultCategoryName : category.Name);
                 row.CreateCell(1).SetCellValue(NormalizeRemark(phrase.Title));
                 row.CreateCell(2).SetCellValue(phrase.Content ?? string.Empty);
+                row.CreateCell(6).SetCellValue(phrase.Tags);
 
                 var images = export.CopyImages(phrase, rowIndex, resolveImagePaths);
                 for (var imageIndex = 0; imageIndex < 3; imageIndex++)
@@ -73,6 +75,7 @@ public sealed class PhraseExcelService
         sheet.SetColumnWidth(3, 28 * 256);
         sheet.SetColumnWidth(4, 28 * 256);
         sheet.SetColumnWidth(5, 28 * 256);
+        sheet.SetColumnWidth(6, 24 * 256);
 
         using (var stream = new FileStream(export.TemporaryPath, FileMode.CreateNew, FileAccess.Write))
         {
@@ -85,9 +88,19 @@ public sealed class PhraseExcelService
     public IReadOnlyList<PhraseImportRow> ImportFromXls(string filePath)
     {
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        IWorkbook workbook = new HSSFWorkbook(stream);
+        using IWorkbook workbook = new HSSFWorkbook(stream);
         var sheet = workbook.GetSheetAt(0);
         var formatter = new DataFormatter();
+        var header = sheet.GetRow(0);
+        var tagsIndex = -1;
+        for (var index = 0; index < (header?.LastCellNum ?? 0); index++)
+        {
+            if (formatter.FormatCellValue(header!.GetCell(index)).Trim() == "检索标签")
+            {
+                tagsIndex = index;
+                break;
+            }
+        }
         var rows = new List<PhraseImportRow>();
         var baseDirectory = Path.GetDirectoryName(filePath) ?? string.Empty;
 
@@ -123,7 +136,8 @@ public sealed class PhraseExcelService
                 string.IsNullOrWhiteSpace(categoryName) ? DefaultCategoryName : categoryName,
                 remark,
                 content,
-                imagePaths));
+                imagePaths,
+                tagsIndex < 0 ? null : formatter.FormatCellValue(row.GetCell(tagsIndex)).Trim()));
         }
 
         return rows;
@@ -138,7 +152,7 @@ public sealed class PhraseExcelService
 
         var rows = new List<string[]>
         {
-            new[] { "快捷短语编码", "快捷短语", "快捷短语分类", "快捷短语图片" }
+            new[] { "快捷短语编码", "快捷短语", "快捷短语分类", "快捷短语图片", "检索标签" }
         };
 
         var rowIndex = 1;
@@ -154,7 +168,8 @@ public sealed class PhraseExcelService
                         NormalizeRemark(phrase.Title),
                         phrase.Content ?? string.Empty,
                         string.IsNullOrWhiteSpace(category.Name) ? DefaultCategoryName : category.Name,
-                        string.Join("|", exportedImageValues)
+                        string.Join("|", exportedImageValues),
+                        phrase.Tags
                     });
                 rowIndex++;
             }
@@ -192,6 +207,7 @@ public sealed class PhraseExcelService
             .ToDictionary(group => group.Key, group => group.First().Index, StringComparer.OrdinalIgnoreCase);
 
         var remarkIndex = FindHeaderIndex(headerLookup, "备注标签", "快捷短语编码", "标题");
+        var tagsIndex = FindHeaderIndex(headerLookup, "检索标签");
         var contentIndex = FindHeaderIndex(headerLookup, "短语内容", "快捷短语", "内容");
         var categoryIndex = FindHeaderIndex(headerLookup, "分类", "快捷短语分类", "快捷短语分组");
         var imageIndexes = header
@@ -238,7 +254,8 @@ public sealed class PhraseExcelService
                 string.IsNullOrWhiteSpace(category) ? DefaultCategoryName : category,
                 remark,
                 body,
-                imagePaths.Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToArray()));
+                imagePaths.Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToArray(),
+                tagsIndex < 0 ? null : GetCell(row, tagsIndex).Trim()));
         }
 
         return rows;
@@ -479,4 +496,4 @@ public sealed class PhraseExcelService
     }
 }
 
-public readonly record struct PhraseImportRow(string CategoryName, string Remark, string Content, IReadOnlyList<string> ImagePaths);
+public readonly record struct PhraseImportRow(string CategoryName, string Remark, string Content, IReadOnlyList<string> ImagePaths, string? Tags = null);
