@@ -20,11 +20,34 @@
         <Style x:Key="EditorTextBoxStyle"
                TargetType="TextBox"
                BasedOn="{StaticResource AppleInputTextBoxStyle}">
-            <Setter Property="Height" Value="44" />
-            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="MinHeight" Value="44" />
+            <Setter Property="Height" Value="Auto" />
+            <Setter Property="Padding" Value="12,4" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="Foreground" Value="{DynamicResource AppleTitleBrush}" />
             <Setter Property="CaretBrush" Value="{DynamicResource AppleTitleBrush}" />
+            <!-- Let the TextBox own its padding. A margin-bound, centered content host
+                 clips the text viewport when padding and font metrics grow. -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="EditorBorder" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="0" Padding="0"
+                                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="EditorBorder" Property="BorderBrush" Value="{DynamicResource AppleAccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="EditorBorder" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="EditorMultiLineTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource EditorTextBoxStyle}">
