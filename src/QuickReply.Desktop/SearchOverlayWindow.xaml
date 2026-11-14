@@ -69,7 +69,7 @@
                                   Margin="12,0,0,0"
                                   IsHitTestVisible="False" />
                             <TextBox x:Name="SearchTextBox"
-                                     Margin="34,0,152,0"
+                                     Margin="34,0,84,0"
                                      Padding="0"
                                      VerticalAlignment="Center"
                                      VerticalContentAlignment="Center"
@@ -84,48 +84,38 @@
                                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                      TextOptions.TextFormattingMode="Display" />
                             <TextBlock x:Name="SearchPlaceholderTextBlock"
-                                       Margin="34,0,152,0"
+                                       Margin="34,0,84,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource SearchOverlayMutedBrush}"
                                        IsHitTestVisible="False"
                                        Text="{Binding SearchPlaceholderText}"
                                        TextTrimming="CharacterEllipsis"
                                        Visibility="Collapsed" />
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Center"
-                                        Margin="0,0,6,0">
-                                <Button x:Name="NewPhraseButton"
-                                        Margin="0,0,6,0"
-                                        MinWidth="62"
-                                        Height="30"
-                                        Click="NewPhraseButton_OnClick"
-                                        Style="{StaticResource AppleCompactPrimaryButtonStyle}"
-                                        ToolTip="新建快捷短语 (Ctrl+N)">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Path Data="M6,1.5 L6,10.5 M1.5,6 L10.5,6"
-                                              Stroke="White"
-                                              StrokeThickness="1.6"
-                                              StrokeStartLineCap="Round"
-                                              StrokeEndLineCap="Round"
-                                              Width="12"
-                                              Height="12"
-                                              VerticalAlignment="Center"
-                                              Margin="0,0,4,0" />
-                                        <TextBlock Text="新建"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold"
-                                                   VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="SidebarWorkModeButton"
-                                        MinWidth="56"
-                                        Height="30"
-                                        Click="SidebarWorkModeButton_OnClick"
-                                        Content="{Binding SidebarModeButtonText}"
-                                        Style="{StaticResource AppleCompactButtonStyle}"
-                                        ToolTip="{Binding SidebarModeButtonToolTip}" />
-                            </StackPanel>
+                            <Button x:Name="NewPhraseButton"
+                                    Margin="0,0,6,0"
+                                    MinWidth="62"
+                                    Height="30"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Click="NewPhraseButton_OnClick"
+                                    Style="{StaticResource AppleCompactPrimaryButtonStyle}"
+                                    ToolTip="新建快捷短语 (Ctrl+N)">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Path Data="M6,1.5 L6,10.5 M1.5,6 L10.5,6"
+                                          Stroke="White"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Width="12"
+                                          Height="12"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0" />
+                                    <TextBlock Text="新建"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </Grid>
                     </Border>
                 </Grid>

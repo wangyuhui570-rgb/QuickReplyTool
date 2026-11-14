@@ -293,6 +293,13 @@ public partial class SearchOverlayWindow : Window
             return;
         }
 
+        if (modifiers == ModifierKeys.Control && key == Key.OemComma)
+        {
+            e.Handled = true;
+            OpenSettingsWindow();
+            return;
+        }
+
         if (modifiers == ModifierKeys.Control && key is Key.Left or Key.Right)
         {
             e.Handled = true;
@@ -423,11 +430,16 @@ public partial class SearchOverlayWindow : Window
         FocusSearchBox();
     }
 
-    private async void SidebarWorkModeButton_OnClick(object sender, RoutedEventArgs e)
+    private void OpenSettingsWindow()
     {
-        await _viewModel.ToggleSidebarWorkModeAsync();
-        _viewModel.RefreshSidebarModePresentation();
-        FocusSearchBox();
+        if (Owner is MainWindow mainWindow)
+        {
+            mainWindow.OpenSettingsWindow();
+        }
+        else if (System.Windows.Application.Current?.MainWindow is MainWindow mainWin)
+        {
+            mainWin.OpenSettingsWindow();
+        }
     }
 
     private async void ResultButton_OnClick(object sender, RoutedEventArgs e)
@@ -749,6 +761,8 @@ public partial class SearchOverlayWindow : Window
             contextMenu.Items.Add(CreateResultMenuItem("仅输入不发送", InputResultMenuItem_OnClick));
             contextMenu.Items.Add(new Separator());
             contextMenu.Items.Add(CreateResultMenuItem("删除", DeleteResultMenuItem_OnClick));
+            contextMenu.Items.Add(new Separator());
+            contextMenu.Items.Add(CreateResultMenuItem("打开设置 (Ctrl+,)", (_, _) => OpenSettingsWindow()));
             return;
         }
 
