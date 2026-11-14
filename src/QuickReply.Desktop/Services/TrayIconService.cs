@@ -220,6 +220,7 @@ public sealed class TrayIconService : IDisposable
         contextMenu.Items.Add(new Wpf.Separator());
 
         // 2. Main actions
+        contextMenu.Items.Add(CreateMenuItem("新建快捷短语", IconDataAddNote, (_, _) => OpenNewPhraseDialog()));
         contextMenu.Items.Add(CreateMenuItem("显示主界面", IconDataDisplay, (_, _) => ShowMainWindow()));
         contextMenu.Items.Add(CreateMenuItem("打开设置", IconDataSettings, (_, _) => OpenSettingsWindow()));
 
@@ -369,6 +370,14 @@ public sealed class TrayIconService : IDisposable
         }
 
         return SystemIcons.Application;
+    }
+
+    private void OpenNewPhraseDialog()
+    {
+        if (_mainWindow is MainWindow mainWindow)
+        {
+            mainWindow.OpenAddPhraseDialog();
+        }
     }
 
     private void OpenSettingsWindow()

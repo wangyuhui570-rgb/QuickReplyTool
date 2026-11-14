@@ -698,40 +698,53 @@ public partial class MainWindow : Window
         await CommitInlineCategoryEditAsync(category);
     }
 
-    private async void AddPhraseButton_OnClick(object sender, RoutedEventArgs e)
+    public void OpenAddPhraseDialog()
     {
-        if (ViewModel is null)
+        Dispatcher.Invoke(async () =>
         {
-            return;
-        }
-
-        var editor = new PhraseEditorWindow("新增短语", "新增", string.Empty, string.Empty)
-        {
-            Owner = this
-        };
-
-        var dialogResult = editor.ShowDialog();
-        SearchOverlayDiagnostics.Log(
-            "phrase_images",
-            "main_window_create_dialog_closed",
-            new Dictionary<string, object?>
+            if (ViewModel is null)
             {
-                ["dialogResult"] = dialogResult
-            });
-        if (dialogResult != true)
-        {
-            return;
-        }
+                return;
+            }
 
-        try
-        {
-            await ViewModel.CreatePhraseAsync(editor.PhraseTitle, editor.PhraseTitle, editor.PhraseContent, editor.PhraseImageSourcePaths);
-        }
-        catch (Exception ex)
-        {
-            editor.CleanupOwnedTransientImages();
-            ViewModel.StatusMessage = $"新增短语失败：{ex.Message}";
-        }
+            var editor = new PhraseEditorWindow("新增短语", "新增", string.Empty, string.Empty);
+            if (IsVisible)
+            {
+                editor.Owner = this;
+            }
+            else
+            {
+                editor.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
+
+            var dialogResult = editor.ShowDialog();
+            SearchOverlayDiagnostics.Log(
+                "phrase_images",
+                "main_window_create_dialog_closed",
+                new Dictionary<string, object?>
+                {
+                    ["dialogResult"] = dialogResult
+                });
+            if (dialogResult != true)
+            {
+                return;
+            }
+
+            try
+            {
+                await ViewModel.CreatePhraseAsync(editor.PhraseTitle, editor.PhraseTitle, editor.PhraseContent, editor.PhraseImageSourcePaths);
+            }
+            catch (Exception ex)
+            {
+                editor.CleanupOwnedTransientImages();
+                ViewModel.StatusMessage = $"新增短语失败：{ex.Message}";
+            }
+        });
+    }
+
+    private void AddPhraseButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        OpenAddPhraseDialog();
     }
 
     private void PhraseItem_OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)

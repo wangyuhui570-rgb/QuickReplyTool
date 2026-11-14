@@ -788,6 +788,19 @@ public sealed class SearchOverlayViewModel : ObservableObject
         SelectedResult = Results.FirstOrDefault(result => result.Phrase?.Id == item.Phrase.Id);
     }
 
+    public async Task<ReplyPhrase?> CreatePhraseResultAsync(string title, string content, IReadOnlyCollection<string>? imageSourcePaths = null)
+    {
+        var phrase = await _mainViewModel.CreatePhraseAsync(title, title, content, imageSourcePaths);
+        if (phrase is not null)
+        {
+            RefreshResults(keepPage: false);
+            SelectedResult = Results.FirstOrDefault(result => result.Phrase?.Id == phrase.Id);
+            ShowActionStatus(new ReplyActionResult(true, $"已新建短语：{phrase.DisplayTitle}"));
+        }
+
+        return phrase;
+    }
+
     public ReplyActionResult OpenFileResult(SearchOverlayResultItem item)
     {
         if (item.FileItem is null)

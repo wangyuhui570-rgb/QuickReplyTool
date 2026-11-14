@@ -50,4 +50,25 @@ public sealed class SearchOverlayShortcutPolicyTests
             searchTextHasFocus: true,
             isRepeat: true));
     }
+
+    [Fact]
+    public void IsCreatePhraseShortcut_RequiresCtrlN()
+    {
+        Assert.True(SearchOverlayShortcutPolicy.IsCreatePhraseShortcut(
+            Key.N,
+            ModifierKeys.Control,
+            isRepeat: false));
+        Assert.False(SearchOverlayShortcutPolicy.IsCreatePhraseShortcut(
+            Key.N,
+            ModifierKeys.Control,
+            isRepeat: true));
+        Assert.False(SearchOverlayShortcutPolicy.IsCreatePhraseShortcut(
+            Key.N,
+            ModifierKeys.None,
+            isRepeat: false));
+        Assert.False(SearchOverlayShortcutPolicy.IsCreatePhraseShortcut(
+            Key.M,
+            ModifierKeys.Control,
+            isRepeat: false));
+    }
 }

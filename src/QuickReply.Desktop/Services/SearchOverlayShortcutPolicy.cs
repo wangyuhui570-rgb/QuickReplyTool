@@ -35,4 +35,14 @@ internal static class SearchOverlayShortcutPolicy
                key == Key.S &&
                modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
     }
+
+    public static bool IsCreatePhraseShortcut(
+        Key key,
+        ModifierKeys modifiers,
+        bool isRepeat)
+    {
+        return !isRepeat &&
+               key == Key.N &&
+               modifiers == ModifierKeys.Control;
+    }
 }

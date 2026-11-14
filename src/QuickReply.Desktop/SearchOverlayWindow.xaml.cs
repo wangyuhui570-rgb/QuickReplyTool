@@ -286,6 +286,13 @@ public partial class SearchOverlayWindow : Window
             return;
         }
 
+        if (SearchOverlayShortcutPolicy.IsCreatePhraseShortcut(key, modifiers, e.IsRepeat))
+        {
+            e.Handled = true;
+            await OpenCreatePhraseDialogAsync();
+            return;
+        }
+
         if (modifiers == ModifierKeys.Control && key is Key.Left or Key.Right)
         {
             e.Handled = true;
@@ -450,6 +457,49 @@ public partial class SearchOverlayWindow : Window
         }
 
         BuildResultContextMenu(contextMenu, result);
+    }
+
+    private async void NewPhraseButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        await OpenCreatePhraseDialogAsync();
+    }
+
+    private async Task OpenCreatePhraseDialogAsync()
+    {
+        var defaultText = SearchTextBox.Text?.Trim() ?? string.Empty;
+        var editor = new PhraseEditorWindow("新增短语", "新增", defaultText, defaultText)
+        {
+            Owner = this
+        };
+
+        var dialogResult = editor.ShowDialog();
+        SearchOverlayDiagnostics.Log(
+            "phrase_images",
+            "search_overlay_create_dialog_closed",
+            new Dictionary<string, object?>
+            {
+                ["dialogResult"] = dialogResult
+            });
+
+        if (dialogResult != true)
+        {
+            FocusSearchBox();
+            return;
+        }
+
+        try
+        {
+            await _viewModel.CreatePhraseResultAsync(editor.PhraseTitle, editor.PhraseContent, editor.PhraseImageSourcePaths);
+        }
+        catch (Exception ex)
+        {
+            editor.CleanupOwnedTransientImages();
+            _viewModel.StatusMessage = $"新增短语失败：{ex.Message}";
+        }
+        finally
+        {
+            FocusSearchBox();
+        }
     }
 
     private async void EditResultMenuItem_OnClick(object sender, RoutedEventArgs e)
@@ -686,6 +736,7 @@ public partial class SearchOverlayWindow : Window
                 return;
             }
 
+            contextMenu.Items.Add(CreateResultMenuItem("新建短语", async (_, _) => await OpenCreatePhraseDialogAsync()));
             contextMenu.Items.Add(CreateResultMenuItem("编辑", EditResultMenuItem_OnClick));
             contextMenu.Items.Add(new Separator());
             var imagePaths = _viewModel.GetPhraseImageAbsolutePaths(currentResult.Phrase);
