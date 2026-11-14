@@ -36,21 +36,24 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0"
-                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
-                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
-                    <StackPanel>
-                        <TextBlock x:Name="HeaderTextBlock"
-                                   FontSize="18"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource TitleBrush}"
-                                   Text="填写变量" />
-                        <TextBlock Margin="0,4,0,0"
-                                   Foreground="{StaticResource MutedBrush}"
-                                   Text="Tab 切换下一项，Enter 发送，Esc 取消。不改就用默认值。"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
+                <Grid Grid.Row="0" Margin="2,0,2,10" MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="HeaderTextBlock"
+                               VerticalAlignment="Center"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}"
+                               Text="填写变量" />
+                    <Button Grid.Column="1"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Click="CancelButton_OnClick"
+                            ToolTip="关闭"
+                            Style="{StaticResource AppleWindowCloseButtonStyle}" />
+                </Grid>
 
                 <Border Grid.Row="1"
                         Margin="0,0,0,12"
@@ -95,20 +98,25 @@
                 </Border>
 
                 <Border Grid.Row="2" Style="{StaticResource AppleDialogFooterBarStyle}">
-                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                        <Button Width="78"
-                                Margin="0,0,8,0"
-                                IsCancel="True"
-                                Click="CancelButton_OnClick"
-                                Content="取消"
-                                Style="{StaticResource AppleSecondaryButtonStyle}" />
-                        <Button x:Name="ConfirmButton"
-                                Width="88"
-                                IsDefault="True"
-                                Click="ConfirmButton_OnClick"
-                                Content="发送"
-                                Style="{StaticResource ApplePrimaryButtonStyle}" />
-                    </StackPanel>
+                    <Grid>
+                        <TextBlock VerticalAlignment="Center" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="按 Enter 发送，Esc 取消" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <Button Width="78"
+                                    Margin="0,0,8,0"
+                                    IsCancel="True"
+                                    Click="CancelButton_OnClick"
+                                    Content="取消"
+                                    Style="{StaticResource AppleSecondaryButtonStyle}" />
+                            <Button x:Name="ConfirmButton"
+                                    Width="88"
+                                    IsDefault="True"
+                                    Click="ConfirmButton_OnClick"
+                                    Content="发送"
+                                    Style="{StaticResource ApplePrimaryButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>

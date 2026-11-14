@@ -4,9 +4,9 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="分类"
         Width="360"
-        Height="176"
+        Height="150"
         MinWidth="320"
-        MinHeight="160"
+        MinHeight="140"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         WindowStyle="None"
@@ -35,26 +35,45 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0"
-                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
-                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
-                    <TextBlock FontSize="18"
+                <Grid Grid.Row="0" Margin="2,0,2,10" MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               FontSize="15"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}"
                                Text="{Binding DialogHeading, RelativeSource={RelativeSource AncestorType=Window}}" />
-                </Border>
+                    <Button Grid.Column="1"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Click="CancelButton_OnClick"
+                            ToolTip="关闭"
+                            Style="{StaticResource AppleWindowCloseButtonStyle}" />
+                </Grid>
 
-                <Border Grid.Row="1" Margin="0,0,0,12" Style="{StaticResource AppleCompactDialogBodyCardStyle}">
-                    <StackPanel>
-                        <TextBlock Margin="0,0,0,6"
-                                   Foreground="{StaticResource TextBrush}"
-                                   FontWeight="SemiBold"
-                                   Text="分类名称" />
+                <Border Grid.Row="1" Margin="0,0,0,10" Style="{StaticResource AppleCompactDialogBodyCardStyle}">
+                    <Grid>
                         <TextBox x:Name="NameTextBox"
                                  Style="{StaticResource AppleInputTextBoxStyle}"
                                  ToolTip="建议 5 字左右；超出宽度部分在标签栏会自动收起，悬停可查看完整名称"
                                  Text="{Binding CategoryName, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
+                        <TextBlock Text="例如：常用问候 / 售后问题"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                   FontSize="13" Foreground="{StaticResource MutedBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=NameTextBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </Border>
 
                 <Border Grid.Row="2" Style="{StaticResource AppleDialogFooterBarStyle}">

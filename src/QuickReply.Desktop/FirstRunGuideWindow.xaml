@@ -5,9 +5,9 @@
         Title="首次设置"
         Icon="pack://application:,,,/Assets/quickreply.ico"
         Width="620"
-        Height="500"
+        Height="460"
         MinWidth="620"
-        MinHeight="500"
+        MinHeight="440"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         Background="Transparent"
@@ -47,11 +47,10 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock FontSize="28" FontWeight="Bold" Foreground="{StaticResource TitleBrush}" Text="首次设置" />
-                    <TextBlock Margin="0,8,0,0"
+                    <TextBlock FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="首次设置" />
+                    <TextBlock Margin="0,6,0,0"
                                Foreground="{StaticResource MutedBrush}"
-                               Text="先把最关键的 3 项设置好：搜索唤起、发送键、文件资料目录。后面在选项里还可以继续细调。"
-                               TextWrapping="Wrap" />
+                               Text="快速配置核心选项，后续可在设置中随时调整。" />
                 </StackPanel>
                 <Button Grid.Column="1"
                         HorizontalAlignment="Right"
@@ -93,9 +92,8 @@
                         </Grid.Resources>
 
                         <StackPanel x:Name="StepOnePanel" Margin="0,20,0,0">
-                            <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="步骤 1：搜索唤起热键" />
-                            <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="建议先选一个自己最顺手的搜索唤起方式。" TextWrapping="Wrap" />
-                            <StackPanel Margin="0,20,0,0">
+                            <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="步骤 1：搜索唤起热键" />
+                            <StackPanel Margin="0,16,0,0">
                                 <TextBlock Margin="0,0,0,8" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="搜索唤起" />
                                 <ComboBox Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSearchHotkeyMode}" SelectedValuePath="Tag">
                                     <ComboBoxItem Tag="{x:Static models:SearchFocusHotkeyMode.Tab}" Content="Tab" />
@@ -106,9 +104,8 @@
                         </StackPanel>
 
                         <StackPanel x:Name="StepTwoPanel" Margin="0,20,0,0">
-                            <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="步骤 2：发送快捷键" />
-                            <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="按你当前客服工作台的习惯，先把发送键确认好。" TextWrapping="Wrap" />
-                            <StackPanel Margin="0,20,0,0">
+                            <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="步骤 2：发送快捷键" />
+                            <StackPanel Margin="0,16,0,0">
                                 <TextBlock Margin="0,0,0,8" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="发送快捷键" />
                                 <ComboBox Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSendHotkeyMode}" SelectedValuePath="Tag">
                                     <ComboBoxItem Tag="{x:Static models:SendHotkeyMode.Enter}" Content="Enter" />
@@ -119,9 +116,9 @@
                         </StackPanel>
 
                         <StackPanel x:Name="StepThreePanel" Margin="0,20,0,0">
-                            <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="步骤 3：文件资料目录" />
-                            <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="把常用安装包、图片、视频放进一个资料文件夹，后面就能直接在搜索栏里搜文件名发送。" TextWrapping="Wrap" />
-                            <StackPanel Margin="0,20,0,0">
+                            <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="步骤 3：文件资料目录" />
+                            <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="用于在搜索栏中快速检索与发送资料文件。" TextWrapping="Wrap" />
+                            <StackPanel Margin="0,16,0,0">
                                 <TextBlock Margin="0,0,0,8" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="资料文件夹" />
                                 <Grid>
                                     <Grid.ColumnDefinitions>

@@ -84,4 +84,12 @@ public partial class ScreenshotHotkeyDialog : Window
         DialogResult = true;
         Close();
     }
+
+    private void TitleBar_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            DragMove();
+        }
+    }
 }

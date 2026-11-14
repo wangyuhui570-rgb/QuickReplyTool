@@ -518,8 +518,8 @@
     </Style>
 
     <Style x:Key="AppleFloatingTextBoxStyle" TargetType="TextBox">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="Padding" Value="12,4" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="10,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Background" Value="{DynamicResource SearchInputBackgroundBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource SearchInputBorderBrush}" />
@@ -535,9 +535,11 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="14">
+                            CornerRadius="8">
                         <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="{TemplateBinding Padding}"
+                                      Focusable="False"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Hidden"
                                       TextElement.Foreground="{TemplateBinding Foreground}"
                                       VerticalAlignment="Center" />
                     </Border>
@@ -557,7 +559,8 @@
     <Style x:Key="AppleInputTextBoxStyle"
            TargetType="TextBox"
            BasedOn="{StaticResource AppleFloatingTextBoxStyle}">
-        <Setter Property="Height" Value="40" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="10,0" />
         <Setter Property="Background" Value="{DynamicResource AppleSurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource AppleStrongLineBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource AppleTitleBrush}" />
@@ -1049,17 +1052,17 @@
     <Style x:Key="AppleCompactDialogHeaderCardStyle"
            TargetType="Border"
            BasedOn="{StaticResource AppleEditorHeaderCardStyle}">
-        <Setter Property="Padding" Value="16" />
-        <Setter Property="Margin" Value="0,0,0,12" />
-        <Setter Property="CornerRadius" Value="18" />
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+        <Setter Property="CornerRadius" Value="12" />
     </Style>
 
     <Style x:Key="AppleCompactDialogBodyCardStyle"
            TargetType="Border"
            BasedOn="{StaticResource AppleSectionCardStyle}">
-        <Setter Property="Padding" Value="16" />
-        <Setter Property="Margin" Value="0,0,0,12" />
-        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+        <Setter Property="CornerRadius" Value="10" />
     </Style>
 
     <Style x:Key="AppleSearchResultButtonStyle" TargetType="Button">

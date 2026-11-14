@@ -4,7 +4,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="导入快捷短语"
         Width="420"
-        Height="170"
+        Height="110"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
@@ -59,32 +59,32 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0"
-                        Margin="0,0,0,12"
-                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
-                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                <Grid Grid.Row="0"
+                      Margin="2,0,2,14"
+                      MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <TextBlock x:Name="StatusTextBlock"
-                               FontSize="15"
+                               FontSize="14"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}"
                                Text="准备导入..." />
-                </Border>
+                    <TextBlock x:Name="PercentTextBlock"
+                               Grid.Column="1"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AppleAccentBrush}"
+                               Text="0%" />
+                </Grid>
 
-                <Border Grid.Row="1"
-                        Margin="0,0,0,10"
-                        Style="{StaticResource AppleCompactDialogBodyCardStyle}">
-                    <ProgressBar x:Name="ImportProgressBar"
-                                 Minimum="0"
-                                 Maximum="100"
-                                 Value="0"
-                                 Style="{StaticResource ProgressTrackStyle}" />
-                </Border>
-
-                <TextBlock x:Name="PercentTextBlock"
-                           Grid.Row="2"
-                           HorizontalAlignment="Right"
-                           Foreground="{StaticResource MutedBrush}"
-                           Text="0%" />
+                <ProgressBar x:Name="ImportProgressBar"
+                             Grid.Row="1"
+                             Minimum="0"
+                             Maximum="100"
+                             Value="0"
+                             Style="{StaticResource ProgressTrackStyle}" />
             </Grid>
         </Border>
     </Border>

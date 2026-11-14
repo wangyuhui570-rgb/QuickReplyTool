@@ -35,56 +35,72 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0"
-                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
-                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
-                    <Grid>
-                        <StackPanel Margin="0,0,36,0">
-                            <TextBlock FontSize="16"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource TitleBrush}"
-                                       Text="记录当前遇到的问题" />
-                            <TextBlock Margin="0,4,0,0"
-                                       FontSize="11"
-                                       Foreground="{StaticResource MutedBrush}"
-                                       Text="写下你刚刚遇到的问题。程序会自动附带时间、最近日志和当前设置，在本地生成反馈包。"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                        <Button HorizontalAlignment="Right"
-                                VerticalAlignment="Top"
-                                Click="CloseButton_OnClick"
-                                Style="{StaticResource AppleWindowCloseButtonStyle}" />
-                    </Grid>
-                </Border>
+                <Grid Grid.Row="0" Margin="2,0,2,10" MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}"
+                               Text="记录问题反馈" />
+                    <Button Grid.Column="1"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Click="CloseButton_OnClick"
+                            ToolTip="关闭"
+                            Style="{StaticResource AppleWindowCloseButtonStyle}" />
+                </Grid>
 
                 <Border Grid.Row="1"
                         Style="{StaticResource AppleCompactDialogBodyCardStyle}">
-                    <TextBox x:Name="IssueTextBox"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             FontSize="13"
-                             Foreground="{DynamicResource AppleTextBrush}"
-                             CaretBrush="{DynamicResource AppleAccentBrush}" />
+                    <Grid>
+                        <TextBox x:Name="IssueTextBox"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 FontSize="13"
+                                 Foreground="{DynamicResource AppleTextBrush}"
+                                 CaretBrush="{DynamicResource AppleAccentBrush}" />
+                        <TextBlock Text="请详细描述你遇到的异常现象或操作步骤...&#x0a;提交后会在本地生成诊断数据包供排查"
+                                   Margin="2,2,0,0" VerticalAlignment="Top" IsHitTestVisible="False"
+                                   FontSize="13" LineHeight="20" Foreground="{DynamicResource MutedBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=IssueTextBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </Border>
 
                 <Border Grid.Row="2"
                         Style="{StaticResource AppleDialogFooterBarStyle}">
-                    <StackPanel Orientation="Horizontal"
-                                HorizontalAlignment="Right">
-                        <Button Width="84"
-                                Margin="0,0,8,0"
-                                Click="CloseButton_OnClick"
-                                Content="取消"
-                                Style="{StaticResource AppleSecondaryButtonStyle}" />
-                        <Button x:Name="SubmitButton"
-                                MinWidth="110"
-                                Click="SubmitButton_OnClick"
-                                Content="生成并反馈"
-                                Style="{StaticResource ApplePrimaryButtonStyle}" />
-                    </StackPanel>
+                    <Grid>
+                        <TextBlock VerticalAlignment="Center" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="将自动附带最近运行日志与设置快照" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <Button Width="84"
+                                    Margin="0,0,8,0"
+                                    Click="CloseButton_OnClick"
+                                    Content="取消"
+                                    Style="{StaticResource AppleSecondaryButtonStyle}" />
+                            <Button x:Name="SubmitButton"
+                                    MinWidth="110"
+                                    Click="SubmitButton_OnClick"
+                                    Content="生成并反馈"
+                                    Style="{StaticResource ApplePrimaryButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>
