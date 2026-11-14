@@ -54,6 +54,7 @@ This directory contains side-effect-heavy code. Follow the root and desktop guid
 - Keep search-overlay shortcut detection and failure-feedback formatting in dedicated helpers.
 - Keep `MessageComposeService` on a unified structured send pipeline for text-only, file-drop, and mixed rich content.
 - Published-knowledge sync tracks a monotonic revision cursor. Keep `LastPublishedKnowledgeRevision`, response paging (`nextCursor` / `hasMore`), and local cache updates aligned.
+- JD workbench integration reads local Chromium/CEF cookies with Windows DPAPI and calls `kf.jd.com` read APIs only. Do not log cookie values, decrypted keys, request headers, or raw login-state data; keep recommendation output human-confirmed and routed through the existing input/copy/send services.
 
 ## Validation expectations
 

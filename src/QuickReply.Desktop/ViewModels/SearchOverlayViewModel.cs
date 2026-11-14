@@ -14,6 +14,9 @@ public sealed class SearchOverlayViewModel : ObservableObject
     private static readonly IReadOnlyList<HistoricalReplyGroupSuggestion> EmptyReplyGroups = Array.Empty<HistoricalReplyGroupSuggestion>();
     private readonly MainViewModel _mainViewModel;
     private IReadOnlyList<SearchOverlayResultItem> _results = Array.Empty<SearchOverlayResultItem>();
+    private CandidateRetrievalResult _jdRecommendationResult = new();
+    private ConversationRecommendationSnapshot? _jdRecommendationSnapshot;
+    private string _jdRecommendationStatusText = string.Empty;
     private string _actionStatusMessage = string.Empty;
     private string _recognitionCorrectionText = string.Empty;
     private string _searchText = string.Empty;
@@ -125,31 +128,31 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public bool HasResults => Results.Count > 0;
 
-    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendedPhrases => EmptyRecommendedPhrases;
+    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendedPhrases => _jdRecommendationResult.Suggestions;
 
-    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendationItems => EmptyRecommendedPhrases;
+    public IReadOnlyList<PhraseRecommendationSuggestion> RecommendationItems => RecommendedPhrases;
 
-    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCards => EmptyKnowledgeCards;
+    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCards => _jdRecommendationResult.KnowledgeCards;
 
-    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCardItems => EmptyKnowledgeCards;
+    public IReadOnlyList<KnowledgeCardSuggestion> KnowledgeCardItems => KnowledgeCards;
 
-    public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups => EmptyReplyGroups;
+    public IReadOnlyList<HistoricalReplyGroupSuggestion> SimilarReplyGroups => _jdRecommendationResult.SimilarReplyGroups;
 
-    public bool HasRecommendations => false;
+    public bool HasRecommendations => RecommendedPhrases.Count > 0 || KnowledgeCards.Count > 0;
 
-    public bool HasKnowledgeCardMatches => false;
+    public bool HasKnowledgeCardMatches => KnowledgeCards.Count > 0;
 
-    public bool HasRecommendationContext => false;
+    public bool HasRecommendationContext => _jdRecommendationSnapshot is not null;
 
-    public bool HasRecognizedCustomerMessage => false;
+    public bool HasRecognizedCustomerMessage => !string.IsNullOrWhiteSpace(_jdRecommendationSnapshot?.RecognizedCustomerText);
 
-    public string RecognizedCustomerMessageText => string.Empty;
+    public string RecognizedCustomerMessageText => _jdRecommendationSnapshot?.RecognizedCustomerText ?? string.Empty;
 
-    public bool HasRecommendationPanelContent => false;
+    public bool HasRecommendationPanelContent => HasRecommendations || HasRecommendationContext;
 
     public bool HasManualSearchText => SearchOverlayLayoutModeResolver.HasManualSearchText(SearchText);
 
-    public bool ShouldShowRecommendationPanel => false;
+    public bool ShouldShowRecommendationPanel => HasRecommendationPanelContent;
 
     public bool ShouldShowSearchResultsPanel => true;
 
@@ -179,7 +182,7 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
     public bool IsCompactSidebarMode => Settings.SidebarWorkMode == SidebarWorkMode.Compact;
 
-    public int RecommendationDisplayCount => 0;
+    public int RecommendationDisplayCount => RecommendedPhrases.Count + KnowledgeCards.Count;
 
     public string CurrentModeDisplayText => CurrentMode switch
     {
@@ -222,17 +225,21 @@ public sealed class SearchOverlayViewModel : ObservableObject
         _ => "短语模式  左右切换"
     };
 
-    public string RecommendationHintText => string.Empty;
+    public string RecommendationHintText => HasRecommendations ? "来自京东会话，可点选填入输入框。" : string.Empty;
 
-    public bool HasRecommendationHintText => false;
+    public bool HasRecommendationHintText => !string.IsNullOrWhiteSpace(RecommendationHintText);
 
-    public string RecommendationStatusText => string.Empty;
+    public string RecommendationStatusText => _jdRecommendationStatusText;
 
-    public bool HasRecommendationStatusText => false;
+    public bool HasRecommendationStatusText => !string.IsNullOrWhiteSpace(RecommendationStatusText);
 
-    public string GroundingSummaryText => string.Empty;
+    public string GroundingSummaryText => _jdRecommendationSnapshot is null
+        ? string.Empty
+        : string.IsNullOrWhiteSpace(_jdRecommendationSnapshot.RecognizedProductName)
+            ? "京东会话"
+            : $"京东会话 | {_jdRecommendationSnapshot.RecognizedProductName}";
 
-    public bool HasGroundingSummaryText => false;
+    public bool HasGroundingSummaryText => !string.IsNullOrWhiteSpace(GroundingSummaryText);
 
     public string ActionStatusMessage
     {
@@ -263,10 +270,15 @@ public sealed class SearchOverlayViewModel : ObservableObject
         }
     }
 
-    public string OverlayAssistText => HasActionStatusMessage ? ActionStatusMessage : StatusMessage;
+    public string OverlayAssistText => HasActionStatusMessage
+        ? ActionStatusMessage
+        : HasRecommendationStatusText
+            ? RecommendationStatusText
+            : StatusMessage;
 
     public bool HasOverlayAssistText =>
-        SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText(SearchText, HasActionStatusMessage) &&
+        (SearchOverlayLayoutModeResolver.ShouldShowOverlayAssistText(SearchText, HasActionStatusMessage) ||
+         HasRecommendationStatusText) &&
         !string.IsNullOrWhiteSpace(OverlayAssistText);
 
     public bool IsOverlayAssistWarning => HasActionStatusMessage && IsActionStatusWarning;
@@ -285,9 +297,9 @@ public sealed class SearchOverlayViewModel : ObservableObject
         set => SetProperty(ref _recognitionCorrectionText, value);
     }
 
-    public string RecommendationContextText => string.Empty;
+    public string RecommendationContextText => _jdRecommendationSnapshot?.RecognizedCustomerText ?? string.Empty;
 
-    public bool HasRecommendationContextText => false;
+    public bool HasRecommendationContextText => !string.IsNullOrWhiteSpace(RecommendationContextText);
 
     public string SearchBoxHintText
     {
@@ -311,12 +323,16 @@ public sealed class SearchOverlayViewModel : ObservableObject
             _ => "没有匹配的短语。"
         };
 
-    public string ResultsSectionTitle => SearchOverlayPanelStatusBuilder.BuildResultsSectionTitle(CurrentMode);
+    public string ResultsSectionTitle => string.IsNullOrWhiteSpace(SearchText) && HasRecommendations
+        ? "京东推荐回复"
+        : SearchOverlayPanelStatusBuilder.BuildResultsSectionTitle(CurrentMode);
 
-    public string ResultsSectionSummary => SearchOverlayPanelStatusBuilder.BuildResultsSectionSummary(
-        CurrentMode,
-        SearchText,
-        Results.Count);
+    public string ResultsSectionSummary => string.IsNullOrWhiteSpace(SearchText) && HasRecommendations
+        ? "点击候选会填入当前输入框，不会自动发送"
+        : SearchOverlayPanelStatusBuilder.BuildResultsSectionSummary(
+            CurrentMode,
+            SearchText,
+            Results.Count);
 
     public bool HasResultsSectionSummary => !string.IsNullOrWhiteSpace(ResultsSectionSummary);
 
@@ -599,6 +615,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
 
             result = await _mainViewModel.SendFileItemDirectAsync(item.FileItem, "search_overlay_file_send", SearchText);
         }
+        else if (item.KnowledgeCard is not null)
+        {
+            result = await _mainViewModel.SendPlainTextAsync(item.KnowledgeCard.Card.Answer, "search_overlay_knowledge_card_send", SearchText);
+        }
         else
         {
             if (item.Phrase is null)
@@ -630,6 +650,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
             }
 
             result = await _mainViewModel.CopyFileItemDirectAsync(item.FileItem, "search_overlay_file_copy", SearchText);
+        }
+        else if (item.KnowledgeCard is not null)
+        {
+            result = await _mainViewModel.CopyPlainTextAsync(item.KnowledgeCard.Card.Answer, "search_overlay_knowledge_card_copy", SearchText);
         }
         else
         {
@@ -680,6 +704,10 @@ public sealed class SearchOverlayViewModel : ObservableObject
             }
 
             result = await _mainViewModel.InputFileItemDirectAsync(item.FileItem, "search_overlay_file_input", SearchText);
+        }
+        else if (item.KnowledgeCard is not null)
+        {
+            result = await _mainViewModel.InputPlainTextAsync(item.KnowledgeCard.Card.Answer, "search_overlay_knowledge_card_input", SearchText);
         }
         else
         {
@@ -792,6 +820,8 @@ public sealed class SearchOverlayViewModel : ObservableObject
     {
         Results = _isSettingsPreviewMode
             ? BuildSettingsPreviewResults(CurrentMode)
+            : string.IsNullOrWhiteSpace(SearchText) && HasRecommendations
+                ? BuildJdRecommendationResults()
             : CurrentMode switch
             {
                 SearchOverlayMode.File => BuildFileResults(_mainViewModel.SearchFileItems(SearchText, 9)),
@@ -854,6 +884,97 @@ public sealed class SearchOverlayViewModel : ObservableObject
                 Phrase = phrase
             })
             .ToArray();
+    }
+
+    public void ApplyJdRecommendationResult(ConversationRecommendationSnapshot snapshot, CandidateRetrievalResult result)
+    {
+        _jdRecommendationSnapshot = snapshot;
+        _jdRecommendationResult = result;
+        _jdRecommendationStatusText = HasRecommendations
+            ? $"京东客户：{snapshot.RecognizedCustomerText}"
+            : "京东会话未匹配到合适快捷回复。";
+        NotifyRecommendationPropertiesChanged();
+        if (string.IsNullOrWhiteSpace(SearchText) && !_isSettingsPreviewMode)
+        {
+            RefreshResults();
+        }
+    }
+
+    public void ApplyJdMonitorStatus(JdMonitorStatus status)
+    {
+        if (status.State == "running" && HasRecommendations)
+        {
+            return;
+        }
+
+        _jdRecommendationStatusText = status.Message;
+        NotifyRecommendationPropertiesChanged();
+        if (string.IsNullOrWhiteSpace(SearchText) && !_isSettingsPreviewMode)
+        {
+            RefreshResults();
+        }
+    }
+
+    private IReadOnlyList<SearchOverlayResultItem> BuildJdRecommendationResults()
+    {
+        var items = new List<SearchOverlayResultItem>();
+        foreach (var suggestion in RecommendedPhrases.Take(Math.Max(1, Settings.RecommendationDisplayCount)))
+        {
+            items.Add(new SearchOverlayResultItem
+            {
+                Number = items.Count + 1,
+                Mode = SearchOverlayMode.Phrase,
+                Phrase = suggestion.Phrase,
+                IsRecommended = true,
+                RecommendationBadgeText = "京东推荐",
+                RecommendationDetailText = suggestion.ReasonText
+            });
+        }
+
+        foreach (var card in KnowledgeCards.Take(Math.Max(0, Settings.RecommendationDisplayCount - items.Count)))
+        {
+            items.Add(new SearchOverlayResultItem
+            {
+                Number = items.Count + 1,
+                Mode = SearchOverlayMode.Phrase,
+                KnowledgeCard = card,
+                IsRecommended = true,
+                RecommendationBadgeText = card.SourceBadgeText,
+                RecommendationDetailText = card.ReasonText
+            });
+        }
+
+        return items.ToArray();
+    }
+
+    private void NotifyRecommendationPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(RecommendedPhrases));
+        OnPropertyChanged(nameof(RecommendationItems));
+        OnPropertyChanged(nameof(KnowledgeCards));
+        OnPropertyChanged(nameof(KnowledgeCardItems));
+        OnPropertyChanged(nameof(SimilarReplyGroups));
+        OnPropertyChanged(nameof(HasRecommendations));
+        OnPropertyChanged(nameof(HasKnowledgeCardMatches));
+        OnPropertyChanged(nameof(HasRecommendationContext));
+        OnPropertyChanged(nameof(HasRecognizedCustomerMessage));
+        OnPropertyChanged(nameof(RecognizedCustomerMessageText));
+        OnPropertyChanged(nameof(HasRecommendationPanelContent));
+        OnPropertyChanged(nameof(ShouldShowRecommendationPanel));
+        OnPropertyChanged(nameof(RecommendationDisplayCount));
+        OnPropertyChanged(nameof(RecommendationHintText));
+        OnPropertyChanged(nameof(HasRecommendationHintText));
+        OnPropertyChanged(nameof(RecommendationStatusText));
+        OnPropertyChanged(nameof(HasRecommendationStatusText));
+        OnPropertyChanged(nameof(GroundingSummaryText));
+        OnPropertyChanged(nameof(HasGroundingSummaryText));
+        OnPropertyChanged(nameof(RecommendationContextText));
+        OnPropertyChanged(nameof(HasRecommendationContextText));
+        OnPropertyChanged(nameof(ResultsSectionTitle));
+        OnPropertyChanged(nameof(ResultsSectionSummary));
+        OnPropertyChanged(nameof(HasResultsSectionSummary));
+        OnPropertyChanged(nameof(OverlayAssistText));
+        OnPropertyChanged(nameof(HasOverlayAssistText));
     }
 
     private static IReadOnlyList<SearchOverlayResultItem> BuildFileResults(IReadOnlyList<LibraryFileItem> fileItems)

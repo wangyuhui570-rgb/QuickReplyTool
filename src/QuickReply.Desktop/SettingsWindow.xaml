@@ -97,6 +97,10 @@
                                                     <RowDefinition Height="Auto" />
                                                     <RowDefinition Height="Auto" />
                                                     <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
                                                 </Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="140" />
@@ -169,6 +173,25 @@
                                                 <StackPanel Grid.Row="10" Grid.Column="1" Margin="0,6,0,0">
                                                     <TextBox Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedServerBaseUrl, UpdateSourceTrigger=PropertyChanged}" />
                                                     <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认已绑定内置更新地址。一般不需要修改；只有你要切到私有更新服务时，才手动改这里。" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="11" Style="{StaticResource FieldLabelStyle}" Text="京东监听" />
+                                                <StackPanel Grid.Row="11" Grid.Column="1" Margin="0,10,0,0">
+                                                    <CheckBox IsChecked="{Binding SelectedEnableJdWorkbenchMonitor}" Content="启用京东工作台聊天监听" />
+                                                    <CheckBox Margin="0,8,0,0" IsChecked="{Binding SelectedStartJdWorkbenchMonitorOnLaunch}" Content="启动后自动开始监听" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="监听只读取京东工作台本机登录态和聊天接口，用于生成已有短语/知识卡推荐；不会自动发送。" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="12" Style="{StaticResource FieldLabelStyle}" Text="京东 Profile" />
+                                                <StackPanel Grid.Row="12" Grid.Column="1" Margin="0,6,0,0">
+                                                    <TextBox Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedJdWorkbenchProfilePath, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="留空时自动选择最近使用的京东工作台档案；需要指定店铺时填写完整 Profile 目录。" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="13" Style="{StaticResource FieldLabelStyle}" Text="京东轮询间隔" />
+                                                <StackPanel Grid.Row="13" Grid.Column="1" Margin="0,6,0,0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBox Width="120" MaxLength="2" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedJdWorkbenchPollIntervalSeconds, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" />
+                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="秒" />
+                                                    </StackPanel>
+                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认 5 秒，允许 2-60 秒。间隔越短，推荐出现越快，也会更频繁访问本机京东会话接口。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>

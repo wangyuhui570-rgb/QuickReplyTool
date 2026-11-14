@@ -22,6 +22,10 @@ public sealed class AppSettings : ObservableObject
     private string _serverBaseUrl = QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl;
     private string _syncClientId = Guid.NewGuid().ToString("N");
     private string _syncApiToken = string.Empty;
+    private bool _enableJdWorkbenchMonitor;
+    private string _jdWorkbenchProfilePath = string.Empty;
+    private int _jdWorkbenchPollIntervalSeconds = 5;
+    private bool _startJdWorkbenchMonitorOnLaunch = true;
     private DateTimeOffset? _lastKnowledgeSyncAt;
     private DateTimeOffset? _lastConversationSyncAt;
     private DateTimeOffset? _lastPublishedKnowledgeSyncAt;
@@ -174,6 +178,30 @@ public sealed class AppSettings : ObservableObject
     {
         get => _syncApiToken;
         set => SetProperty(ref _syncApiToken, value?.Trim() ?? string.Empty);
+    }
+
+    public bool EnableJdWorkbenchMonitor
+    {
+        get => _enableJdWorkbenchMonitor;
+        set => SetProperty(ref _enableJdWorkbenchMonitor, value);
+    }
+
+    public string JdWorkbenchProfilePath
+    {
+        get => _jdWorkbenchProfilePath;
+        set => SetProperty(ref _jdWorkbenchProfilePath, value?.Trim() ?? string.Empty);
+    }
+
+    public int JdWorkbenchPollIntervalSeconds
+    {
+        get => _jdWorkbenchPollIntervalSeconds;
+        set => SetProperty(ref _jdWorkbenchPollIntervalSeconds, ClampDelay(value, 2, 60, 5));
+    }
+
+    public bool StartJdWorkbenchMonitorOnLaunch
+    {
+        get => _startJdWorkbenchMonitorOnLaunch;
+        set => SetProperty(ref _startJdWorkbenchMonitorOnLaunch, value);
     }
 
     public DateTimeOffset? LastKnowledgeSyncAt

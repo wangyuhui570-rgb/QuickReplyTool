@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using System.IO;
 using QuickReply.Desktop.Models;
 using System.Diagnostics;
 using QuickReply.Desktop.Services;
@@ -22,6 +23,7 @@ public partial class App : System.Windows.Application
     private AppUpdateWorkflowCoordinator? _appUpdateWorkflowCoordinator;
     private TrayUpdateCheckCoordinator? _trayUpdateCheckCoordinator;
     private DesktopRuntimeCoordinator? _runtimeCoordinator;
+    private JdConversationMonitor? _jdConversationMonitor;
     private bool _restartRequested;
 
     public static App? Instance => Current as App;
@@ -99,6 +101,7 @@ public partial class App : System.Windows.Application
         var personalConfigService = new PersonalConfigService();
         var messageComposeService = new MessageComposeService(externalWorkbenchService, clipboardService, keyboardInputSimulator);
         _conversationLoggingService = new Lazy<ConversationLoggingService>(() => new ConversationLoggingService());
+        var publishedKnowledgeCatalog = new PublishedKnowledgeCatalogService(dataStore);
         _updateCheckService = new UpdateCheckService(dataStore);
         _issueReportService = new IssueReportService(dataStore, null);
         _selfUpdateService = new SelfUpdateService(dataStore);
@@ -166,6 +169,21 @@ public partial class App : System.Windows.Application
         searchOverlayWindow.Owner = mainWindow;
 
         await _mainViewModel.InitializeAsync(mainWindow);
+        await publishedKnowledgeCatalog.ReloadAsync();
+        _jdConversationMonitor = CreateJdConversationMonitor(dataStore, searchOverlayViewModel, publishedKnowledgeCatalog);
+        _mainViewModel.Settings.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(AppSettings.EnableJdWorkbenchMonitor) or
+                nameof(AppSettings.JdWorkbenchProfilePath) or
+                nameof(AppSettings.JdWorkbenchPollIntervalSeconds))
+            {
+                _ = RefreshJdMonitorFromSettingsAsync();
+            }
+        };
+        if (_mainViewModel.Settings.EnableJdWorkbenchMonitor && _mainViewModel.Settings.StartJdWorkbenchMonitorOnLaunch)
+        {
+            await _jdConversationMonitor.StartAsync(_mainViewModel.CreateSettingsSnapshot());
+        }
         StartupTrace.Mark("app.main_view_model_initialized");
         _trayIconService.Start(mainWindow, _trayUpdateCheckCoordinator);
         StartupTrace.Mark("app.tray_started");
@@ -210,6 +228,10 @@ public partial class App : System.Windows.Application
             _screenshotToolService?.Dispose();
         }
         _mainViewModel?.ShutdownAsync().GetAwaiter().GetResult();
+        if (_jdConversationMonitor is not null)
+        {
+            _jdConversationMonitor.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
         if (_conversationLoggingService?.IsValueCreated == true)
         {
             _conversationLoggingService.Value.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -520,5 +542,62 @@ public partial class App : System.Windows.Application
         }
 
         return _conversationLoggingService.Value;
+    }
+
+    private JdConversationMonitor CreateJdConversationMonitor(
+        SqliteAppDataStore dataStore,
+        SearchOverlayViewModel searchOverlayViewModel,
+        PublishedKnowledgeCatalogService publishedKnowledgeCatalog)
+    {
+        var profileService = new JdWorkbenchProfileService();
+        var monitor = new JdConversationMonitor(
+            profileService,
+            profile => new JdWorkbenchChatClient(profile, Path.Combine(dataStore.DataRootPath, "temp")));
+
+        monitor.StatusChanged += (_, status) =>
+        {
+            Dispatcher.Invoke(() => searchOverlayViewModel.ApplyJdMonitorStatus(status));
+        };
+        monitor.RecommendationContextDetected += (_, context) =>
+        {
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                if (_mainViewModel is null)
+                {
+                    return;
+                }
+
+                var snapshot = JdRecommendationContextMapper.ToSnapshot(context);
+                var retriever = new HistoricalCandidateRetriever(
+                    GetConversationLoggingService(),
+                    _mainViewModel,
+                    publishedKnowledgeCatalog);
+                var result = await retriever.RetrieveCandidatesAsync(
+                    snapshot,
+                    new RecommendationRequest
+                    {
+                        DisplayCount = Math.Max(1, _mainViewModel.Settings.RecommendationDisplayCount),
+                        MinimumSampleCount = 0
+                    });
+                searchOverlayViewModel.ApplyJdRecommendationResult(snapshot, result);
+            });
+        };
+
+        return monitor;
+    }
+
+    private async Task RefreshJdMonitorFromSettingsAsync()
+    {
+        if (_jdConversationMonitor is null || _mainViewModel is null)
+        {
+            return;
+        }
+
+        var settings = _mainViewModel.CreateSettingsSnapshot();
+        await _jdConversationMonitor.StopAsync().ConfigureAwait(false);
+        if (settings.EnableJdWorkbenchMonitor)
+        {
+            await _jdConversationMonitor.StartAsync(settings).ConfigureAwait(false);
+        }
     }
 }

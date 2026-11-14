@@ -25,6 +25,10 @@ public sealed class SettingsWindowSelectionMapperTests
             ServerBaseUrl = "https://example.com",
             SyncClientId = "client-123",
             SyncApiToken = "token-456",
+            EnableJdWorkbenchMonitor = true,
+            JdWorkbenchProfilePath = @"C:\Users\me\AppData\Local\JDM\JMWorkStation\profile-a",
+            JdWorkbenchPollIntervalSeconds = 7,
+            StartJdWorkbenchMonitorOnLaunch = false,
             PhraseImageSendMode = PhraseImageSendMode.ImageThenTextThenSend,
             DefaultSearchOverlayMode = SearchOverlayMode.Mixed,
             RecommendationDisplayCount = 8,
@@ -76,6 +80,10 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(settings.SidebarWorkMode, selections.SelectedSidebarWorkMode);
         Assert.Equal(settings.ScreenshotToolHotkey, selections.SelectedScreenshotToolHotkey);
         Assert.Equal(settings.ServerBaseUrl, selections.SelectedServerBaseUrl);
+        Assert.Equal(settings.EnableJdWorkbenchMonitor, selections.SelectedEnableJdWorkbenchMonitor);
+        Assert.Equal(settings.JdWorkbenchProfilePath, selections.SelectedJdWorkbenchProfilePath);
+        Assert.Equal(settings.JdWorkbenchPollIntervalSeconds, selections.SelectedJdWorkbenchPollIntervalSeconds);
+        Assert.Equal(settings.StartJdWorkbenchMonitorOnLaunch, selections.SelectedStartJdWorkbenchMonitorOnLaunch);
         Assert.Equal(settings.AllowRawConversationCloudSync, selections.SelectedAllowRawConversationCloudSync);
         Assert.Equal(settings.AllowAutomaticIssueReportUpload, selections.SelectedAllowAutomaticIssueReportUpload);
         Assert.Equal(settings.PhraseImageSendMode, selections.SelectedPhraseImageSendMode);
@@ -107,6 +115,10 @@ public sealed class SettingsWindowSelectionMapperTests
             SelectedServerBaseUrl = "https://sync.example.com",
             SelectedSyncClientId = "client-a",
             SelectedSyncApiToken = "token-b",
+            SelectedEnableJdWorkbenchMonitor = true,
+            SelectedJdWorkbenchProfilePath = @"D:\JDProfile",
+            SelectedJdWorkbenchPollIntervalSeconds = 9,
+            SelectedStartJdWorkbenchMonitorOnLaunch = false,
             SelectedPhraseImageSendMode = PhraseImageSendMode.ImageImmediateThenTextSend,
             SelectedDefaultSearchOverlayMode = SearchOverlayMode.File,
             SelectedRecommendationDisplayCount = 6,
@@ -158,6 +170,10 @@ public sealed class SettingsWindowSelectionMapperTests
         Assert.Equal(selections.SelectedAllowRawConversationCloudSync, settings.AllowRawConversationCloudSync);
         Assert.Equal(selections.SelectedAllowAutomaticIssueReportUpload, settings.AllowAutomaticIssueReportUpload);
         Assert.Equal(selections.SelectedSyncApiToken, settings.SyncApiToken);
+        Assert.Equal(selections.SelectedEnableJdWorkbenchMonitor, settings.EnableJdWorkbenchMonitor);
+        Assert.Equal(selections.SelectedJdWorkbenchProfilePath, settings.JdWorkbenchProfilePath);
+        Assert.Equal(selections.SelectedJdWorkbenchPollIntervalSeconds, settings.JdWorkbenchPollIntervalSeconds);
+        Assert.Equal(selections.SelectedStartJdWorkbenchMonitorOnLaunch, settings.StartJdWorkbenchMonitorOnLaunch);
         Assert.Equal(selections.SelectedDefaultSearchOverlayMode, settings.DefaultSearchOverlayMode);
         Assert.Equal(selections.SelectedSendHotkeyMode, settings.SendHotkeyMode);
         Assert.Equal(selections.SelectedPhraseImageFolderPath, settings.PhraseImageFolderPath);
@@ -184,6 +200,10 @@ public sealed class SettingsWindowSelectionMapperTests
         public string SelectedServerBaseUrl { get; set; } = string.Empty;
         public string SelectedSyncClientId { get; set; } = string.Empty;
         public string SelectedSyncApiToken { get; set; } = string.Empty;
+        public bool SelectedEnableJdWorkbenchMonitor { get; set; }
+        public string SelectedJdWorkbenchProfilePath { get; set; } = string.Empty;
+        public int SelectedJdWorkbenchPollIntervalSeconds { get; set; }
+        public bool SelectedStartJdWorkbenchMonitorOnLaunch { get; set; }
         public PhraseImageSendMode SelectedPhraseImageSendMode { get; set; }
         public SearchOverlayMode SelectedDefaultSearchOverlayMode { get; set; }
         public int SelectedRecommendationDisplayCount { get; set; }

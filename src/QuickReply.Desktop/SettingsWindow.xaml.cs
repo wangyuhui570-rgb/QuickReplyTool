@@ -180,6 +180,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     private string _selectedServerBaseUrl = QuickReplyServiceEndpointDefaults.DefaultRemoteServiceBaseUrl;
     private string _selectedSyncClientId = string.Empty;
     private string _selectedSyncApiToken = string.Empty;
+    private bool _selectedEnableJdWorkbenchMonitor;
+    private string _selectedJdWorkbenchProfilePath = string.Empty;
+    private int _selectedJdWorkbenchPollIntervalSeconds = 5;
+    private bool _selectedStartJdWorkbenchMonitorOnLaunch = true;
     private bool _selectedRunAsAdministrator;
     private PhraseImageSendMode _selectedPhraseImageSendMode;
     private SearchOverlayMode _selectedDefaultSearchOverlayMode;
@@ -399,6 +403,30 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged, ISettingsW
     {
         get => _selectedSyncApiToken;
         set => SetField(ref _selectedSyncApiToken, value?.Trim() ?? string.Empty);
+    }
+
+    public bool SelectedEnableJdWorkbenchMonitor
+    {
+        get => _selectedEnableJdWorkbenchMonitor;
+        set => SetField(ref _selectedEnableJdWorkbenchMonitor, value);
+    }
+
+    public string SelectedJdWorkbenchProfilePath
+    {
+        get => _selectedJdWorkbenchProfilePath;
+        set => SetField(ref _selectedJdWorkbenchProfilePath, value?.Trim() ?? string.Empty);
+    }
+
+    public int SelectedJdWorkbenchPollIntervalSeconds
+    {
+        get => _selectedJdWorkbenchPollIntervalSeconds;
+        set => SetField(ref _selectedJdWorkbenchPollIntervalSeconds, Math.Clamp(value, 2, 60));
+    }
+
+    public bool SelectedStartJdWorkbenchMonitorOnLaunch
+    {
+        get => _selectedStartJdWorkbenchMonitorOnLaunch;
+        set => SetField(ref _selectedStartJdWorkbenchMonitorOnLaunch, value);
     }
 
     public PhraseImageSendMode SelectedPhraseImageSendMode

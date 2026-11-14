@@ -905,7 +905,10 @@ public partial class SearchOverlayWindow : Window
         HideOverlay("result_send", animate: false);
         try
         {
-            var result = await _viewModel.SendResultAsync(number);
+            var item = _viewModel.GetResultByNumber(number);
+            var result = item?.IsRecommended == true
+                ? await _viewModel.InputResultAsync(number)
+                : await _viewModel.SendResultAsync(number);
             if (result.Success)
             {
                 return;

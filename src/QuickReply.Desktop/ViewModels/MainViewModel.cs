@@ -728,6 +728,55 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         }
     }
 
+    public async Task<ReplyActionResult> CopyPlainTextAsync(
+        string content,
+        string triggerSource = "plain_text_copy",
+        string? searchKeyword = null,
+        ConversationRecommendationSnapshot? recognitionOverride = null)
+    {
+        var normalizedContent = NormalizePlainTextContent(content);
+        if (string.IsNullOrWhiteSpace(normalizedContent))
+        {
+            var emptyResult = new ReplyActionResult(false, "请输入要复制的原文内容。");
+            StatusMessage = emptyResult.Message;
+            return emptyResult;
+        }
+
+        try
+        {
+            var targetWindowHandle = _windowTracker.GetLastExternalWindowHandle();
+            var result = await _messageComposeService.CopyToClipboardAsync(normalizedContent);
+            ConversationLoggingService.LogPlainTextUsage(
+                normalizedContent,
+                triggerSource,
+                ComposeActionMode.Copy,
+                searchKeyword,
+                result.Success,
+                result.Message,
+                targetWindowHandle,
+                result.ComposeTelemetry,
+                recognitionOverride);
+            StatusMessage = result.Message;
+            return result;
+        }
+        catch (Exception ex)
+        {
+            var failedResult = new ReplyActionResult(false, $"复制原文失败：{ex.Message}");
+            ConversationLoggingService.LogPlainTextUsage(
+                normalizedContent,
+                triggerSource,
+                ComposeActionMode.Copy,
+                searchKeyword,
+                failedResult.Success,
+                failedResult.Message,
+                _windowTracker.GetLastExternalWindowHandle(),
+                failedResult.ComposeTelemetry,
+                recognitionOverride);
+            StatusMessage = failedResult.Message;
+            return failedResult;
+        }
+    }
+
     public async Task<ReplyActionResult> SavePlainTextAsPhraseAsync(string content)
     {
         var normalizedContent = NormalizePlainTextContent(content);

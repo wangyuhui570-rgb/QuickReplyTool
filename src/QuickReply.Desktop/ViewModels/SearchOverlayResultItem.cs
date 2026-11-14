@@ -17,6 +17,8 @@ public sealed class SearchOverlayResultItem
 
     public LibraryFileItem? FileItem { get; init; }
 
+    public KnowledgeCardSuggestion? KnowledgeCard { get; init; }
+
     public string? PreviewTitle { get; init; }
 
     public string? PreviewLabelText { get; init; }
@@ -37,24 +39,32 @@ public sealed class SearchOverlayResultItem
         ? PreviewTitle
         : Mode == SearchOverlayMode.File
             ? FileItem?.DisplayName ?? string.Empty
-            : Phrase?.DisplayTitle ?? string.Empty;
+            : KnowledgeCard is not null
+                ? KnowledgeCard.Card.Question
+                : Phrase?.DisplayTitle ?? string.Empty;
 
     public bool HasLabel => PreviewHasLabel
         ?? (Mode == SearchOverlayMode.File
             ? !string.IsNullOrWhiteSpace(FileItem?.FileExtension)
-            : Phrase?.HasDisplayTitle ?? false);
+            : KnowledgeCard is not null
+                ? true
+                : Phrase?.HasDisplayTitle ?? false);
 
     public string LabelText => !string.IsNullOrWhiteSpace(PreviewLabelText)
         ? PreviewLabelText
         : Mode == SearchOverlayMode.File
             ? BuildFileLabel()
-            : Phrase?.DisplayTitle ?? string.Empty;
+            : KnowledgeCard is not null
+                ? KnowledgeCard.SourceBadgeText
+                : Phrase?.DisplayTitle ?? string.Empty;
 
     public string Content => !string.IsNullOrWhiteSpace(PreviewContent)
         ? PreviewContent
         : Mode == SearchOverlayMode.File
             ? BuildFileContent()
-            : Phrase?.Content ?? string.Empty;
+            : KnowledgeCard is not null
+                ? KnowledgeCard.Card.Answer
+                : Phrase?.Content ?? string.Empty;
 
     public string SingleLineContent => BuildSingleLineContent(Content);
 

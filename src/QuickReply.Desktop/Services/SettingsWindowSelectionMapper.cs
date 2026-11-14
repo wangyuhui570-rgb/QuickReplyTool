@@ -20,6 +20,10 @@ internal interface ISettingsWindowSelections
     string SelectedServerBaseUrl { get; set; }
     string SelectedSyncClientId { get; set; }
     string SelectedSyncApiToken { get; set; }
+    bool SelectedEnableJdWorkbenchMonitor { get; set; }
+    string SelectedJdWorkbenchProfilePath { get; set; }
+    int SelectedJdWorkbenchPollIntervalSeconds { get; set; }
+    bool SelectedStartJdWorkbenchMonitorOnLaunch { get; set; }
     PhraseImageSendMode SelectedPhraseImageSendMode { get; set; }
     SearchOverlayMode SelectedDefaultSearchOverlayMode { get; set; }
     int SelectedRecommendationDisplayCount { get; set; }
@@ -82,6 +86,10 @@ internal static class SettingsWindowSelectionMapper
         target.SelectedServerBaseUrl = source.ServerBaseUrl;
         target.SelectedSyncClientId = source.SyncClientId;
         target.SelectedSyncApiToken = source.SyncApiToken;
+        target.SelectedEnableJdWorkbenchMonitor = source.EnableJdWorkbenchMonitor;
+        target.SelectedJdWorkbenchProfilePath = source.JdWorkbenchProfilePath;
+        target.SelectedJdWorkbenchPollIntervalSeconds = source.JdWorkbenchPollIntervalSeconds;
+        target.SelectedStartJdWorkbenchMonitorOnLaunch = source.StartJdWorkbenchMonitorOnLaunch;
         target.SelectedPhraseImageSendMode = source.PhraseImageSendMode;
         target.SelectedDefaultSearchOverlayMode = source.DefaultSearchOverlayMode;
         target.SelectedRecommendationDisplayCount = source.RecommendationDisplayCount;
@@ -142,6 +150,10 @@ internal static class SettingsWindowSelectionMapper
         target.ServerBaseUrl = source.SelectedServerBaseUrl;
         target.SyncClientId = source.SelectedSyncClientId;
         target.SyncApiToken = source.SelectedSyncApiToken;
+        target.EnableJdWorkbenchMonitor = source.SelectedEnableJdWorkbenchMonitor;
+        target.JdWorkbenchProfilePath = source.SelectedJdWorkbenchProfilePath;
+        target.JdWorkbenchPollIntervalSeconds = source.SelectedJdWorkbenchPollIntervalSeconds;
+        target.StartJdWorkbenchMonitorOnLaunch = source.SelectedStartJdWorkbenchMonitorOnLaunch;
         target.PhraseImageSendMode = source.SelectedPhraseImageSendMode;
         target.DefaultSearchOverlayMode = source.SelectedDefaultSearchOverlayMode;
         target.RecommendationDisplayCount = source.SelectedRecommendationDisplayCount;

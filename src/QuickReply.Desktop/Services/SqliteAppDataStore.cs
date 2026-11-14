@@ -595,6 +595,10 @@ public sealed class SqliteAppDataStore
             ["server_base_url"] = settings.ServerBaseUrl,
             ["sync_client_id"] = settings.SyncClientId,
             [SyncApiTokenSettingKey] = string.Empty,
+            ["enable_jd_workbench_monitor"] = settings.EnableJdWorkbenchMonitor ? "1" : "0",
+            ["jd_workbench_profile_path"] = settings.JdWorkbenchProfilePath,
+            ["jd_workbench_poll_interval_seconds"] = settings.JdWorkbenchPollIntervalSeconds.ToString(CultureInfo.InvariantCulture),
+            ["start_jd_workbench_monitor_on_launch"] = settings.StartJdWorkbenchMonitorOnLaunch ? "1" : "0",
             ["last_knowledge_sync_at"] = settings.LastKnowledgeSyncAt.HasValue ? ToDbDateTime(settings.LastKnowledgeSyncAt.Value) : string.Empty,
             ["last_conversation_sync_at"] = settings.LastConversationSyncAt.HasValue ? ToDbDateTime(settings.LastConversationSyncAt.Value) : string.Empty,
             ["last_published_knowledge_sync_at"] = settings.LastPublishedKnowledgeSyncAt.HasValue ? ToDbDateTime(settings.LastPublishedKnowledgeSyncAt.Value) : string.Empty,
@@ -1532,6 +1536,18 @@ public sealed class SqliteAppDataStore
                 case "sync_api_token":
                     legacySyncApiToken = value;
                     break;
+                case "enable_jd_workbench_monitor":
+                    settings.EnableJdWorkbenchMonitor = value is "1" or "true" or "True";
+                    break;
+                case "jd_workbench_profile_path":
+                    settings.JdWorkbenchProfilePath = value;
+                    break;
+                case "jd_workbench_poll_interval_seconds":
+                    settings.JdWorkbenchPollIntervalSeconds = ParseInt(value, 5, 2, 60);
+                    break;
+                case "start_jd_workbench_monitor_on_launch":
+                    settings.StartJdWorkbenchMonitorOnLaunch = value is "1" or "true" or "True";
+                    break;
                 case "last_knowledge_sync_at":
                     settings.LastKnowledgeSyncAt = string.IsNullOrWhiteSpace(value) ? null : ParseDbDateTime(value);
                     break;
@@ -1882,6 +1898,16 @@ public sealed class SqliteAppDataStore
     private static long ParseInt64(string value, long fallback, long min, long max)
     {
         if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return fallback;
+        }
+
+        return Math.Clamp(parsed, min, max);
+    }
+
+    private static int ParseInt(string value, int fallback, int min, int max)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
         {
             return fallback;
         }

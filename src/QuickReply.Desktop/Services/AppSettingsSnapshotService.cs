@@ -31,6 +31,10 @@ internal static class AppSettingsSnapshotService
         target.ServerBaseUrl = source.ServerBaseUrl;
         target.SyncClientId = source.SyncClientId;
         target.SyncApiToken = source.SyncApiToken;
+        target.EnableJdWorkbenchMonitor = source.EnableJdWorkbenchMonitor;
+        target.JdWorkbenchProfilePath = source.JdWorkbenchProfilePath;
+        target.JdWorkbenchPollIntervalSeconds = source.JdWorkbenchPollIntervalSeconds;
+        target.StartJdWorkbenchMonitorOnLaunch = source.StartJdWorkbenchMonitorOnLaunch;
         target.LastKnowledgeSyncAt = source.LastKnowledgeSyncAt;
         target.LastConversationSyncAt = source.LastConversationSyncAt;
         target.LastPublishedKnowledgeSyncAt = source.LastPublishedKnowledgeSyncAt;
