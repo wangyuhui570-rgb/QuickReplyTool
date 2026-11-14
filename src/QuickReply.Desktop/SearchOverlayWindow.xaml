@@ -57,8 +57,19 @@
                             </Style>
                         </Border.Style>
                         <Grid>
+                            <Path Data="M6.5,2.5 A4,4 0 1,1 6.5,10.5 A4,4 0 1,1 6.5,2.5 M9.5,9.5 L13.5,13.5"
+                                  Stroke="{DynamicResource SearchOverlayMutedBrush}"
+                                  StrokeThickness="1.4"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  Width="14"
+                                  Height="14"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Center"
+                                  Margin="12,0,0,0"
+                                  IsHitTestVisible="False" />
                             <TextBox x:Name="SearchTextBox"
-                                     Margin="12,0,88,0"
+                                     Margin="34,0,88,0"
                                      Padding="0"
                                      VerticalAlignment="Center"
                                      VerticalContentAlignment="Center"
@@ -73,7 +84,7 @@
                                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                      TextOptions.TextFormattingMode="Display" />
                             <TextBlock x:Name="SearchPlaceholderTextBlock"
-                                       Margin="12,0,88,0"
+                                       Margin="34,0,88,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource SearchOverlayMutedBrush}"
                                        IsHitTestVisible="False"

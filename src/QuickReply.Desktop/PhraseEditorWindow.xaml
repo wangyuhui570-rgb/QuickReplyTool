@@ -91,13 +91,11 @@
                                Foreground="{StaticResource AppleMutedBrush}"
                                Text="{Binding DialogHeading}" />
                     <Button Grid.Column="1"
-                            Width="32"
-                            Height="32"
-                            Padding="0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
                             Click="CloseButton_OnClick"
-                            Content="×"
-                            FontSize="16"
-                            Style="{StaticResource SubtleButtonStyle}" />
+                            ToolTip="关闭"
+                            Style="{StaticResource AppleWindowCloseButtonStyle}" />
                 </Grid>
 
                 <Border Grid.Row="1"

@@ -54,12 +54,11 @@
                                TextWrapping="Wrap" />
                 </StackPanel>
                 <Button Grid.Column="1"
-                        Width="34"
-                        Height="34"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
                         Click="SkipButton_OnClick"
-                        Content="×"
-                        FontSize="18"
-                        Style="{StaticResource SubtleButtonStyle}" />
+                        ToolTip="跳过引导"
+                        Style="{StaticResource AppleWindowCloseButtonStyle}" />
             </Grid>
 
             <Border Grid.Row="1"

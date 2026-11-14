@@ -51,14 +51,11 @@
                                    Foreground="{StaticResource MutedBrush}"
                                    Text="设置" />
                         <Button Grid.Column="1"
-                                Width="34"
-                                Height="34"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Top"
                                 Click="CloseButton_OnClick"
-                                Content="×"
-                                FontSize="18"
-                                Style="{StaticResource SubtleButtonStyle}" />
+                                ToolTip="关闭设置"
+                                Style="{StaticResource AppleWindowCloseButtonStyle}" />
                     </Grid>
                     <TabControl Grid.Row="1" Margin="0" Style="{StaticResource OptionsTabControlStyle}">
                     <TabItem Header="常用设置" Style="{StaticResource OptionsTabItemStyle}">
