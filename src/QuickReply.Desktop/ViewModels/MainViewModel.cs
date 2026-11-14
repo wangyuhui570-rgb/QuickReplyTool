@@ -2153,6 +2153,14 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     private async Task SendQuickTagAsync(QuickTag? quickTag)
     {
+        var phrase = Categories.SelectMany(category => category.Phrases)
+            .FirstOrDefault(item => item.Id == quickTag?.PhraseId);
+        if (phrase is not null)
+        {
+            await SendPhraseDirectAsync(phrase, "quick_tag_send");
+            return;
+        }
+
         if (!TryGetQuickTagContent(quickTag, out var content))
         {
             return;
@@ -2269,7 +2277,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     private bool CanUseSelectedPhrase()
     {
-        return SelectedPhrase is not null && !string.IsNullOrWhiteSpace(SelectedPhrase.Content);
+        return SelectedPhrase is not null && (!string.IsNullOrWhiteSpace(SelectedPhrase.Content) || SelectedPhrase.HasImage);
     }
 
     private bool CanAddQuickTag()

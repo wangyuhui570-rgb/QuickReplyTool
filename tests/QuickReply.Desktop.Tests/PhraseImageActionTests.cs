@@ -18,6 +18,7 @@ public sealed class PhraseImageActionTests
     [InlineData("overlay_send")]
     [InlineData("overlay_copy")]
     [InlineData("overlay_images")]
+    [InlineData("quick_tag")]
     public async Task EveryPhraseEntryPointBlocksMissingImage(string entry)
     {
         using var scope = new TestAppDataScope();
@@ -45,6 +46,9 @@ public sealed class PhraseImageActionTests
         var overlay = new SearchOverlayViewModel(main) { SearchText = "缺图" };
         switch (entry)
         {
+            case "quick_tag":
+                await main.SendQuickTagCommand.ExecuteAsync(new QuickTag { PhraseId = phrase.Id, PhraseContent = phrase.Content });
+                break;
             case "selected_send": await main.SendSelectedPhraseAsync(); break;
             case "selected_input": await main.InputSelectedPhraseAsync(); break;
             case "selected_copy": await main.CopyPhraseCommand.ExecuteAsync(); break;
