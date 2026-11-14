@@ -345,12 +345,12 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     public string? GetPhraseImageAbsolutePath(ReplyPhrase phrase)
     {
-        return ResolvePhraseImagePaths(phrase).FirstOrDefault();
+        return _phraseImageStore.ResolveAbsolutePaths(phrase.ImageRelativePath).FirstOrDefault();
     }
 
     public IReadOnlyList<string> GetPhraseImageAbsolutePaths(ReplyPhrase phrase)
     {
-        return ResolvePhraseImagePaths(phrase);
+        return _phraseImageStore.ResolveAbsolutePaths(phrase.ImageRelativePath);
     }
 
     public IReadOnlyList<ReplyPhrase> SearchPhrases(string keyword, int maxResults = 9)
@@ -3140,7 +3140,7 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
 
     private IReadOnlyList<string> ResolvePhraseImagePaths(ReplyPhrase? phrase)
     {
-        return phrase is null ? [] : _phraseImageStore.ResolveAbsolutePaths(phrase.ImageRelativePath);
+        return phrase is null ? [] : _phraseImageStore.ResolveAllAbsolutePaths(phrase.ImageRelativePath);
     }
 
     private async Task MigrateLegacyPhraseImageLayoutAsync()

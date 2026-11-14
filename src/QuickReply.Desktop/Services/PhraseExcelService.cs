@@ -35,15 +35,9 @@ public sealed class PhraseExcelService
         IEnumerable<ReplyCategory> categories,
         Func<ReplyPhrase, IReadOnlyList<string>>? resolveImagePaths = null)
     {
-        var workbook = new HSSFWorkbook();
+        using var export = new PhraseExport(filePath);
+        using var workbook = new HSSFWorkbook();
         var sheet = workbook.CreateSheet("快捷短语");
-        var exportAssetsFolderName = $"{Path.GetFileNameWithoutExtension(filePath)}_assets";
-        var exportAssetsFolderPath = Path.Combine(Path.GetDirectoryName(filePath) ?? string.Empty, exportAssetsFolderName);
-
-        if (Directory.Exists(exportAssetsFolderPath))
-        {
-            Directory.Delete(exportAssetsFolderPath, recursive: true);
-        }
 
         var headerRow = sheet.CreateRow(0);
         headerRow.CreateCell(0).SetCellValue("分类");
@@ -63,29 +57,10 @@ public sealed class PhraseExcelService
                 row.CreateCell(1).SetCellValue(NormalizeRemark(phrase.Title));
                 row.CreateCell(2).SetCellValue(phrase.Content ?? string.Empty);
 
-                var absoluteImagePaths = resolveImagePaths?.Invoke(phrase) ?? [];
+                var images = export.CopyImages(phrase, rowIndex, resolveImagePaths);
                 for (var imageIndex = 0; imageIndex < 3; imageIndex++)
                 {
-                    var cell = row.CreateCell(3 + imageIndex);
-                    if (imageIndex >= absoluteImagePaths.Count)
-                    {
-                        cell.SetCellValue(string.Empty);
-                        continue;
-                    }
-
-                    var absoluteImagePath = absoluteImagePaths[imageIndex];
-                    if (string.IsNullOrWhiteSpace(absoluteImagePath) || !File.Exists(absoluteImagePath))
-                    {
-                        cell.SetCellValue(string.Empty);
-                        continue;
-                    }
-
-                    Directory.CreateDirectory(exportAssetsFolderPath);
-                    var extension = Path.GetExtension(absoluteImagePath);
-                    var exportFileName = $"phrase-{rowIndex:D4}-{imageIndex + 1}{extension}";
-                    var exportImagePath = Path.Combine(exportAssetsFolderPath, exportFileName);
-                    File.Copy(absoluteImagePath, exportImagePath, overwrite: true);
-                    cell.SetCellValue(Path.Combine(exportAssetsFolderName, exportFileName));
+                    row.CreateCell(3 + imageIndex).SetCellValue(imageIndex < images.Count ? images[imageIndex] : string.Empty);
                 }
 
                 rowIndex++;
@@ -99,8 +74,12 @@ public sealed class PhraseExcelService
         sheet.SetColumnWidth(4, 28 * 256);
         sheet.SetColumnWidth(5, 28 * 256);
 
-        using var stream = File.Create(filePath);
-        workbook.Write(stream, leaveOpen: false);
+        using (var stream = new FileStream(export.TemporaryPath, FileMode.CreateNew, FileAccess.Write))
+        {
+            workbook.Write(stream, leaveOpen: true);
+            stream.Flush(flushToDisk: true);
+        }
+        export.Commit();
     }
 
     public IReadOnlyList<PhraseImportRow> ImportFromXls(string filePath)
@@ -155,13 +134,7 @@ public sealed class PhraseExcelService
         IEnumerable<ReplyCategory> categories,
         Func<ReplyPhrase, IReadOnlyList<string>>? resolveImagePaths = null)
     {
-        var exportAssetsFolderName = $"{Path.GetFileNameWithoutExtension(filePath)}_assets";
-        var exportAssetsFolderPath = Path.Combine(Path.GetDirectoryName(filePath) ?? string.Empty, exportAssetsFolderName);
-
-        if (Directory.Exists(exportAssetsFolderPath))
-        {
-            Directory.Delete(exportAssetsFolderPath, recursive: true);
-        }
+        using var export = new PhraseExport(filePath);
 
         var rows = new List<string[]>
         {
@@ -173,23 +146,7 @@ public sealed class PhraseExcelService
         {
             foreach (var phrase in category.Phrases.OrderBy(item => item.SortOrder).ThenBy(item => item.CreatedAt))
             {
-                var absoluteImagePaths = resolveImagePaths?.Invoke(phrase) ?? [];
-                var exportedImageValues = new List<string>();
-                for (var imageIndex = 0; imageIndex < absoluteImagePaths.Count && imageIndex < 3; imageIndex++)
-                {
-                    var absoluteImagePath = absoluteImagePaths[imageIndex];
-                    if (string.IsNullOrWhiteSpace(absoluteImagePath) || !File.Exists(absoluteImagePath))
-                    {
-                        continue;
-                    }
-
-                    Directory.CreateDirectory(exportAssetsFolderPath);
-                    var extension = Path.GetExtension(absoluteImagePath);
-                    var exportFileName = $"phrase-{rowIndex:D4}-{imageIndex + 1}{extension}";
-                    var exportImagePath = Path.Combine(exportAssetsFolderPath, exportFileName);
-                    File.Copy(absoluteImagePath, exportImagePath, overwrite: true);
-                    exportedImageValues.Add(Path.Combine(exportAssetsFolderName, exportFileName));
-                }
+                var exportedImageValues = export.CopyImages(phrase, rowIndex, resolveImagePaths);
 
                 rows.Add(
                     new[]
@@ -209,7 +166,14 @@ public sealed class PhraseExcelService
             builder.AppendLine(string.Join(",", row.Select(EscapeCsvValue)));
         }
 
-        File.WriteAllText(filePath, builder.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        using (var stream = new FileStream(export.TemporaryPath, FileMode.CreateNew, FileAccess.Write))
+        {
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), leaveOpen: true);
+            writer.Write(builder.ToString());
+            writer.Flush();
+            stream.Flush(flushToDisk: true);
+        }
+        export.Commit();
     }
 
     public IReadOnlyList<PhraseImportRow> ImportFromCsv(string filePath)
@@ -278,6 +242,78 @@ public sealed class PhraseExcelService
         }
 
         return rows;
+    }
+
+    // The published workbook is the commit point. Older asset directories remain usable by
+    // older exports, and a failed export owns only its new directory and temporary workbook.
+    private sealed class PhraseExport : IDisposable
+    {
+        private readonly string _targetPath;
+        private readonly string _assetsFolderName;
+        private readonly string _assetsPath;
+        private bool _createdAssets;
+        private bool _committed;
+
+        public PhraseExport(string filePath)
+        {
+            _targetPath = Path.GetFullPath(filePath);
+            var directory = Path.GetDirectoryName(_targetPath)!;
+            var operationId = Guid.NewGuid().ToString("N");
+            TemporaryPath = Path.Combine(directory, $".quickreply-{operationId}.tmp");
+            _assetsFolderName = $"{Path.GetFileNameWithoutExtension(filePath)}_assets_{operationId}";
+            _assetsPath = Path.Combine(directory, _assetsFolderName);
+        }
+
+        public string TemporaryPath { get; }
+
+        public IReadOnlyList<string> CopyImages(
+            ReplyPhrase phrase,
+            int rowIndex,
+            Func<ReplyPhrase, IReadOnlyList<string>>? resolveImagePaths)
+        {
+            var paths = resolveImagePaths?.Invoke(phrase) ?? [];
+            if (paths.Count != phrase.ImageCount)
+            {
+                throw new InvalidDataException($"短语“{phrase.Title}”的图片不完整，请补全后再导出。");
+            }
+
+            var exported = new List<string>();
+            for (var index = 0; index < paths.Count; index++)
+            {
+                var source = paths[index];
+                if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
+                {
+                    throw new FileNotFoundException($"短语“{phrase.Title}”的图片不存在：{source}", source);
+                }
+
+                Directory.CreateDirectory(_assetsPath);
+                _createdAssets = true;
+                var name = $"phrase-{rowIndex:D4}-{index + 1}{Path.GetExtension(source)}";
+                File.Copy(source, Path.Combine(_assetsPath, name), overwrite: false);
+                exported.Add(Path.Combine(_assetsFolderName, name));
+            }
+            return exported;
+        }
+
+        public void Commit()
+        {
+            File.Move(TemporaryPath, _targetPath, overwrite: true);
+            _committed = true;
+        }
+
+        public void Dispose()
+        {
+            if (_committed)
+            {
+                return;
+            }
+
+            File.Delete(TemporaryPath);
+            if (_createdAssets)
+            {
+                Directory.Delete(_assetsPath, recursive: true);
+            }
+        }
     }
 
     private static string NormalizeRemark(string? title)

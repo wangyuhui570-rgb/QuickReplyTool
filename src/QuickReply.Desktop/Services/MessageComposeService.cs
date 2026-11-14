@@ -138,6 +138,15 @@ public sealed class MessageComposeService : IMessageComposeService
                 "请先选择至少一个文件后再发送。");
         }
 
+        var missingPath = normalizedPaths.FirstOrDefault(path => !File.Exists(path));
+        if (missingPath is not null)
+        {
+            return CreateFailureResult(
+                ReplyActionFailureKind.MissingInput,
+                $"未找到文件：{missingPath}",
+                "请确认文件仍存在后再复制。");
+        }
+
         return await AnnotateClipboardResultAsync(
             _clipboardService.SetFileDropListAsync(normalizedPaths),
             "请稍等片刻后重试，必要时先关闭正在占用剪贴板的程序。");

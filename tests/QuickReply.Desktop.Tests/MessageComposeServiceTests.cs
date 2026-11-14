@@ -667,6 +667,49 @@ public sealed class MessageComposeServiceTests
         Assert.Equal("files", clipboard.Timeline[textAt + 3]);
     }
 
+    [Theory]
+    [InlineData(ComposeActionMode.Copy)]
+    [InlineData(ComposeActionMode.Input)]
+    [InlineData(ComposeActionMode.Send)]
+    public async Task MissingImageBlocksEntirePayloadBeforeAnySideEffects(ComposeActionMode mode)
+    {
+        using var scope = new TestAppDataScope();
+        var service = CreateService(out var clipboard, out var keyboard, out _, out _);
+        var store = new PhraseImageStore(scope.AppRootPath);
+        var stored = await store.SavePhraseImagesAsync(Guid.NewGuid(),
+            [scope.CreateFile("one.png"), scope.CreateFile("two.png"), scope.CreateFile("three.png")]);
+        var phrase = new QuickReply.Desktop.Models.ReplyPhrase();
+        phrase.SetImageRelativePaths(stored);
+        var paths = store.ResolveAllAbsolutePaths(phrase.ImageRelativePath);
+        File.Delete(paths[1]);
+
+        // Preview/migration still sees available images; compose must receive all declared paths.
+        Assert.Equal(2, store.ResolveAbsolutePaths(phrase.ImageRelativePath).Count);
+        Assert.Equal(3, paths.Count);
+        var result = mode == ComposeActionMode.Copy
+            ? await service.CopyToClipboardAsync("请按下图操作", paths)
+            : await service.ExecuteAsync("请按下图操作", TestSettingsFactory.CreateFastSettings(), mode, paths);
+
+        Assert.False(result.Success);
+        Assert.Equal(ReplyActionFailureKind.MissingInput, result.FailureKind);
+        Assert.Equal(0, clipboard.SetTextCallCount);
+        Assert.Equal(0, clipboard.SetTextAndFilesCallCount);
+        Assert.Equal(0, clipboard.SetFileDropListCallCount);
+        Assert.Equal(0, keyboard.PasteShortcutCount);
+        Assert.Equal(0, keyboard.EnterCount);
+        Assert.Equal(0, keyboard.CtrlEnterCount);
+        Assert.Equal(0, keyboard.AltSCount);
+    }
+
+    [Fact]
+    public async Task CopyFiles_MissingImageDoesNotChangeClipboard()
+    {
+        var service = CreateService(out var clipboard, out _, out _, out _);
+        var result = await service.CopyFilesToClipboardAsync([Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".png")]);
+        Assert.False(result.Success);
+        Assert.Equal(0, clipboard.SetFileDropListCallCount);
+    }
+
     private static MessageComposeService CreateService(
         out FakeClipboardService clipboard,
         out FakeKeyboardInputSimulator keyboard,

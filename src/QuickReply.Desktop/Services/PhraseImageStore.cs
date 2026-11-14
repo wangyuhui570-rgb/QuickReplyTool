@@ -171,10 +171,13 @@ public sealed class PhraseImageStore
 
     public IReadOnlyList<string> ResolveAbsolutePaths(string? serializedRelativePaths)
     {
-        var relativePaths = ReplyPhrase.DeserializeImageRelativePaths(serializedRelativePaths);
-        return relativePaths
+        return ResolveAllAbsolutePaths(serializedRelativePaths).Where(File.Exists).ToList();
+    }
+
+    public IReadOnlyList<string> ResolveAllAbsolutePaths(string? serializedRelativePaths)
+    {
+        return ReplyPhrase.DeserializeImageRelativePaths(serializedRelativePaths)
             .Select(relativePath => Path.Combine(_imagesRootPath, relativePath))
-            .Where(File.Exists)
             .ToList();
     }
 
