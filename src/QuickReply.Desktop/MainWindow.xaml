@@ -7,7 +7,7 @@
         xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
         mc:Ignorable="d"
         Title="快捷短语栏"
-        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Icon="pack://application:,,,/QuickReplyTool;component/Assets/quickreply.ico"
         Width="340"
         Height="640"
         MinWidth="180"

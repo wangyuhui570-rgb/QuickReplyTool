@@ -431,9 +431,11 @@ public sealed class SqliteAppDataStore
         IReadOnlyList<LibraryFileItem> saved = [];
         if (fileItems.Count > 0)
         {
-            var requestedPaths = fileItems.Select(item => item.FullPath).ToHashSet(StringComparer.Ordinal);
-            saved = (await LoadFileItemsAsync(connection, transaction))
-                .Where(item => requestedPaths.Contains(item.FullPath))
+            var storedByPath = (await LoadFileItemsAsync(connection, transaction))
+                .ToDictionary(item => item.FullPath, StringComparer.Ordinal);
+            saved = fileItems.Select(item => item.FullPath)
+                .Distinct(StringComparer.Ordinal)
+                .Select(path => storedByPath[path])
                 .ToArray();
         }
         await transaction.CommitAsync();

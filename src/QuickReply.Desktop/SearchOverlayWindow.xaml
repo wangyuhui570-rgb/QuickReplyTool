@@ -5,7 +5,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Icon="pack://application:,,,/Assets/quickreply.ico"
+        Icon="pack://application:,,,/QuickReplyTool;component/Assets/quickreply.ico"
         Width="640"
         Height="214"
         MinWidth="320"
