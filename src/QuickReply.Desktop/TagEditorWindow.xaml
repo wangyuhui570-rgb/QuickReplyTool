@@ -4,9 +4,9 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="添加标签"
         Width="420"
-        Height="190"
+        Height="164"
         MinWidth="360"
-        MinHeight="170"
+        MinHeight="150"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         WindowStyle="None"
@@ -38,16 +38,10 @@
                 <Border Grid.Row="0"
                         Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
                         MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
-                    <StackPanel>
-                        <TextBlock FontSize="18"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource TitleBrush}"
-                                   Text="添加标签" />
-                        <TextBlock Margin="0,4,0,0"
-                                   Foreground="{StaticResource MutedBrush}"
-                                   Text="多个标签可用逗号分隔，方便搜索时快速命中。"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                    <TextBlock FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}"
+                               Text="添加标签" />
                 </Border>
 
                 <Border Grid.Row="1"
@@ -55,6 +49,7 @@
                         Style="{StaticResource AppleCompactDialogBodyCardStyle}">
                     <TextBox x:Name="TagsTextBox"
                              Style="{StaticResource AppleInputTextBoxStyle}"
+                             ToolTip="多个标签可用逗号分隔，方便搜索时快速命中"
                              Text="{Binding TagsText, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}" />
                 </Border>
 

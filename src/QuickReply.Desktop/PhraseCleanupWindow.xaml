@@ -88,8 +88,7 @@
                         Style="{StaticResource ActionButtonStyle}" />
                 <StackPanel>
                     <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="整理快捷短语" />
-                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="先找出完全重复的短语，再列出内容高度相似的候选项。勾选后统一删除，未勾选的保留。" TextWrapping="Wrap" />
-                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding SummaryText}" />
+                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource TextBrush}" Text="{Binding SummaryText}" />
                 </StackPanel>
             </DockPanel>
         </Border>

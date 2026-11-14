@@ -63,8 +63,7 @@
                             <Grid.ColumnDefinitions><ColumnDefinition Width="204" /><ColumnDefinition Width="16" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Border Grid.Column="0" Padding="12" Style="{StaticResource SurfaceCardStyle}">
                                 <StackPanel>
-                                    <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="常用设置" />
-                                    <TextBlock Margin="0,4,0,12" Foreground="{StaticResource MutedBrush}" Text="先放最常调的入口、搜索、发送、界面和素材设置，减少来回翻找。" TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,0,0,12" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="常用设置" />
                                      <Button x:Name="GeneralNavButton" Tag="general" Click="NavigateButton_OnClick" Content="通用" Style="{StaticResource NavButtonBaseStyle}" />
                                      <Button x:Name="StabilityNavButton" Tag="search" Click="NavigateButton_OnClick" Content="搜索与推荐" Style="{StaticResource NavButtonBaseStyle}" />
                                      <Button x:Name="QuickActionsNavButton" Tag="quick-actions" Click="NavigateButton_OnClick" Content="快捷发送" Style="{StaticResource NavButtonBaseStyle}" />
@@ -101,16 +100,12 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10">
                                                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="通用" />
-                                                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把每天都会碰到的基础入口放在最前面，先改这里就能决定整体使用方式。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="工作模式" />
-                                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,4,0,0">
-                                                    <ComboBox Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSidebarWorkMode}" SelectedValuePath="Tag">
-                                                        <ComboBoxItem Tag="{x:Static models:SidebarWorkMode.Standard}" Content="标准模式（显示吸附侧栏，支持短语列表点击与分类）" />
-                                                        <ComboBoxItem Tag="{x:Static models:SidebarWorkMode.Compact}" Content="精简模式（完全隐藏侧栏，纯快捷搜发，极简无干扰）" />
-                                                    </ComboBox>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="精简模式下侧边短语栏自动隐藏，推荐使用快捷搜索悬浮框搜发；标准模式下短语栏会自动吸附在聊天窗口旁。" TextWrapping="Wrap" />
-                                                </StackPanel>
+                                                <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSidebarWorkMode}" SelectedValuePath="Tag" ToolTip="精简模式下侧栏自动隐藏，纯快捷搜发；标准模式下短语栏会自动吸附在聊天窗口旁">
+                                                    <ComboBoxItem Tag="{x:Static models:SidebarWorkMode.Standard}" Content="标准模式（显示吸附侧栏，支持短语列表点击与分类）" />
+                                                    <ComboBoxItem Tag="{x:Static models:SidebarWorkMode.Compact}" Content="精简模式（完全隐藏侧栏，纯快捷搜发，极简无干扰）" />
+                                                </ComboBox>
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="搜索唤起" />
                                                 <ComboBox Grid.Row="2" Grid.Column="1" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSearchHotkeyMode}" SelectedValuePath="Tag">
                                                     <ComboBoxItem Tag="{x:Static models:SearchFocusHotkeyMode.Tab}" Content="Tab" />
@@ -118,31 +113,20 @@
                                                     <ComboBoxItem Tag="{x:Static models:SearchFocusHotkeyMode.AltQ}" Content="Alt+Q" />
                                                 </ComboBox>
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="开机启动" />
-                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,6,0,0">
-                                                    <CheckBox IsChecked="{Binding SelectedLaunchAtStartup}" Content="开机自动启动 QuickReplyTool" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认关闭。开启后会随 Windows 登录自动启动。" TextWrapping="Wrap" />
-                                                </StackPanel>
+                                                <CheckBox Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" IsChecked="{Binding SelectedLaunchAtStartup}" Content="开机自动启动 QuickReplyTool" ToolTip="开启后随 Windows 登录自动启动" />
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="管理员权限" />
-                                                <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,6,0,0">
-                                                    <CheckBox IsChecked="{Binding SelectedRunAsAdministrator}" Content="始终以管理员权限启动 QuickReplyTool" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="启用后，手动启动会优先走管理员启动任务；如果同时开启开机启动，会在登录后以管理员权限自动启动。首次启用可能需要一次管理员授权。" TextWrapping="Wrap" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="#B45309" Text="注意：管理员启动会和远程协助、自动化测试冲突（普通权限的远程/自动化工具无法操作本工具）。另外 Windows 不允许低权限程序给高权限窗口发键鼠：如果抖店/飞鸽以管理员运行，本工具也必须以管理员运行；反之两者都用普通权限。两边权限级别要一致，否则粘贴和发送会静默失败。" TextWrapping="Wrap" />
-                                                </StackPanel>
+                                                <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,6,0,0" IsChecked="{Binding SelectedRunAsAdministrator}" Content="始终以管理员权限启动 QuickReplyTool" ToolTip="若飞鸽/千牛以管理员身份运行，本工具也必须以管理员运行才能模拟按键发送。与部分普通权限远程协助工具可能不兼容。" />
                                                 <TextBlock Grid.Row="5" Style="{StaticResource FieldLabelStyle}" Text="截图工具" />
-                                                <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,6,0,0">
-                                                    <CheckBox IsChecked="{Binding SelectedLaunchScreenshotToolWithApp}" Content="启动客服效率工具时，同时启动截图工具" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认开启。截图功能由主程序统一托管，不再单独显示截图托盘图标；保存设置后立即生效。" TextWrapping="Wrap" />
-                                                </StackPanel>
+                                                <CheckBox Grid.Row="5" Grid.Column="1" Margin="0,6,0,0" IsChecked="{Binding SelectedLaunchScreenshotToolWithApp}" Content="启动客服效率工具时，同时启动截图工具" ToolTip="截图功能由主程序统一托管，保存设置后生效" />
                                                 <TextBlock Grid.Row="6" Style="{StaticResource FieldLabelStyle}" Text="截图快捷键" />
                                                 <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,0">
                                                     <Border Width="220" Padding="12,10" Style="{StaticResource AppleInsetCardStyle}">
                                                         <TextBlock Text="{Binding SelectedScreenshotToolHotkey}" />
                                                     </Border>
                                                     <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
-                                                        <Button Width="108" Margin="0,0,8,0" Click="ChangeScreenshotToolHotkeyButton_OnClick" Content="更改快捷键" Style="{StaticResource SubtleButtonStyle}" />
+                                                        <Button Width="108" Margin="0,0,8,0" Click="ChangeScreenshotToolHotkeyButton_OnClick" Content="更改快捷键" Style="{StaticResource SubtleButtonStyle}" ToolTip="点击后直接按下新快捷键（需含修饰键，支持字母、数字、F1-F24等）" />
                                                         <Button Width="108" Click="ResetScreenshotToolHotkeyButton_OnClick" Content="恢复默认" Style="{StaticResource SubtleButtonStyle}" />
                                                     </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="点击“更改快捷键”后直接按下新的组合键。支持字母、数字、F1-F24、Space、Tab、Esc、Enter，且至少包含一个修饰键。" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="7" Style="{StaticResource FieldLabelStyle}" Text="截图默认保存目录" />
                                                 <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,6,0,0">
@@ -168,8 +152,7 @@
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="9" Style="{StaticResource FieldLabelStyle}" Text="触发软件" />
                                                 <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,6,0,0">
-                                                    <CheckBox IsChecked="{Binding SelectedTriggerAppFilterEnabled}" Content="只在指定软件中触发" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="开启后，搜索唤起快捷键只在下面列表里的软件处于前台时生效；其他软件里按键会照常传给该软件。进程名不区分大小写，.exe 可省略；“标题包含”留空表示不限制。" TextWrapping="Wrap" />
+                                                    <CheckBox IsChecked="{Binding SelectedTriggerAppFilterEnabled}" Content="只在指定软件中触发" ToolTip="开启后，搜索唤起快捷键仅在指定软件处于前台时生效；进程名不区分大小写，.exe 可省略" />
                                                     <Border Margin="0,10,0,0" Padding="10,8" Style="{StaticResource AppleInsetCardStyle}">
                                                         <StackPanel>
                                                             <Grid Margin="0,0,0,4">
@@ -216,7 +199,7 @@
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="搜索" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把搜索入口的默认模式和搜索框外观集中起来，调搜索体验时不用来回找。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="搜索" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="默认进入模式" />
                                                 <ComboBox Grid.Row="1" Grid.Column="1" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedDefaultSearchOverlayMode}" SelectedValuePath="Tag"><ComboBoxItem Tag="{x:Static models:SearchOverlayMode.Phrase}" Content="短语" /><ComboBoxItem Tag="{x:Static models:SearchOverlayMode.File}" Content="文件" /><ComboBoxItem Tag="{x:Static models:SearchOverlayMode.Mixed}" Content="混合搜索" /></ComboBox>
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="搜索栏宽度占比" />
@@ -237,27 +220,21 @@
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="快捷发送" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="这里只保留发送热键和图文顺序；所有等待时间统一放到“延迟控制”里，避免分散。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="快捷发送" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="发送快捷键" />
                                                 <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSendHotkeyMode}" SelectedValuePath="Tag"><ComboBoxItem Tag="{x:Static models:SendHotkeyMode.Enter}" Content="Enter" /><ComboBoxItem Tag="{x:Static models:SendHotkeyMode.CtrlEnter}" Content="Ctrl+Enter" /><ComboBoxItem Tag="{x:Static models:SendHotkeyMode.AltS}" Content="Alt+S" /></ComboBox>
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="原文直发快捷键" />
-                                                <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,4,0,0">
-                                                    <ComboBox Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSearchTextSendShortcutMode}" SelectedValuePath="Tag">
-                                                        <ComboBoxItem Tag="{x:Static models:SearchTextSendShortcutMode.CtrlEnter}" Content="Ctrl+Enter" />
-                                                        <ComboBoxItem Tag="{x:Static models:SearchTextSendShortcutMode.AltEnter}" Content="Alt+Enter" />
-                                                        <ComboBoxItem Tag="{x:Static models:SearchTextSendShortcutMode.CtrlShiftEnter}" Content="Ctrl+Shift+Enter" />
-                                                    </ComboBox>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="用于“只发送搜索输入框内容”。如果当前没有搜索结果，按 Enter 也会直接发送。" TextWrapping="Wrap" />
-                                                </StackPanel>
+                                                <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSearchTextSendShortcutMode}" SelectedValuePath="Tag" ToolTip="用于仅发送搜索输入框内容；无匹配短语时按 Enter 也会直接发送">
+                                                    <ComboBoxItem Tag="{x:Static models:SearchTextSendShortcutMode.CtrlEnter}" Content="Ctrl+Enter" />
+                                                    <ComboBoxItem Tag="{x:Static models:SearchTextSendShortcutMode.AltEnter}" Content="Alt+Enter" />
+                                                    <ComboBoxItem Tag="{x:Static models:SearchTextSendShortcutMode.CtrlShiftEnter}" Content="Ctrl+Shift+Enter" />
+                                                </ComboBox>
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="图文发送顺序" />
-                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,4,0,0">
-                                                    <ComboBox Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedPhraseImageSendMode}" SelectedValuePath="Tag">
-                                                        <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.TextThenImageThenSend}" Content="先文字，再图片，最后发送" />
-                                                        <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.ImageThenTextThenSend}" Content="先图片，再文字，最后发送" />
-                                                        <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.ImageImmediateThenTextSend}" Content="图片先立即发送，再发送文字" />
-                                                    </ComboBox>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="默认先图片后文字。抖店/飞鸽不支持图文同一条发送，会自动拆成两条，按这里选的先后顺序发；视频始终走抖店的“发送视频”按钮，最后逐个提交。" TextWrapping="Wrap" />
-                                                </StackPanel>
+                                                <ComboBox Grid.Row="3" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedPhraseImageSendMode}" SelectedValuePath="Tag" ToolTip="抖店/飞鸽不支持图文同条发送，会自动拆分并按设定顺序分批发送；视频最后逐个提交">
+                                                    <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.TextThenImageThenSend}" Content="先文字，再图片，最后发送" />
+                                                    <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.ImageThenTextThenSend}" Content="先图片，再文字，最后发送" />
+                                                    <ComboBoxItem Tag="{x:Static models:PhraseImageSendMode.ImageImmediateThenTextSend}" Content="图片先立即发送，再发送文字" />
+                                                </ComboBox>
                                             </Grid>
                                         </Border>
                                         <Border x:Name="DelaySection" Tag="delay-control" Style="{StaticResource SectionCardStyle}">
@@ -280,88 +257,60 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10">
                                                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="延迟控制" />
-                                                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="所有延迟统一在这里配置。输入范围 50-2000，单位都是毫秒，保存后下一次发送立即生效。" TextWrapping="Wrap" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="回到输入框延迟" />
-                                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedRestoreFocusDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="搜索框关闭后，等待多久再把焦点还给目标输入框。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedRestoreFocusDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="搜索框关闭后，等待多久再把焦点还给目标输入框 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="激活重试间隔" />
-                                                <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedActivationRetryDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="目标窗口第一次没稳定切回来时，后续每次重试之间的间隔。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedActivationRetryDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="目标窗口未切回时，后续重试之间的间隔 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="文本粘贴稳定延迟" />
-                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedTextPasteDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="发送 Ctrl+V 贴文字后，再继续后续动作前的等待。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedTextPasteDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="Ctrl+V 贴文字后，继续后续动作前的等待 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="图片粘贴稳定延迟" />
-                                                <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedImagePasteDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="贴图后，给聊天软件接收图片和生成预览的时间。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedImagePasteDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="贴图后，给聊天软件接收图片和生成预览的时间 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="5" Style="{StaticResource FieldLabelStyle}" Text="纯文字发送前延迟" />
-                                                <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedSendDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="纯文字内容贴入输入框后，到按发送键之间的等待。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedSendDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="纯文字贴入输入框后，到按发送键之间的等待 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="6" Style="{StaticResource FieldLabelStyle}" Text="图文发送前延迟" />
-                                                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedRichImageSendDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="带图片内容在真正按发送键前，额外再等多久。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedRichImageSendDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="带图片内容按发送键前的额外等待 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="7" Style="{StaticResource FieldLabelStyle}" Text="普通剪贴板恢复延迟" />
-                                                <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedClipboardRestoreDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="纯文字、文件等普通发送完成后，多久再恢复用户原来的剪贴板。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedClipboardRestoreDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="普通发送完成后，多久恢复原剪贴板 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="8" Style="{StaticResource FieldLabelStyle}" Text="图文剪贴板恢复延迟" />
-                                                <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedRichImageClipboardRestoreDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="带图片短语发送完成后，多久再恢复原剪贴板，避免太早覆盖图片数据。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedRichImageClipboardRestoreDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="图文发送完成后，多久恢复原剪贴板 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="9" Style="{StaticResource FieldLabelStyle}" Text="悬停预览延迟" />
-                                                <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,4,0,0">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedPhraseHoverPreviewDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" />
-                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
-                                                    </StackPanel>
-                                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="鼠标停留在短语上多久后显示预览。" TextWrapping="Wrap" />
+                                                <StackPanel Grid.Row="9" Grid.Column="1" Margin="0,4,0,0" Orientation="Horizontal">
+                                                    <TextBox Width="120" MaxLength="4" Style="{StaticResource InputTextBoxStyle}" Text="{Binding SelectedPhraseHoverPreviewDelayMs, UpdateSourceTrigger=LostFocus}" PreviewTextInput="DelayTextBox_OnPreviewTextInput" DataObject.Pasting="DelayTextBox_OnPasting" LostFocus="DelayTextBox_OnLostFocus" ToolTip="鼠标悬停在短语上多久后显示内容预览 (50-2000 ms)" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Text="ms" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -369,7 +318,7 @@
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="侧栏与界面" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把侧栏模式、布局密度、字体、透明度和配色统一放在这里，界面类设置不再散落到别处。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="侧栏与界面" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="工作模式" />
                                                 <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" SelectedValue="{Binding SelectedSidebarWorkMode}" SelectedValuePath="Tag">
                                                     <ComboBoxItem Tag="{x:Static models:SidebarWorkMode.Standard}" Content="标准模式" />
@@ -389,13 +338,12 @@
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="文件与素材" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把图片、视频、文档和安装包统一放到素材入口里，搜索时就不用再到处翻文件夹。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="文件与素材" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="素材文件夹" />
-                                                <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Foreground="{StaticResource MutedBrush}" Text="把客服常用资料放进一个专用文件夹，保存后和每次启动时都会自动同步。" TextWrapping="Wrap" /><Border Margin="0,10,0,0" Padding="12,10" Style="{StaticResource AppleInsetCardStyle}"><TextBlock Text="{Binding FileLibraryFolderSummary}" TextWrapping="Wrap" /></Border><StackPanel Margin="0,10,0,0" Orientation="Horizontal"><Button Width="116" Margin="0,0,8,0" Click="SelectFileLibraryFolderButton_OnClick" Content="选择文件夹" Style="{StaticResource SubtleButtonStyle}" /><Button Width="108" Margin="0,0,8,0" Click="OpenFileLibraryFolderButton_OnClick" Content="打开文件夹" Style="{StaticResource SubtleButtonStyle}" /><Button Width="92" Click="ClearFileLibraryFolderButton_OnClick" Content="清空" IsEnabled="{Binding HasSelectedFileLibraryFolder}" Style="{StaticResource SubtleButtonStyle}" /></StackPanel></StackPanel>
+                                                <StackPanel Grid.Row="1" Grid.Column="1"><Border Margin="0,10,0,0" Padding="12,10" Style="{StaticResource AppleInsetCardStyle}"><TextBlock Text="{Binding FileLibraryFolderSummary}" TextWrapping="Wrap" /></Border><StackPanel Margin="0,10,0,0" Orientation="Horizontal"><Button Width="116" Margin="0,0,8,0" Click="SelectFileLibraryFolderButton_OnClick" Content="选择文件夹" Style="{StaticResource SubtleButtonStyle}" /><Button Width="108" Margin="0,0,8,0" Click="OpenFileLibraryFolderButton_OnClick" Content="打开文件夹" Style="{StaticResource SubtleButtonStyle}" /><Button Width="92" Click="ClearFileLibraryFolderButton_OnClick" Content="清空" IsEnabled="{Binding HasSelectedFileLibraryFolder}" Style="{StaticResource SubtleButtonStyle}" /></StackPanel></StackPanel>
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="短语图片文件夹" />
                                                 <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,8,0,0">
-                                                    <TextBlock Foreground="{StaticResource MutedBrush}" Text="这里专门保存“绑定到快捷短语”的图片副本。客户拖图或粘图后，程序会复制一份到这里，后续发送和编辑都直接读取这个文件夹里的图片，不依赖原始图片是否还在。" TextWrapping="Wrap" />
-                                                    <Border Margin="0,10,0,0" Padding="12,10" Style="{StaticResource AppleInsetCardStyle}">
+                                                    <Border Padding="12,10" Style="{StaticResource AppleInsetCardStyle}">
                                                         <TextBlock Text="{Binding PhraseImageFolderSummary}" TextWrapping="Wrap" />
                                                     </Border>
                                                     <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
@@ -405,7 +353,7 @@
                                                     </StackPanel>
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="手动补充" />
-                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,8,0,0"><TextBlock Foreground="{StaticResource MutedBrush}" Text="单独加入安装包、截图、单个视频等零散素材。" TextWrapping="Wrap" /><Button Width="128" Margin="0,10,0,0" HorizontalAlignment="Left" Click="ManageFilesButton_OnClick" Content="管理素材库" Style="{StaticResource SubtleButtonStyle}" /></StackPanel>
+                                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,8,0,0"><Button Width="128" HorizontalAlignment="Left" Click="ManageFilesButton_OnClick" Content="管理素材库" Style="{StaticResource SubtleButtonStyle}" /></StackPanel>
                                             </Grid>
                                         </Border>
                                         </StackPanel>
@@ -419,7 +367,7 @@
                             <Border Grid.Column="0" Padding="16" Style="{StaticResource SurfaceCardStyle}">
                                 <StackPanel>
                                     <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="维护与诊断" />
-                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="把统计、日志、异常排查和数据操作收在这里，低频但重要的维护项统一后置。" TextWrapping="Wrap" />
+                                    
                                     <Border Margin="0,16,0,0" Style="{StaticResource AppleInfoCardStyle}"><StackPanel><TextBlock Foreground="{StaticResource MutedBrush}" Text="本次启动" /><TextBlock Margin="0,4,0,0" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding LogSessionSummary}" /></StackPanel></Border>
                                     <Border Margin="0,12,0,0" Style="{StaticResource AppleInfoCardStyle}"><StackPanel><TextBlock Foreground="{StaticResource MutedBrush}" Text="累计日志" /><TextBlock Margin="0,4,0,0" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding LogTotalSummary}" /></StackPanel></Border>
                                     <Border Margin="0,12,0,0" Style="{StaticResource AppleInfoCardStyle}"><StackPanel><TextBlock Foreground="{StaticResource MutedBrush}" Text="截图占用" /><TextBlock Margin="0,4,0,0" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" Text="{Binding LogStorageSummary}" /></StackPanel></Border>
@@ -433,7 +381,7 @@
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="统计与报表" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="查看软件使用概览、高频短语和低频短语，导出报表也统一从这里进入。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="统计与报表" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="软件使用" />
                                                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"><TextBlock Text="{Binding UsageLaunchSummary}" /><TextBlock Margin="0,4,0,0" Text="{Binding UsageRuntimeSummary}" /></StackPanel>
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="高频短语" />
@@ -508,14 +456,14 @@
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="统计报表" />
                                                 <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,10,0,0" Orientation="Horizontal">
                                                     <Button Width="110" Margin="0,0,10,0" Click="RefreshStatsButton_OnClick" Content="刷新统计" IsEnabled="{Binding CanRefreshStats}" Style="{StaticResource SubtleButtonStyle}" />
-                                                    <Button Width="132" Click="ExportUsageReportButton_OnClick" Content="导出使用统计报表" Style="{StaticResource PrimaryButtonStyle}" />
+                                                    <Button Width="132" Click="ExportUsageReportButton_OnClick" Content="导出使用统计报表" Style="{StaticResource PrimaryButtonStyle}" ToolTip="导出累计启动运行概览以及全部短语的发送次数与使用记录" />
                                                 </StackPanel>
-                                                <TextBlock Grid.Row="5" Grid.Column="1" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会导出累计启动、累计运行，以及全部短语的发送次数和最近使用时间。" TextWrapping="Wrap" />
+                                                
                                             </Grid>
                                         </Border>
-                                        <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="日志目录" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="快速打开数据库目录和截图目录，方便你排查、备份或手动清理。" TextWrapping="Wrap" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="路径与入口" /><StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"><TextBlock Foreground="{StaticResource TextBrush}" Text="{Binding LogPathSummary}" TextWrapping="Wrap" /><StackPanel Margin="0,10,0,0" Orientation="Horizontal"><Button Width="118" Margin="0,0,10,0" Click="OpenLogFolderButton_OnClick" Content="打开日志目录" Style="{StaticResource SubtleButtonStyle}" /><Button Width="118" Click="OpenCaptureFolderButton_OnClick" Content="打开截图目录" Style="{StaticResource SubtleButtonStyle}" /></StackPanel></StackPanel></Grid></Border>
-                                        <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="截图策略" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="这些策略决定截图保留多久、最多占用多少空间。结构化日志会按单独的文本保留策略清理。" TextWrapping="Wrap" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="截图保留天数" /><ComboBox Grid.Row="1" Grid.Column="1" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding LogScreenshotRetentionDayOptions}" SelectedItem="{Binding SelectedLogScreenshotRetentionDays}" /><TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="截图空间上限" /><ComboBox Grid.Row="2" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding LogScreenshotMaxSizeOptions}" SelectedItem="{Binding SelectedLogScreenshotMaxSizeMb}" /><TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="文本日志保留天数" /><ComboBox Grid.Row="3" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding LogTextRetentionDayOptions}" SelectedItem="{Binding SelectedLogTextRetentionDays}" /></Grid></Border>
-                                        <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="维护操作" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="手动执行一次策略清理，或者直接清空所有日志截图。" TextWrapping="Wrap" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="操作按钮" /><StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Orientation="Horizontal"><Button Width="128" Margin="0,0,10,0" Click="RunLogCleanupButton_OnClick" Content="立即清理旧截图" Style="{StaticResource SubtleButtonStyle}" /><Button Width="128" Click="ClearAllCapturesButton_OnClick" Content="清空全部截图" Style="{StaticResource PrimaryButtonStyle}" /></StackPanel></Grid></Border>
+                                        <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="日志目录" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="路径与入口" /><StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"><TextBlock Foreground="{StaticResource TextBrush}" Text="{Binding LogPathSummary}" TextWrapping="Wrap" /><StackPanel Margin="0,10,0,0" Orientation="Horizontal"><Button Width="118" Margin="0,0,10,0" Click="OpenLogFolderButton_OnClick" Content="打开日志目录" Style="{StaticResource SubtleButtonStyle}" /><Button Width="118" Click="OpenCaptureFolderButton_OnClick" Content="打开截图目录" Style="{StaticResource SubtleButtonStyle}" /></StackPanel></StackPanel></Grid></Border>
+                                        <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="截图策略" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="截图保留天数" /><ComboBox Grid.Row="1" Grid.Column="1" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding LogScreenshotRetentionDayOptions}" SelectedItem="{Binding SelectedLogScreenshotRetentionDays}" /><TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="截图空间上限" /><ComboBox Grid.Row="2" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding LogScreenshotMaxSizeOptions}" SelectedItem="{Binding SelectedLogScreenshotMaxSizeMb}" /><TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="文本日志保留天数" /><ComboBox Grid.Row="3" Grid.Column="1" Margin="0,4,0,0" Style="{StaticResource InputComboBoxStyle}" ItemsSource="{Binding LogTextRetentionDayOptions}" SelectedItem="{Binding SelectedLogTextRetentionDays}" /></Grid></Border>
+                                        <Border Style="{StaticResource SectionCardStyle}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="维护操作" /></StackPanel><TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="操作按钮" /><StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Orientation="Horizontal"><Button Width="128" Margin="0,0,10,0" Click="RunLogCleanupButton_OnClick" Content="立即清理旧截图" Style="{StaticResource SubtleButtonStyle}" /><Button Width="128" Click="ClearAllCapturesButton_OnClick" Content="清空全部截图" Style="{StaticResource PrimaryButtonStyle}" /></StackPanel></Grid></Border>
                                         <Border Style="{StaticResource SectionCardStyle}">
                                             <Grid>
                                                 <Grid.RowDefinitions>
@@ -528,7 +476,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10">
                                                     <TextBlock Style="{StaticResource SectionTitleStyle}" Text="最近异常记录" />
-                                                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="这里会显示最近捕获到的异常，便于你定位现场问题和排查用户反馈。" TextWrapping="Wrap" />
+                                                    
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="异常列表" />
                                                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0">
@@ -583,18 +531,17 @@
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
-                                        <Border Style="{StaticResource SectionCardStyle}"><StackPanel><TextBlock Style="{StaticResource SectionTitleStyle}" Text="诊断建议" /><TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="1. 平时主要看截图占用和本次启动记录数，确认日志有没有持续落库。" TextWrapping="Wrap" /><TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="2. 文本日志更适合回看发送行为；截图更多是排查和抽样核对用。" TextWrapping="Wrap" /><TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" Text="3. 当你觉得占用变大时，先点一次“立即清理旧截图”，通常不需要手动删数据库。" TextWrapping="Wrap" /></StackPanel></Border>
+                                        
                                         <Border x:Name="DataSection" Style="{StaticResource SectionCardStyle}">
                                             <Grid>
                                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="数据与导入导出" /><TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="把导入导出、目录查看和恢复默认统一放到最后，避免和日常设置混在一起。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,10"><TextBlock Style="{StaticResource SectionTitleStyle}" Text="数据与导入导出" /></StackPanel>
                                                 <TextBlock Grid.Row="1" Style="{StaticResource FieldLabelStyle}" Text="短语迁移" />
                                                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal"><Button Width="132" Margin="0,0,10,0" Click="ExportPhrasesButton_OnClick" Content="导出短语 xls/csv" Style="{StaticResource SubtleButtonStyle}" /><Button Width="132" Click="ImportPhrasesButton_OnClick" Content="导入短语 xls/csv" Style="{StaticResource PrimaryButtonStyle}" /></StackPanel>
                                                 <TextBlock Grid.Row="2" Style="{StaticResource FieldLabelStyle}" Text="短语整理" />
                                                 <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,6,0,0">
-                                                    <Button Width="152" HorizontalAlignment="Left" Click="CleanupPhrasesButton_OnClick" Content="整理快捷短语" Style="{StaticResource SubtleButtonStyle}" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="自动找出完全重复和内容相似的快捷短语，由你手动勾选删除多余项。" TextWrapping="Wrap" />
+                                                    <Button Width="152" HorizontalAlignment="Left" Click="CleanupPhrasesButton_OnClick" Content="整理快捷短语" Style="{StaticResource SubtleButtonStyle}" ToolTip="自动找出完全重复和内容相似的快捷短语，支持勾选清理" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="3" Style="{StaticResource FieldLabelStyle}" Text="个人配置迁移" />
                                                 <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,6,0,0">
@@ -602,14 +549,14 @@
                                                         <Button Width="142" Margin="0,0,10,0" Click="ExportPersonalConfigButton_OnClick" Content="导出全部个人配置" Style="{StaticResource SubtleButtonStyle}" />
                                                         <Button Width="142" Click="ImportPersonalConfigButton_OnClick" Content="导入全部个人配置" Style="{StaticResource PrimaryButtonStyle}" />
                                                     </StackPanel>
-                                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会处理热键、发送设置、颜色主题、文件资料目录等个人配置。" TextWrapping="Wrap" />
+                                                    
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="4" Style="{StaticResource FieldLabelStyle}" Text="数据目录" />
                                                 <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,6,0,0"><TextBlock Text="{Binding UserDataFolderSummary}" TextWrapping="Wrap" /><Button Width="152" Margin="0,10,0,0" HorizontalAlignment="Left" Click="OpenUserDataFolderButton_OnClick" Content="打开用户数据文件夹" Style="{StaticResource SubtleButtonStyle}" /></StackPanel>
                                                 <TextBlock Grid.Row="5" Style="{StaticResource FieldLabelStyle}" Text="示例与文件库" />
                                                 <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,6,0,0" Orientation="Horizontal"><Button Width="152" Margin="0,0,10,0" Click="ResetPhraseDataButton_OnClick" Content="恢复默认示例短语" Style="{StaticResource SubtleButtonStyle}" /><Button Width="140" Click="ClearFileLibraryConfigurationButton_OnClick" Content="清空文件库配置" Style="{StaticResource SubtleButtonStyle}" /></StackPanel>
                                                 <TextBlock Grid.Row="6" Style="{StaticResource FieldLabelStyle}" Text="恢复默认" />
-                                                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,0"><Button Width="168" HorizontalAlignment="Left" Click="ResetPersonalizationButton_OnClick" Content="恢复默认个性化配置" Style="{StaticResource PrimaryButtonStyle}" /><TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="会恢复热键、颜色、透明度、延迟、搜索模式等默认值，但保留文件库路径和短语图片目录。" TextWrapping="Wrap" /></StackPanel>
+                                                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,0"><Button Width="168" HorizontalAlignment="Left" Click="ResetPersonalizationButton_OnClick" Content="恢复默认个性化配置" Style="{StaticResource PrimaryButtonStyle}" ToolTip="恢复热键、外观透明度、延迟、搜索模式等默认值，保留素材路径" /></StackPanel>
                                             </Grid>
                                         </Border>
                                     </StackPanel>

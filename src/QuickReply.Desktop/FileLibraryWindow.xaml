@@ -108,16 +108,10 @@
                         Margin="0,0,0,12"
                         Style="{StaticResource SummaryCardStyle}"
                         MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
-                    <StackPanel>
-                        <TextBlock FontSize="18"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource TitleBrush}"
-                                   Text="文件库" />
-                        <TextBlock Margin="0,4,0,0"
-                                   Foreground="{StaticResource MutedBrush}"
-                                   Text="把客服常用的图片、视频、文档集中放在这里，搜索时就能直接找到并发送。"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                    <TextBlock FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}"
+                               Text="文件库" />
                 </Border>
 
                 <ListBox x:Name="FileItemsList"

@@ -4,9 +4,9 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="分类"
         Width="360"
-        Height="212"
+        Height="176"
         MinWidth="320"
-        MinHeight="190"
+        MinHeight="160"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         WindowStyle="None"
@@ -33,25 +33,18 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0"
                         Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
                         MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
-                    <StackPanel>
-                        <TextBlock FontSize="18"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource TitleBrush}"
-                                   Text="{Binding DialogHeading, RelativeSource={RelativeSource AncestorType=Window}}" />
-                        <TextBlock Margin="0,4,0,0"
-                                   Foreground="{StaticResource MutedBrush}"
-                                   Text="分类会显示在顶部标签栏里，支持拖动排序。"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                    <TextBlock FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}"
+                               Text="{Binding DialogHeading, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </Border>
 
-                <Border Grid.Row="1" Style="{StaticResource AppleCompactDialogBodyCardStyle}">
+                <Border Grid.Row="1" Margin="0,0,0,12" Style="{StaticResource AppleCompactDialogBodyCardStyle}">
                     <StackPanel>
                         <TextBlock Margin="0,0,0,6"
                                    Foreground="{StaticResource TextBrush}"
@@ -59,17 +52,12 @@
                                    Text="分类名称" />
                         <TextBox x:Name="NameTextBox"
                                  Style="{StaticResource AppleInputTextBoxStyle}"
+                                 ToolTip="建议 5 字左右；超出宽度部分在标签栏会自动收起，悬停可查看完整名称"
                                  Text="{Binding CategoryName, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}" />
                     </StackPanel>
                 </Border>
 
-                <TextBlock Grid.Row="2"
-                           Margin="0,0,0,12"
-                           Foreground="{StaticResource MutedBrush}"
-                           TextWrapping="Wrap"
-                           Text="建议控制在 5 个中文字符左右。超过标签宽度的部分会自动收起，但悬停时仍可查看完整名称。" />
-
-                <Border Grid.Row="3" Style="{StaticResource AppleDialogFooterBarStyle}">
+                <Border Grid.Row="2" Style="{StaticResource AppleDialogFooterBarStyle}">
                     <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                         <Button Width="78"
                                 Margin="0,0,8,0"
