@@ -9,6 +9,13 @@ namespace QuickReply.Desktop.Tests;
 
 public sealed class PhraseEditorLayoutTests
 {
+    private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+    public PhraseEditorLayoutTests(Xunit.Abstractions.ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [Fact]
     public void EditorTextViewportShowsChineseTextAndMultilineContent()
     {
@@ -65,6 +72,7 @@ public sealed class PhraseEditorLayoutTests
                 choices.SelectedIndex = -1;
                 Assert.False(confirm.IsEnabled);
                 selection.Close();
+                SearchPerformanceProbe.Measure(_output.WriteLine);
                 app.Shutdown();
             }
             catch (Exception ex) { failure = ex; }

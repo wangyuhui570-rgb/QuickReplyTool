@@ -6,6 +6,31 @@ namespace QuickReply.Desktop.Tests;
 
 public sealed class FileLibraryCatalogServiceTests
 {
+    private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+    public FileLibraryCatalogServiceTests(Xunit.Abstractions.ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
+    [Fact]
+    public async Task MeasureBulkSyncAndVerifyAllFilesPersisted()
+    {
+        using var scope = new TestAppDataScope();
+        var store = scope.CreateDataStore();
+        await store.LoadAsync();
+        for (var index = 0; index < 500; index++)
+        {
+            scope.CreateLibraryFile($"file-{index:D4}.txt");
+        }
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var result = await new FileLibraryCatalogService(store).SyncAsync([], scope.LibraryRootPath);
+        timer.Stop();
+        Assert.Equal(500, result.AddedItems.Count);
+        Assert.Equal(500, (await store.LoadAsync()).FileItems.Count);
+        _output.WriteLine($"FILE_SYNC count=500 elapsedMs={timer.Elapsed.TotalMilliseconds:F3}");
+    }
+
     [Fact]
     public async Task SyncAsync_RemovesMissingItemsAndAddsNewManagedFiles()
     {
