@@ -425,213 +425,37 @@ public sealed class TrayIconService : IDisposable
 
     private void OpenIssueReportHistory()
     {
-        IReadOnlyList<IssueReportIndexEntry> entries;
-        try
+        _mainWindow?.Dispatcher.Invoke(() =>
         {
-            entries = _issueReportService.LoadRecentIssueEntriesAsync().GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            Forms.MessageBox.Show($"读取问题记录失败：{ex.Message}", "问题记录历史", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
-            return;
-        }
-
-        using var dialog = new Forms.Form
-        {
-            Text = "问题记录历史",
-            StartPosition = Forms.FormStartPosition.CenterScreen,
-            FormBorderStyle = Forms.FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = false,
-            BackColor = Color.FromArgb(248, 248, 250),
-            ClientSize = new System.Drawing.Size(720, 420),
-            Font = new System.Drawing.Font("Segoe UI Variable Text", 9.5f, System.Drawing.FontStyle.Regular)
-        };
-
-        var listView = new Forms.ListView
-        {
-            Location = new System.Drawing.Point(20, 20),
-            Size = new System.Drawing.Size(680, 300),
-            View = Forms.View.Details,
-            FullRowSelect = true,
-            MultiSelect = false,
-            HideSelection = false,
-            GridLines = true
-        };
-        listView.Columns.Add("时间", 160);
-        listView.Columns.Add("问题摘要", 360);
-        listView.Columns.Add("本地文件", 140);
-
-        foreach (var entry in entries)
-        {
-            var item = new Forms.ListViewItem(entry.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-            item.SubItems.Add(Truncate(entry.UserDescription, 48));
-            item.SubItems.Add(string.IsNullOrWhiteSpace(entry.FilePath) ? "-" : "已保存");
-            item.Tag = entry;
-            listView.Items.Add(item);
-        }
-
-        var detailTextBox = new Forms.TextBox
-        {
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = Forms.ScrollBars.Vertical,
-            BorderStyle = Forms.BorderStyle.FixedSingle,
-            Location = new System.Drawing.Point(20, 330),
-            Size = new System.Drawing.Size(520, 70),
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(28, 28, 30),
-            Text = entries.Count == 0 ? "当前还没有问题记录。" : "选择一条问题记录后查看本地详情。"
-        };
-
-        listView.SelectedIndexChanged += (_, _) =>
-        {
-            if (listView.SelectedItems.Count == 0 || listView.SelectedItems[0].Tag is not IssueReportIndexEntry entry)
+            var window = new IssueReportHistoryWindow(_issueReportService, OpenIssueReportDirectory);
+            if (_mainWindow?.IsVisible == true)
             {
-                detailTextBox.Text = "选择一条问题记录后查看本地详情。";
-                return;
+                window.Owner = _mainWindow;
             }
-
-            detailTextBox.Text = BuildIssueEntryDetails(entry);
-        };
-
-        var openDirectoryButton = new Forms.Button
-        {
-            Text = "打开目录",
-            Location = new System.Drawing.Point(550, 330),
-            Size = new System.Drawing.Size(150, 34),
-            FlatStyle = Forms.FlatStyle.Flat,
-            BackColor = Color.FromArgb(18, 108, 240),
-            ForeColor = Color.White
-        };
-        openDirectoryButton.FlatAppearance.BorderSize = 0;
-        openDirectoryButton.Click += (_, _) => OpenIssueReportDirectory();
-
-        var closeButton = new Forms.Button
-        {
-            Text = "关闭",
-            Location = new System.Drawing.Point(550, 370),
-            Size = new System.Drawing.Size(150, 34),
-            FlatStyle = Forms.FlatStyle.Flat,
-            BackColor = Color.FromArgb(234, 236, 241),
-            ForeColor = Color.FromArgb(28, 28, 30)
-        };
-        closeButton.FlatAppearance.BorderSize = 0;
-        closeButton.Click += (_, _) => dialog.Close();
-
-        dialog.Controls.Add(listView);
-        dialog.Controls.Add(detailTextBox);
-        dialog.Controls.Add(openDirectoryButton);
-        dialog.Controls.Add(closeButton);
-        dialog.ShowDialog();
+            window.ShowDialog();
+        });
     }
+
+
 
     private void OpenIssueReportDialog()
     {
-        using var dialog = new Forms.Form
+        _mainWindow?.Dispatcher.Invoke(() =>
         {
-            Text = "问题记录",
-            StartPosition = Forms.FormStartPosition.CenterScreen,
-            FormBorderStyle = Forms.FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = false,
-            BackColor = Color.FromArgb(248, 248, 250),
-            ClientSize = new System.Drawing.Size(540, 340),
-            Font = new System.Drawing.Font("Segoe UI Variable Text", 9.5f, System.Drawing.FontStyle.Regular)
-        };
-
-        var titleLabel = new Forms.Label
-        {
-            Text = "记录当前遇到的问题",
-            AutoSize = false,
-            Location = new System.Drawing.Point(20, 18),
-            Size = new System.Drawing.Size(480, 26),
-            Font = new System.Drawing.Font("Segoe UI Variable Text", 12f, System.Drawing.FontStyle.Bold),
-            ForeColor = Color.FromArgb(24, 24, 27)
-        };
-
-        var hintLabel = new Forms.Label
-        {
-            Text = "写下你刚刚遇到的问题。程序会自动附带时间、最近日志和当前设置，在本地生成反馈文件和问题包（不再上传到服务器）。",
-            AutoSize = false,
-            Location = new System.Drawing.Point(20, 48),
-            Size = new System.Drawing.Size(500, 42),
-            ForeColor = Color.FromArgb(96, 96, 102)
-        };
-
-        var issueTextBox = new Forms.TextBox
-        {
-            Multiline = true,
-            AcceptsReturn = true,
-            ScrollBars = Forms.ScrollBars.Vertical,
-            BorderStyle = Forms.BorderStyle.FixedSingle,
-            Location = new System.Drawing.Point(20, 98),
-            Size = new System.Drawing.Size(500, 170),
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(28, 28, 30)
-        };
-
-        var generateButton = new Forms.Button
-        {
-            Text = "生成并上传",
-            Location = new System.Drawing.Point(392, 286),
-            Size = new System.Drawing.Size(128, 34),
-            FlatStyle = Forms.FlatStyle.Flat,
-            BackColor = Color.FromArgb(18, 108, 240),
-            ForeColor = Color.White
-        };
-        generateButton.FlatAppearance.BorderSize = 0;
-
-        var cancelButton = new Forms.Button
-        {
-            Text = "取消",
-            Location = new System.Drawing.Point(296, 286),
-            Size = new System.Drawing.Size(86, 34),
-            FlatStyle = Forms.FlatStyle.Flat,
-            BackColor = Color.FromArgb(234, 236, 241),
-            ForeColor = Color.FromArgb(28, 28, 30)
-        };
-        cancelButton.FlatAppearance.BorderSize = 0;
-
-        cancelButton.Click += (_, _) => dialog.Close();
-        generateButton.Click += (_, _) =>
-        {
-            generateButton.Enabled = false;
-            try
+            var window = new IssueReportDialogWindow(_issueReportService, TryOpenFileLocation);
+            if (_mainWindow?.IsVisible == true)
             {
-                var result = _issueReportService.CreateReportAsync(issueTextBox.Text).GetAwaiter().GetResult();
-                if (!result.Success)
-                {
-                    Forms.MessageBox.Show(dialog, result.Message, "问题记录", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
-                    return;
-                }
-
-                TryOpenFileLocation(result.FilePath);
-                ShowNotification("问题记录", result.Message, result.UploadAttempted && !result.UploadSucceeded ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info, 2600);
-                if (result.UploadAttempted && !result.UploadSucceeded)
-                {
-                    Forms.MessageBox.Show(dialog, result.Message, "问题记录", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Warning);
-                }
-                dialog.DialogResult = Forms.DialogResult.OK;
-                dialog.Close();
+                window.Owner = _mainWindow;
             }
-            finally
+            var dialogResult = window.ShowDialog();
+            if (dialogResult == true)
             {
-                generateButton.Enabled = true;
+                ShowNotification("问题记录", "问题记录已生成并保存。", Forms.ToolTipIcon.Info, 2600);
             }
-        };
-
-        dialog.Controls.Add(titleLabel);
-        dialog.Controls.Add(hintLabel);
-        dialog.Controls.Add(issueTextBox);
-        dialog.Controls.Add(cancelButton);
-        dialog.Controls.Add(generateButton);
-        dialog.AcceptButton = generateButton;
-        dialog.CancelButton = cancelButton;
-        dialog.ShowDialog();
+        });
     }
+
+
 
     private void ExitApplication()
     {
@@ -743,59 +567,7 @@ public sealed class TrayIconService : IDisposable
     }
 
 
-    private static string Truncate(string? value, int maxLength)
-    {
-        var text = (value ?? string.Empty).Trim();
-        if (text.Length <= maxLength)
-        {
-            return text;
-        }
 
-        return text[..Math.Max(0, maxLength - 1)] + "…";
-    }
-
-    private static string BuildIssueEntryDetails(IssueReportIndexEntry entry)
-    {
-        var lines = new List<string>
-        {
-            $"问题ID：{(string.IsNullOrWhiteSpace(entry.ServerIssueId) ? entry.IssueId : entry.ServerIssueId)}",
-            $"远端状态：{(string.IsNullOrWhiteSpace(entry.RemoteStatus) ? "-" : entry.RemoteStatus)}",
-            $"分析状态：{(string.IsNullOrWhiteSpace(entry.AnalysisStatus) ? "-" : entry.AnalysisStatus)}",
-            $"补丁版本：{(string.IsNullOrWhiteSpace(entry.PatchVersion) ? "-" : entry.PatchVersion)}",
-            $"补丁状态：{GetPatchInstallStatus(entry)}"
-        };
-
-        if (!string.IsNullOrWhiteSpace(entry.PatchDownloadUrl))
-        {
-            lines.Add($"补丁地址：{entry.PatchDownloadUrl}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(entry.PatchReleaseNotes))
-        {
-            lines.Add(string.Empty);
-            lines.Add("补丁说明：");
-            lines.Add(entry.PatchReleaseNotes.Trim());
-        }
-        else if (!string.IsNullOrWhiteSpace(entry.UploadMessage))
-        {
-            lines.Add(string.Empty);
-            lines.Add($"提示：{entry.UploadMessage.Trim()}");
-        }
-
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    private static string GetPatchInstallStatus(IssueReportIndexEntry entry)
-    {
-        if (string.IsNullOrWhiteSpace(entry.PatchVersion))
-        {
-            return "无";
-        }
-
-        return string.Equals(entry.PatchVersion, entry.InstalledPatchVersion, StringComparison.OrdinalIgnoreCase)
-            ? "已安装"
-            : "待安装";
-    }
 
     private static string Shorten(string value, int maxLength)
     {

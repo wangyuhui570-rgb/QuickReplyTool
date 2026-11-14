@@ -688,7 +688,7 @@ public sealed class PhraseEditorImageSlot : INotifyPropertyChanged
 
     public bool HasImage => !string.IsNullOrWhiteSpace(SourcePath);
 
-    public string FileName => HasImage ? Path.GetFileName(SourcePath) : string.Empty;
+    public string FileName => HasImage ? Path.GetFileName(SourcePath) ?? string.Empty : string.Empty;
 
     public void SetImage(string sourcePath, ImageSource preview)
     {

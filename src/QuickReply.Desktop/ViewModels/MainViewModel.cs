@@ -339,6 +339,10 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         ? Visibility.Collapsed
         : Visibility.Visible;
 
+    public bool HasFilteredPhrases => FilteredPhrases.Count > 0;
+
+    public bool IsPhraseListEmpty => FilteredPhrases.Count == 0;
+
     public string? GetPhraseImageAbsolutePath(ReplyPhrase phrase)
     {
         return ResolvePhraseImagePaths(phrase).FirstOrDefault();
@@ -2329,6 +2333,9 @@ public sealed class MainViewModel : ObservableObject, IRecommendationPhraseCatal
         SelectedPhrase = previousSelection is not null && results.Contains(previousSelection)
             ? previousSelection
             : results.FirstOrDefault();
+
+        OnPropertyChanged(nameof(HasFilteredPhrases));
+        OnPropertyChanged(nameof(IsPhraseListEmpty));
     }
 
     private static string NormalizePhraseTitle(string title)

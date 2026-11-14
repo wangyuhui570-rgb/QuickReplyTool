@@ -1,0 +1,92 @@
+<Window x:Class="QuickReply.Desktop.IssueReportDialogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="问题记录"
+        Width="540"
+        Height="420"
+        MinWidth="460"
+        MinHeight="360"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        Background="Transparent"
+        FontFamily="Segoe UI Variable Text">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="4"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <StaticResource x:Key="TitleBrush" ResourceKey="AppleTitleBrush" />
+        <StaticResource x:Key="TextBrush" ResourceKey="AppleTextBrush" />
+        <StaticResource x:Key="MutedBrush" ResourceKey="AppleMutedBrush" />
+    </Window.Resources>
+
+    <Border Margin="12" Style="{StaticResource AppleWindowChromeStyle}">
+        <Border Style="{StaticResource AppleWindowInnerPanelStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Style="{StaticResource AppleCompactDialogHeaderCardStyle}"
+                        MouseLeftButtonDown="TitleBar_OnMouseLeftButtonDown">
+                    <Grid>
+                        <StackPanel Margin="0,0,36,0">
+                            <TextBlock FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}"
+                                       Text="记录当前遇到的问题" />
+                            <TextBlock Margin="0,4,0,0"
+                                       FontSize="11"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Text="写下你刚刚遇到的问题。程序会自动附带时间、最近日志和当前设置，在本地生成反馈包。"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Click="CloseButton_OnClick"
+                                Style="{StaticResource AppleWindowCloseButtonStyle}" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Style="{StaticResource AppleCompactDialogBodyCardStyle}">
+                    <TextBox x:Name="IssueTextBox"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             FontSize="13"
+                             Foreground="{DynamicResource AppleTextBrush}"
+                             CaretBrush="{DynamicResource AppleAccentBrush}" />
+                </Border>
+
+                <Border Grid.Row="2"
+                        Style="{StaticResource AppleDialogFooterBarStyle}">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <Button Width="84"
+                                Margin="0,0,8,0"
+                                Click="CloseButton_OnClick"
+                                Content="取消"
+                                Style="{StaticResource AppleSecondaryButtonStyle}" />
+                        <Button x:Name="SubmitButton"
+                                MinWidth="110"
+                                Click="SubmitButton_OnClick"
+                                Content="生成并反馈"
+                                Style="{StaticResource ApplePrimaryButtonStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Border>
+</Window>

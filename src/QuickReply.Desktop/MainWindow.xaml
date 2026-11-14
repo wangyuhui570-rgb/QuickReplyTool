@@ -590,6 +590,75 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
+            <Border Grid.Row="1"
+                    Margin="4,24,4,24"
+                    Padding="16,24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource SidebarPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource SidebarPanelBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="16">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsPhraseListEmpty}" Value="True" />
+                                    <Condition Binding="{Binding SidebarWorkspaceVisibility}" Value="Visible" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" />
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel HorizontalAlignment="Center">
+                    <Path Data="M3,3 L13,3 C13.5,3 14,3.5 14,4 L14,11 C14,11.5 13.5,12 13,12 L5,12 L2,15 L2,4 C2,3.5 2.5,3 3,3 Z M5,6 L11,6 M5,9 L9,9"
+                          Stroke="{DynamicResource AppleSubtleMutedBrush}"
+                          StrokeThickness="1.4"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Width="32"
+                          Height="32"
+                          HorizontalAlignment="Center"
+                          Margin="0,0,0,10" />
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource AppleTextBrush}"
+                               Text="暂无快捷短语" />
+                    <TextBlock Margin="0,4,0,14"
+                               FontSize="11"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource AppleSubtleMutedBrush}"
+                               Text="点击下方按钮开始添加" />
+                    <Button HorizontalAlignment="Center"
+                            Height="30"
+                            MinWidth="90"
+                            Padding="12,0"
+                            Click="AddPhraseButton_OnClick"
+                            Style="{StaticResource AppleCompactPrimaryButtonStyle}"
+                            ToolTip="新建快捷短语">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Path Data="M6,1.5 L6,10.5 M1.5,6 L10.5,6"
+                                  Stroke="White"
+                                  StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  Width="12"
+                                  Height="12"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,4,0" />
+                            <TextBlock Text="新建短语"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+
             <Grid Grid.Row="2"
                   Visibility="{Binding SidebarWorkspaceVisibility}">
                 <Grid.ColumnDefinitions>

@@ -179,9 +179,9 @@
                                                     <Grid Margin="0,0,0,6">
                                                         <TextBlock Text="{Binding SlotTitle}" VerticalAlignment="Center"
                                                                    Foreground="{DynamicResource AppleTextBrush}" />
-                                                        <Button Content="×" HorizontalAlignment="Right" Tag="{Binding SlotIndex}"
+                                                        <Button Width="22" Height="22" HorizontalAlignment="Right" Tag="{Binding SlotIndex}"
                                                                 Click="RemoveSlotImageButton_OnClick" ToolTip="删除这张图片"
-                                                                Style="{StaticResource IconButtonStyle}" />
+                                                                Style="{StaticResource AppleWindowCloseButtonStyle}" />
                                                     </Grid>
                                                     <Image Source="{Binding Preview}" Height="90" Stretch="Uniform" />
                                                     <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" Margin="0,6,0,0"
