@@ -23,9 +23,9 @@
         </ListBox>
         <StackPanel Grid.Row="2" Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Margin="0,0,8,0" Padding="16,7" Content="取消导入" IsCancel="True"
-                    Style="{StaticResource SubtleButtonStyle}"/>
+                    Style="{StaticResource AppleSecondaryButtonStyle}"/>
             <Button x:Name="ConfirmButton" Padding="16,7" Content="导入此分类" IsDefault="True"
-                    IsEnabled="False" Click="ConfirmButton_OnClick" Style="{StaticResource PrimaryButtonStyle}"/>
+                    IsEnabled="False" Click="ConfirmButton_OnClick" Style="{StaticResource ApplePrimaryButtonStyle}"/>
         </StackPanel>
     </Grid>
 </Window>
