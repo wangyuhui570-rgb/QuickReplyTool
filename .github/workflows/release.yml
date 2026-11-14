@@ -56,6 +56,14 @@ jobs:
         shell: pwsh
         run: dotnet test tests/QuickReply.Desktop.Tests/QuickReply.Desktop.Tests.csproj -c Release --nologo
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -Configuration Release
+
       - name: Build portable zip
         shell: pwsh
         run: ./scripts/build-portable.ps1 -Configuration Release
@@ -112,6 +120,15 @@ jobs:
             $patch = [ordered]@{ from = $env:patchFrom; zipName = $env:patchName; url = $patchUrl; sha256 = $patchSha; size = [int64]$patchSize; signature = "" }
             "$patchSha  $env:patchName" | Set-Content -LiteralPath "$patchPath.sha256" -Encoding ascii -NoNewline
           }
+          $installerName = "QuickReplyTool-Setup-v$env:version.exe"
+          $installer = Join-Path "artifacts" "installer/QuickReplyTool-Setup-$env:version/installer/$installerName"
+          if (-not (Test-Path -LiteralPath $installer)) { throw "Installer not found: $installer" }
+          $installerSha = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$installerSha  $installerName" | Set-Content -LiteralPath "$installer.sha256" -Encoding ascii -NoNewline
+          $notes += "`r`nInstallerSHA256: $installerSha`r`n"
+          if (Test-Path -LiteralPath "docs/release-notes/$env:version.md") {
+            $notes += "`r`n" + (Get-Content -LiteralPath "docs/release-notes/$env:version.md" -Raw)
+          }
           $notesPath = Join-Path "artifacts" "release-notes.md"
           [System.IO.File]::WriteAllText($notesPath, $notes, [System.Text.UTF8Encoding]::new($false))
           # AppUpdatePolicy.ParseSignedManifest: the mirror copy of latest.json is trusted only with
@@ -157,7 +174,8 @@ jobs:
         run: |
           $zipName = "QuickReplyTool-Portable-$env:version.zip"
           $zip = Join-Path "artifacts" $zipName
-          $assets = @($zip, "$zip.sha256")
+          $installer = Join-Path "artifacts" "installer/QuickReplyTool-Setup-$env:version/installer/QuickReplyTool-Setup-v$env:version.exe"
+          $assets = @($zip, "$zip.sha256", $installer, "$installer.sha256")
           if ($env:patchName -and (Test-Path -LiteralPath (Join-Path "artifacts" $env:patchName))) {
             $patchPath = Join-Path "artifacts" $env:patchName
             $assets += @($patchPath, "$patchPath.sha256")
