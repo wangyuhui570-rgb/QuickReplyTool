@@ -24,6 +24,7 @@ public sealed class PhraseEditorLayoutTests
         {
             try
             {
+                Application.ResourceAssembly = typeof(App).Assembly;
                 var app = new App();
                 app.InitializeComponent();
                 var editor = new PhraseEditorWindow("新增短语", "新增", "退换货说明", "您好\n请查看图片");
