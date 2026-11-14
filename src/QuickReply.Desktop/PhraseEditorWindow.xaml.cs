@@ -81,11 +81,13 @@ public partial class PhraseEditorWindow : Window, INotifyPropertyChanged
 
     public bool HasPhraseImages => PhraseImageSourcePaths.Count > 0;
 
+    public bool CanAddPhraseImages => PhraseImageSourcePaths.Count < MaxImageCount;
+
     public bool RemovePhraseImages => _initialPhraseImageSourcePaths.Count > 0 && PhraseImageSourcePaths.Count == 0;
 
     public string PhraseImageSummary => HasPhraseImages
         ? $"图片已导入，当前 {PhraseImageSourcePaths.Count}/{MaxImageCount} 张"
-        : "暂未导入图片，可粘贴或拖入最多 3 张图片";
+        : "0/3 张图片";
 
     private void PhraseEditorWindow_OnLoaded(object? sender, RoutedEventArgs e)
     {
@@ -188,6 +190,37 @@ public partial class PhraseEditorWindow : Window, INotifyPropertyChanged
             TryAttachImagesFromClipboard())
         {
             e.Handled = true;
+        }
+    }
+
+    private void ChooseImagesButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择短语图片（最多 3 张）",
+            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp",
+            Multiselect = true
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            AddPhraseImageSources(dialog.FileNames);
+        }
+        catch (Exception)
+        {
+            System.Windows.MessageBox.Show(this, "图片无法读取，请检查文件是否损坏或选择其他图片。", "添加图片");
+        }
+    }
+
+    private void PasteImageButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryAttachImagesFromClipboard())
+        {
+            System.Windows.MessageBox.Show(this, "未能读取剪贴板图片，请先复制图片或截图后再试。", "粘贴图片");
         }
     }
 
@@ -410,6 +443,7 @@ public partial class PhraseEditorWindow : Window, INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(PhraseImageSourcePaths));
         OnPropertyChanged(nameof(HasPhraseImages));
+        OnPropertyChanged(nameof(CanAddPhraseImages));
         OnPropertyChanged(nameof(RemovePhraseImages));
         OnPropertyChanged(nameof(PhraseImageSummary));
     }
